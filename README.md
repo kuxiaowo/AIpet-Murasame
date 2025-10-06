@@ -73,3 +73,7 @@ python ./pet.py
 
 ### 过程中
 点击丛雨下半部分可以输入内容，长按鼠标按住丛雨的头部并左右移动可以摸头……
+
+#### （注意：程序默认采用deepseek接口，要使用本地算力请将config.json中的model_type改为"local"
+#### 倘若远程部署，则需要将config.json中local_api修改成自己的端口
+#### 用户名字也可以改，查看config.json
