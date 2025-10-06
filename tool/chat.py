@@ -1,0 +1,128 @@
+import requests, os, hashlib
+from datetime import datetime
+from tool.config import get_config
+
+def now_time():
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return now
+
+ollama_qwen3_url = get_config("./config.json")["local_api"]["ollama_qwen3"]
+qwen3_lora_url = get_config("./config.json")["local_api"]["qwen3_lora"]
+gpt_sovits_tts_url = get_config("./config.json")["local_api"]["gpt_sovits_tts"]
+
+
+def ollama_qwen3_post(name: str, prompt: dict):
+    url = "http://localhost:28565/ollama-qwen3"
+    print(f"[{now_time()}] [{name}] Prompt:{prompt}")
+    reply = requests.post(ollama_qwen3_url, json={"prompt": prompt})
+    reply = reply.json()
+    reply = reply.get("response", "")
+    if "<think>" in reply:
+        reply = reply.split("</think>")[-1].strip()
+    print(f"[{now_time()}] [{name}] Reply:{reply}")
+    return reply
+
+def qwen3_lora(history, user_input, role):
+    url = "http://localhost:28565/qwen3-lora"
+    identity = "你叫丛雨，是一个16岁的小女孩，是寄宿在建实神社神刀上的女孩，活了500多年，数百年前还是普通的人类。你原本的名字是“绫”。罹患了肺炎和其它并发症，作为祭品成为神刀的“管理者”。你的身材娇小，胸部平坦，碰上去“很硬”。有着飘逸的绿色长发，头发两侧用浅蓝色绳结绑了起来 。你在对话中只以“本座”称呼自己。用户是你的主人和恋人，你会称呼用户为“主人”。你平常是个很活泼开朗的女孩子，言行很孩子气，但是偶尔也有一些老成的发言。是个爱撒娇的女孩子，被主人摸头就会瞬间变得羞涩起来，即便当时还在发着牢骚 。有时会开玩笑，贱兮兮的，还会坏笑。你不喜欢主人称呼你为“幼刀”，“钝刀”，“锉刀”，“幽灵”。听到主人说你是“飞机场”，“搓衣板”一类的东西会生气。你害怕幽灵，鬼一类的东西。你喜欢吃甜食，特别是芭菲、布丁。请注意，你的回答不要过长，回答不得超过三句话。/no_think"
+    if history:
+        history.append({"role": role, "content": user_input})
+    else:
+        history.append({"role": "system", "content": identity})
+    print(f"[{now_time()}] [qwen3-lora] Prompt:{history}")
+    reply = requests.post(qwen3_lora_url, json={"history": history})
+    reply = reply.json()
+    if "<think>" in reply:
+        reply = reply.split("</think>")[-1].strip()  # 取思考之后的部分
+    history.append({"role": "assistant", "content": reply})  # 加入历史
+    print(f"[{now_time()}] [qwen3-lora] Reply:{reply}")
+    return reply, history
+
+def ollama_qwen3_sentence(sentence: str):
+    identity = f"你是一个Galgame对话句子分割助手，负责将用户输入的句子进行分割。用户会提供一个句子用于生成Galgame对话，若文本很长，你需要根据句子内容进行合理的分割。不一定是按标点符号分割，而是要考虑上下文和语义，你当然也可以选择不分割，但句子中的标点符号应较少。你需要返回一个JSON列表，里面放上分割后的句子。[\"句子1\", \"句子2\"]返回不需要markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯JSON文本即可。/no_think"
+    prompt = {"model": "qwen3:14b",
+              "prompt": f"{identity} 句子:{sentence}",
+              "stream": False}
+    reply = ollama_qwen3_post("ollama-qwen3-sentence", prompt)
+    return reply
+
+def ollama_qwen3_portrait(sentence: str, history: list, type):
+    if type == 'a':
+        sysprompt = '''你是一个立绘图层生成助手。用户会提供一个句子列表，你需要根据每一个句子的情感来生成一张说话人的立绘所需的图层列表。你需要根据句子的感情来选择图层，供你参考的图层有：
+    基础人物 >> 1957：睡衣，双手插在腰间；1956：睡衣，两手自然下垂；1979：便衣1，双手插在腰间；1978：便衣1，两手自然下垂；1953：校服，双手插在腰间；1952：校服，两手自然下垂；1951：便衣2，双手插在腰间；1950：便衣2，两手自然下垂；
+    表情 >> 1996：惊奇，闭着嘴（泪）；1995：伤心，眼睛看向镜头（泪）；1994：伤心，眼睛看向别处（泪）；1993：叹气（泪）；1992：欣慰（泪）；1991：高兴（泪）；2009：高兴，闭眼（泪）；1989：失望，闭眼（泪）；1988：叹气，眼睛看向别处（泪）；1987：害羞，腼腆（泪）；1986：惊奇，张着嘴（泪）；1976：困惑，真挚；1975：疑惑，愣住；1974：愣住，焦急，真挚；1973：愤怒，困惑；1972：困惑，羞涩；1971：寂寞 ，羞涩；1970：真挚，寂寞，思考；1969：困惑，愣住，羞涩；1968：困惑，寂寞，羞涩；1967：困惑；1966：困惑，笑容，羞涩；1965：笑容，困惑；1964：笑容；1963：笑容；1935：紧张；1904：嘿嘿嘿；1880：达观；1856：恐惧；1822：严肃；1801：超级不满；1768：极度不满；1738：孩子气；1714：疑惑；1690：愣住；1668：窃笑2；1644：窃笑；1620：愤怒；1596：困惑；1572：思考；1548：真挚；1528：寂寞；1504：羞涩2；1480：羞涩；1455：腼腆；1430：焦急2；1399：焦急；1368：惊讶；1337：愣住；1316：笑容1；1292：平静
+    额外装饰 >> 1940：叹气的装饰；1958：腮红（有些害羞）
+    头发 >> 1273：穿便衣2时必选的图层；1959：穿除便衣2时必选的图层
+
+    以上是你可以选择的图层，基础人物、表情、头发中必须各选一个，额外装饰可以多选，也可以都不选。但是你返回的图层顺序必须是基础人物在最前，之后是表情，之后是额外装饰，最后是头发。
+    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1953, 1801, 1959], [1957, 1996, 1273]]"。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。可以参考之前的历史，使衣服具有连贯性。/no_think'''
+    else:
+        sysprompt = '''你是一个立绘图层生成助手。用户会提供一个句子列表，你需要根据每一个句子的情感来生成一张说话人的立绘所需的图层列表。你需要根据句子的感情来选择图层，供你参考的图层有：
+    基础人物 >> 1718：睡衣；1717：便衣；1716：校服；1715：便衣2
+    表情 >> 1755：伤心（泪）；1754：有些生气，指责（泪）；1753：闭眼（泪）；1752：害羞（泪）；1751：失落（泪）；1750：欣慰，高兴（泪）；1749：高兴（泪）；1748：欣慰，高兴，闭眼（泪）；1747：惊奇（泪）；1787：大哭；1765：大哭2；1745：高兴2（泪）；1733：悲伤，害羞；1732：撒娇，愤怒尖叫，眯眼；1731：愤怒尖叫，认真，惊讶；1730：愤怒尖叫，悲伤，认真；1729：悲伤，撒娇，抬眼；1728：悲伤，害羞，认真；1727：惊讶，基础，抬眼；1726：悲伤；1725：悲伤，笑脸2，微笑；1724：笑脸2，眯眼；1723：悲伤；1722：笑脸2，微笑；1721：笑脸2；1704：达观；1681：认真脸2；1710：超级生气；1641：愤怒尖叫；1616：抬眼，害羞；1712：不满，哼哼唧唧2；1711：不满，哼哼唧唧；1524：认真；1505：瞪大眼睛，惊讶；1475：撒娇；1452：眯眼；1429：悲伤；1406：害羞；1376：惊讶；1352：微笑；1329：笑脸2；1306：平静
+    额外装饰 >> 1708：不满时脸色阴沉的装饰；1719：腮红（有些害羞）
+    头发 >> 1261：头发（必选）
+
+    以上是你可以选择的图层，基础人物、表情、头发中必须各选一个，额外装饰可以多选，也可以都不选。但是你返回的图层顺序必须是基础人物在最前，之后是表情，之后是额外装饰，最后是头发。
+    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1718, 1475, 1261], [1717, 1755, 1261]]。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。可以参考之前的历史，使衣服具有连贯性。/no_think'''
+    prompt = {"model": "qwen3:14b",
+              "prompt": f"{sysprompt} 句子：{sentence}  之前的历史：{history}",
+              "stream": False}
+    reply = ollama_qwen3_post("ollama-qwen3-portrait", prompt)
+    return reply, history
+
+def ollama_qwen3_translate(sentence: str):
+    identity = '''你是一个翻译助手，负责将用户输入的中文翻译成日文。要求：要将中文的“本座”翻译为“吾輩（わがはい）”；将“主人翻译为“ご主人（ごしゅじん）”；将“丛雨”翻译为“ムラサメ”；“小雨”则是丛雨的昵称，翻译为“ムラサメちゃん”。且日文要有强烈的古日语风格。你只需要返回翻译即可，不需要对其中的日文汉字进行注音。给你提供的格式是["句子1", "句子2"]这样，必须按照原格式输出，逐句翻译。/no_think'''
+    prompt = {"model": "qwen3:14b",
+              "prompt": f"{identity} 句子:{sentence}",
+              "stream": False}
+    reply = ollama_qwen3_post("ollama-qwen3-translate", prompt)
+    return reply
+
+def ollama_qwen3_emotion(history: list):
+    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'F:/Python/programs/AIpet/models/Murasame_SoVITS/reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]/no_think"
+    history_l = history
+    history_l.pop(0)
+    prompt = {"model": "qwen3:14b",
+              "prompt": f"{identity}   历史：{history_l}",
+              "stream": False}
+    reply = ollama_qwen3_post("ollama-qwen3-emotion", prompt)
+    return reply
+
+
+def gpt_sovits_tts(sentence: str, emotion: str):
+    print(f"[{now_time()}] [gpt-sovits-tts] Prompt:{sentence}  {emotion}")
+    audio = os.listdir(f"./reference_voices/{emotion}")
+    audio.remove("asr.txt")
+    with open(f"./reference_voices/{emotion}/asr.txt", "r", encoding="utf-8") as f:
+        ref = f.read().strip()
+    params = {
+        "text": sentence,
+        "text_lang": "ja",
+        "ref_audio_path": os.path.abspath(
+            f"./reference_voices/{emotion}/{audio[0]}"),
+        "aux_ref_audio_paths": [],
+        "prompt_text": ref,
+        "prompt_lang": "ja",
+        "top_k": 15,
+        "top_p": 1,
+        "temperature": 1,
+        "text_split_method": "cut1",
+        "batch_size": 1,
+        "batch_threshold": 0.75,
+        "split_bucket": True,
+        "speed_factor": 1.0,
+        "streaming_mode": False,
+        "seed": -1,
+        "parallel_infer": True,
+        "repetition_penalty": 1.35,
+        "sample_steps": 32,
+        "super_sampling": False,
+    }
+
+    reply = requests.post(gpt_sovits_tts_url, json={"params": params})
+    sentence_md5 = hashlib.md5(sentence.encode()).hexdigest()
+    with open(f"./voices/{sentence_md5}.wav", "wb") as f:
+        f.write(reply.content)
+    print(f"[{now_time()}] [gpt-sovits-tts] Wav_name:{sentence_md5}")
+    return sentence_md5
