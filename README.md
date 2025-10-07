@@ -39,6 +39,7 @@ Pytorch根据cuda版本自己安装：https://pytorch.org/get-started/locally/
 ollama pull qwen3:14b
 ```
 ~~ （注意：本地必须跑一个微调的qwen3-14b模型作为对话模型，其他辅助模型可由deepseek担任） ~~
+
 V1.0.1版本支持除了语音合成，全部AI跑在云端deepseek，相应的download.py也会检查配置文件，若是"deepseek"则不会下载对话模型，想要后面跑在本地的需要修改配置后再下载一次
 
 #### 3. 下载微调模型
