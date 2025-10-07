@@ -4,7 +4,7 @@ from functools import partial
 from PyQt5.QtCore import QThread, pyqtSignal
 from concurrent.futures import ThreadPoolExecutor
 from tool import qwen3_lora, ollama_qwen3_sentence, ollama_qwen3_portrait, gpt_sovits_tts, ollama_qwen3_emotion, ollama_qwen3_translate
-from tool import deepseek_sentence, deepseek_portrait, deepseek_translate, deepseek_emotion
+from tool import deepseek_portrait, deepseek_translate, deepseek_emotion, deepseek_talk
 from tool import get_config
 
 portrait_type = get_config("./config.json")['portrait']
@@ -157,10 +157,11 @@ class qwen3_lora_deepseekAPI_Worker(QThread):
                 return [text]
 
         # 1. 先获取对话回复（这个必须串行，因为依赖前面的历史）
-        reply, history = qwen3_lora(self.history, self.user_input, self.role)
+        reply, history = deepseek_talk(self.history, self.user_input, self.role)
+        '''
         reply = deepseek_sentence(reply)  # 句子分割
         history[-1]["content"] = reply
-
+        '''
         # 2. 使用线程池并发执行所有 DeepSeek 任务和 TTS 任务
         with ThreadPoolExecutor(max_workers=5) as executor:  # 增加线程数
             # 提交所有任务

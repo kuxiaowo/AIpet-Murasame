@@ -10,6 +10,32 @@ def now_time():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
+
+def deepseek_talk(history: list, user_input: str, role: str):
+    with open("prompt.txt", "r", encoding="utf-8") as f:
+        identity = f.read()
+    if history == []:
+        history.append({"role": "system", "content": identity})
+    history.append({"role": role, "content": user_input})
+    payload = {
+        "messages": history,
+        "model": "deepseek-chat",
+        "max_tokens": 4096,
+        "stream": False,
+    }
+    print(f"[{now_time()}] [deepseek_talk] Prompt:{history}")
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_key
+    }
+    resp = requests.post(url, json={"payload": payload, "headers": headers})
+    resp = resp.json()
+    reply = resp['choices'][0]['message']['content']
+    history.append({"role": "assistant", "content": reply})  # 加入历史
+    print(f"[{now_time()}] [deepseek_talk] Reply:{reply}")
+    return reply, history
+'''
 def deepseek_sentence(sentence: str):
     identity = f"你是一个Galgame对话句子分割助手，负责将用户输入的句子进行分割。用户会提供一个句子用于生成Galgame对话，若文本很长，你需要根据句子内容进行合理的分割。不一定是按标点符号分割，而是要考虑上下文和语义，你当然也可以选择不分割，但句子中的标点符号应较少。你需要返回一个JSON列表，里面放上分割后的句子。[\"句子1\", \"句子2\"]返回不需要markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯JSON文本即可。"
 
@@ -32,6 +58,7 @@ def deepseek_sentence(sentence: str):
     reply = resp['choices'][0]['message']['content']
     print(f"[{now_time()}] [deepseek-sentence] Reply:{reply}")
     return reply
+'''
 
 def deepseek_portrait(sentence: str, history: list, type: str):
     if type == 'a':

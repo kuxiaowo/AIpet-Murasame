@@ -62,7 +62,6 @@ class Murasame(QLabel):
 
     #qwen3线程的槽函数
     def on_qwen3_reply(self, reply, portrait_list, history, portrait_history, voices):
-        self.history = history
         self.portrait_history = portrait_history
         def show_next_sentence(index = 0):
             def get_audio_length_wave(audio_file_path):

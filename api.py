@@ -5,10 +5,11 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 import torch
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 from datetime import datetime
+from tool.config import get_config
 
 # ================= 初始化 =================
 app = FastAPI()
@@ -135,5 +136,7 @@ async def deepseekAPI(req: deepseekAPI_request):
 
 # ================= 启动 =================
 if __name__ == "__main__":
-    model, tokenizer = load_model_and_tokenizer()
+    model_type = get_config("./config.json")['model_type']
+    if model_type == "local":
+        model, tokenizer = load_model_and_tokenizer()
     uvicorn.run(app, host="0.0.0.0", port=28565)
