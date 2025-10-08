@@ -61,8 +61,9 @@ https://github.com/RVC-Boss/GPT-SoVITS
 #### 1. 启动 GPT-SoVITS 服务
 在正常环境中运行：
 ```bash
-python api_v2.py
+"你的地址\GPT-SoVITS-v2pro-20250604-nvidia50\GPT-SoVITS-v2pro-20250604-nvidia50\runtime\python.exe" api_v2.py
 ```
+前面是指定整合包python解释器
 注意，api_v2.py 为 GPT-SoVITS Repository 中的文件 [GPT-SoVITS 官方仓库](https://github.com/RVC-Boss/GPT-SoVITS/blob/main/api_v2.py)
 
 #### 2. 运行本地API
