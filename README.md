@@ -73,7 +73,7 @@ python ./api.py
 ```
 #### 3. 运行主程序
 ```bash
-python ./pet.py
+python ./main.py
 ```
 
 ### 过程中
