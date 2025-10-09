@@ -1,14 +1,17 @@
-import requests, io
-import aiohttp
-from fastapi.responses import StreamingResponse
-from fastapi import FastAPI
-from pydantic import BaseModel
-import uvicorn
-import torch
-from typing import List, Dict
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import PeftModel
 from datetime import datetime
+from typing import List, Dict
+
+import aiohttp
+import io
+import requests
+import torch
+import uvicorn
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from peft import PeftModel
+from pydantic import BaseModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
 from tool.config import get_config
 
 # ================= 初始化 =================
@@ -79,11 +82,12 @@ async def qwen3_lora(req: qwen3_lora_request):
 
 
 #本地ollama qwen3端口
-class ollama_qwen3_request(BaseModel):
+class ollama_request(BaseModel):
     prompt: dict
-@app.post("/ollama-qwen3")
-async def ollama_qwen3(req: ollama_qwen3_request):
-    resp = requests.post(ollama_url, json=req.prompt)
+    headers: dict
+@app.post("/ollama")
+async def ollama_qwen3(req: ollama_request):
+    resp = requests.post(ollama_url, headers=req.headers, json=req.prompt)
     return resp.json()
 
 
@@ -91,13 +95,7 @@ async def ollama_qwen3(req: ollama_qwen3_request):
 
 class gpt_sovits_tts_request(BaseModel):
     params: dict
-'''
-@app.post("/tts")
-async def gpt_sovits_tts(req: gpt_sovits_tts_request):
-    url = "http://localhost:9880/tts"
-    response = requests.post(url, json=req.params)
-    return StreamingResponse(io.BytesIO(response.content))
-'''
+
 @app.post("/tts")
 async def gpt_sovits_tts(req: gpt_sovits_tts_request):
     url = "http://localhost:9880/tts"

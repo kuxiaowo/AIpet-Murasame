@@ -1,20 +1,28 @@
-import requests, os, hashlib
 from datetime import datetime
+
+import hashlib
+import os
+import requests
+
 from tool.config import get_config
+
 
 def now_time():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
-ollama_qwen3_url = get_config("./config.json")["local_api"]["ollama_qwen3"]
+ollama_url = get_config("./config.json")["local_api"]["ollama"]
 qwen3_lora_url = get_config("./config.json")["local_api"]["qwen3_lora"]
 gpt_sovits_tts_url = get_config("./config.json")["local_api"]["gpt_sovits_tts"]
 
 
-def ollama_qwen3_post(name: str, prompt: dict):
+def ollama_post(name: str, prompt: dict, headers: dict = None):
     url = "http://localhost:28565/ollama-qwen3"
-    print(f"[{now_time()}] [{name}] Prompt:{prompt}")
-    reply = requests.post(ollama_qwen3_url, json={"prompt": prompt})
+    if name == "ollama-qwen25vl":
+        print(f"[{now_time()}] [{name}] POST")
+    else:
+        print(f"[{now_time()}] [{name}] Prompt:{prompt}")
+    reply = requests.post(ollama_url, json={"prompt": prompt, "headers": headers})
     reply = reply.json()
     reply = reply.get("response", "")
     if "<think>" in reply:
@@ -42,7 +50,7 @@ def ollama_qwen3_sentence(sentence: str):
     prompt = {"model": "qwen3:14b",
               "prompt": f"{identity} 句子:{sentence}",
               "stream": False}
-    reply = ollama_qwen3_post("ollama-qwen3-sentence", prompt)
+    reply = ollama_post("ollama-qwen3-sentence", prompt)
     return reply
 
 def ollama_qwen3_portrait(sentence: str, history: list, type):
@@ -67,7 +75,7 @@ def ollama_qwen3_portrait(sentence: str, history: list, type):
     prompt = {"model": "qwen3:14b",
               "prompt": f"{sysprompt} 句子：{sentence}  之前的历史：{history}",
               "stream": False}
-    reply = ollama_qwen3_post("ollama-qwen3-portrait", prompt)
+    reply = ollama_post("ollama-qwen3-portrait", prompt)
     return reply, history
 
 def ollama_qwen3_translate(sentence: str):
@@ -75,19 +83,17 @@ def ollama_qwen3_translate(sentence: str):
     prompt = {"model": "qwen3:14b",
               "prompt": f"{identity} 句子:{sentence}",
               "stream": False}
-    reply = ollama_qwen3_post("ollama-qwen3-translate", prompt)
+    reply = ollama_post("ollama-qwen3-translate", prompt)
     return reply
 
 def ollama_qwen3_emotion(history: list):
-    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'F:/Python/programs/AIpet/models/Murasame_SoVITS/reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]/no_think"
-    history_l = history
-    history_l.pop(0)
+    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'./reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]/no_think"
+    history_l = history[1:]
     prompt = {"model": "qwen3:14b",
               "prompt": f"{identity}   历史：{history_l}",
               "stream": False}
-    reply = ollama_qwen3_post("ollama-qwen3-emotion", prompt)
+    reply = ollama_post("ollama-qwen3-emotion", prompt)
     return reply
-
 
 def gpt_sovits_tts(sentence: str, emotion: str):
     print(f"[{now_time()}] [gpt-sovits-tts] Prompt:{sentence}  {emotion}")
@@ -125,3 +131,7 @@ def gpt_sovits_tts(sentence: str, emotion: str):
         f.write(reply.content)
     print(f"[{now_time()}] [gpt-sovits-tts] Wav_name:{sentence_md5}")
     return sentence_md5
+
+if __name__ == '__main__':
+    reply, _ = ollama_qwen25vl(None, None)
+    print(reply)

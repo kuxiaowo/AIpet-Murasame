@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-import requests, os
 from datetime import datetime
+
+import os
+import requests
+
 from tool.config import get_config
 
 url = get_config("./config.json")["local_api"]["deepseek_api"]
@@ -125,12 +128,11 @@ def deepseek_translate(sentence: str):
     return reply
 
 def deepseek_emotion(history: list):
-    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'F:/Python/programs/AIpet/models/Murasame_SoVITS/reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]"
-    history_l = history
-    history_l.pop(0)
+    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'./reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]"
+    history_l = history[1:]
     payload = {
         "messages": [{"role": "system", "content": identity},
-                     {"role": "user", "content": f"历史： {history}"}],
+                     {"role": "user", "content": f"历史： {history_l}"}],
         "model": "deepseek-chat",
         "max_tokens": 4096,
         "stream": False,

@@ -1,6 +1,6 @@
 {
   "local_api": {
-    "ollama_qwen3": "http://localhost:28565/ollama-qwen3",
+    "ollama": "http://localhost:28565/ollama",
     "qwen3_lora": "http://localhost:28565/qwen3-lora",
     "gpt_sovits_tts": "http://localhost:28565/tts",
     "deepseek_api": "http://localhost:28565/deepseekAPI"

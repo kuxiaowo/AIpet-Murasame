@@ -1,13 +1,18 @@
+import os
 import textwrap
 import wave
-import os
+
+from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import Qt, QRect
+from PyQt5.QtGui import QImage
+from PyQt5.QtGui import QPainter, QColor, QFont, QPixmap, QFontMetrics
 from PyQt5.QtMultimedia import QSound
-from tool.generate import generate_fgimage
 from PyQt5.QtWidgets import QLabel
-from PyQt5.QtGui import QPainter, QColor, QFont, QImage, QPixmap, QFontMetrics
-from PyQt5.QtCore import Qt, QTimer, QRect
+
 from classes.Worker_class import qwen3_lora_Worker, qwen3_lora_deepseekAPI_Worker
 from tool import get_config
+from tool.generate import generate_fgimage
+
 
 def wrap_text(s, width=10):
     return '\n'.join(textwrap.wrap(s, width=width, break_long_words=True, break_on_hyphens=False))
@@ -354,7 +359,7 @@ class Murasame(QLabel):
                 self.update()
 
     def cleer_history(self):
-        self.history = [{"role": "system", "content": self.identity}]
+        self.history = []
         self.portrait_history = []
         self.portrait_history.append(("", str(self.first_portrait)))
         self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)

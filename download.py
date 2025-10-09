@@ -1,8 +1,11 @@
-from modelscope.hub.snapshot_download import snapshot_download
-import os
 import json
+import os
+
+from modelscope.hub.snapshot_download import snapshot_download
 from rich.console import Console
+
 from tool.config import get_config
+
 model_type = get_config("./config.json")['model_type']
 console = Console()
 
