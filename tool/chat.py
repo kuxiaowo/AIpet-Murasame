@@ -16,7 +16,10 @@ qwen3_lora_url = get_config("./config.json")["local_api"]["qwen3_lora"]
 gpt_sovits_tts_url = get_config("./config.json")["local_api"]["gpt_sovits_tts"]
 
 
-def ollama_post(name: str, prompt: dict, headers: dict = None):
+def ollama_post(name: str, prompt: dict):
+    headers = {
+        'Content-Type': 'application/json'
+    }
     url = "http://localhost:28565/ollama-qwen3"
     if name == "ollama-qwen25vl":
         print(f"[{now_time()}] [{name}] POST")
