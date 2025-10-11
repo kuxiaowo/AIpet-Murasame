@@ -103,9 +103,8 @@ def deepseek_image_thinker(history: list, prompt: str):
     根据上下文判断，只要用户正在专注的事发生了改变就需要提供，如果没有发生改变则可以不提供。
     你需要详细描述用户的行为变化，说明用户具体做了什么操作，但是描述要尽可能精练，不要太长。
     这个桌宠是一个绿色头发的小女孩，名叫丛雨。
-   若你觉得需要提供，那么请回复具体描述内容以及进行的操作。
+   若你觉得需要提供，那么请回复具体描述内容以及进行的操作。若你觉得不需要提供给AI桌宠，那么请回复“null”。
     '''
-    # 若你觉得不需要提供给AI桌宠，那么请回复“null”。
     history.append({"role": "user", "content": prompt})
     payload = {
         "messages": [{"role": "system", "content": f"{identity}  历史: {history}"}],
