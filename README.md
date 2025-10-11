@@ -37,10 +37,13 @@ Pytorch根据cuda版本自己安装：https://pytorch.org/get-started/locally/
 在 https://ollama.com/download 下载 Ollama 并安装
 ```bash
 ollama pull qwen3:14b
+ollama pull qwen2.5vl:7b #如果需要屏幕识别
 ```
 ~~（注意：本地必须跑一个微调的qwen3-14b模型作为对话模型，其他辅助模型可由deepseek担任）~~
 
 V1.0.1版本支持除了语音合成，全部AI跑在云端deepseek，相应的download.py也会检查配置文件，若是"deepseek"则不会下载对话模型，想要后面跑在本地的需要修改配置后再下载一次
+
+V1.1.0版本支持屏幕识别，只支持跑在本地qwen2.5vl模型上，可以在配置文件设置此选项的开关
 
 #### 3. 下载微调模型
 ```bash
@@ -80,6 +83,18 @@ python ./main.py
 ### 过程中
 点击丛雨下半部分可以输入内容，鼠标中建按住可以调整位置，长按鼠标按住丛雨的头部并左右移动可以摸头……
 
-#### （注意：程序默认采用deepseek接口，要使用本地算力请将config.json中的model_type改为"local"
-#### 倘若远程部署，则需要将config.json中local_api修改成自己的端口
-#### 用户名字也可以改，查看config.json
+### 配置文件
+``` json
+{
+  "local_api": {              #本地api端口，如果远程部署自己改地址
+    "ollama": "http://localhost:28565/ollama",
+    "qwen3_lora": "http://localhost:28565/qwen3-lora",
+    "gpt_sovits_tts": "http://localhost:28565/tts",
+    "deepseek_api": "http://localhost:28565/deepseekAPI"
+  },
+  "portrait": "a",            #立绘模式，可以改为b
+  "user_name": "Kuxw",        #用户名字
+  "model_type": "deepseek",   #模型类型，local为本地模型
+  "screen_type": "false"      #屏幕识别开关
+}
+```

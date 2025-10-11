@@ -1,7 +1,9 @@
 import os
 import textwrap
 import wave
+from concurrent.futures import ThreadPoolExecutor
 
+import cv2
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt, QRect
 from PyQt5.QtGui import QImage
@@ -9,8 +11,10 @@ from PyQt5.QtGui import QPainter, QColor, QFont, QPixmap, QFontMetrics
 from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
 
+from classes.Worker_class import ScreenWorker
 from classes.Worker_class import qwen3_lora_Worker, qwen3_lora_deepseekAPI_Worker
 from tool import get_config
+from tool import ollama_qwen25vl, ollama_qwen3_image_thinker, deepseek_image_thinker
 from tool.generate import generate_fgimage
 
 
@@ -19,6 +23,7 @@ def wrap_text(s, width=10):
 
 portrait_type = get_config("./config.json")['portrait']
 model_type = get_config("./config.json")['model_type']
+screen_type = get_config("./config.json")['screen_type']
 
 class Murasame(QLabel):
     #初始化
@@ -53,21 +58,91 @@ class Murasame(QLabel):
         #AI对话
         self.history = []
         self.portrait_history = []
+        self.screen_history = []
 
         #初始立绘
         self.setWindowFlags(
         Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)  # Qt.FramelessWindowHint去掉标题栏和边框， Qt.WindowStaysOnTopHint窗口总在最前面 ，Qt.Tool工具窗口（在任务栏不单独显示图标）
         self.setAttribute(Qt.WA_TranslucentBackground, True)  # 让整个窗口支持透明区域。
-        self.first_portrait = [1950, 1368, 1958]
+        if portrait_type == "a":
+            self.first_portrait = [1950, 1368, 1958]
+        elif portrait_type == "b":
+            self.first_portrait = [1715, 1306, 1719]
         self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)
         self.portrait_history.append(("", str(self.first_portrait)))
 
         #线程
         self.worker = None
+        self.interval = 30
+        self._screenshot_worker = None
+        self._screenshot_executor = ThreadPoolExecutor(max_workers=2)  # 处理网络调用用
+        self.force_stop = False  # 是否处于强制中断状态
+        if screen_type == "ture":
+            QTimer.singleShot(1000, lambda: self.start_screenshot_worker(interval=self.interval))
+
+
+    def start_screenshot_worker(self, interval=3.0):
+        if self._screenshot_worker and self._screenshot_worker.isRunning():
+            return
+        self._screenshot_worker = ScreenWorker(interval)
+        self._screenshot_worker.screenshot_captured.connect(self.on_screenshot_captured)
+        self._screenshot_worker.start()
+
+    def stop_screenshot_worker(self):
+        if self._screenshot_worker and self._screenshot_worker.isRunning():
+            self._screenshot_worker.requestInterruption()
+            self._screenshot_worker.quit()
+            self._screenshot_worker.wait()
+            self._screenshot_worker = None
+
+    def on_screenshot_captured(self, image_path):
+        def task(path):
+            try:
+                try:
+                    if self.force_stop:print("[ollama-qwen2.5vl] 已中断生成。");return
+                    desc = ollama_qwen25vl(path)
+                    if self.force_stop:print("[image_thinker] 已中断生成。");return
+                    if model_type == "deepseek":
+                        thinker_reply, self.screen_history = deepseek_image_thinker(self.screen_history, desc)
+                    elif model_type == "local":
+                        thinker_reply, self.screen_history = ollama_qwen3_image_thinker(self.screen_history, desc)
+                    if thinker_reply != "null":
+                        self.start_qwen3_thread(thinker_reply, role="system", t=True)
+                except Exception as e:
+                    print(f"[AIpet] 截图分析失败: {e}")
+            finally:
+                try:
+                    os.remove(path)
+                except:
+                    pass
+
+        self._screenshot_executor.submit(task, image_path)
+
+    def pause_all_ai(self):
+        """用户输入时：停止截图线程、中断AI显示与语音"""
+        self.force_stop = True  # ✅ 启用软中断标志
+
+        if self._screenshot_worker and self._screenshot_worker.isRunning():
+            print("[AIpet] 暂停截图线程")
+            self.stop_screenshot_worker()
+        if self.worker and self.worker.isRunning():
+            self.worker.stop_screen()
+        try:
+            QSound.stop()
+        except Exception:
+            pass
+
+    def resume_all_ai(self):
+        """用户输入结束后：恢复截图线程与AI响应"""
+        self.force_stop = False  # ✅ 解除软中断标志
+        if not (self._screenshot_worker and self._screenshot_worker.isRunning()) and screen_type == "ture":
+            print("[AIpet] 恢复截图线程")
+            self.start_screenshot_worker(interval=self.interval)
 
     #qwen3线程的槽函数
     def on_qwen3_reply(self, reply, portrait_list, history, portrait_history, voices):
         self.portrait_history = portrait_history
+        self.history = history
         def show_next_sentence(index = 0):
             def get_audio_length_wave(audio_file_path):
                 with wave.open(audio_file_path, 'rb') as wave_file:
@@ -94,19 +169,30 @@ class Murasame(QLabel):
 
 
     # 启动一个新线程（安全版） 打断旧线程
-    def start_qwen3_thread(self, text, role):
-        # 如果已经有线程在跑，先停掉
-        if self.worker is not None and self.worker.isRunning():
-            self.worker.terminate()  # 或者设置一个 interrupt_event，让线程自己退出
-            self.worker.wait()  # 等线程彻底结束
+    def start_qwen3_thread(self, text, role, t = False):
+        # 结束旧线程
+        if self.worker and self.worker.isRunning():
+            self.worker.stop_all()  # ✅ 通知线程中断
+            self.worker.wait(1000)
 
-        # 创建新线程
+        # 启动新线程
         if model_type == "local":
-            self.worker = qwen3_lora_Worker(self.history, self.portrait_history, text, role)
+            self.worker = qwen3_lora_Worker(self.history, self.portrait_history, text, role, t=t)
         elif model_type == "deepseek":
-            self.worker = qwen3_lora_deepseekAPI_Worker(self.history, self.portrait_history, text, role)
+            self.worker = qwen3_lora_deepseekAPI_Worker(self.history, self.portrait_history, text, role, t=t)
+
         self.worker.finished.connect(self.on_qwen3_reply)
         self.worker.start()
+
+    def focusInEvent(self, event):
+        """当桌宠获得焦点时（用户点中、开始输入）"""
+        self.pause_all_ai()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        """当桌宠失去焦点时（用户点击别处、输入结束）"""
+        self.resume_all_ai()
+        super().focusOutEvent(event)
 
     #鼠标按下事件
     def mousePressEvent(self, event):
@@ -208,7 +294,6 @@ class Murasame(QLabel):
     #更新立绘
     def update_portrait(self, target, layers):
         """更新立绘（整合 cvimg_to_qpixmap 转换逻辑）"""
-        import cv2
         # 1. 调用立绘生成函数（返回 numpy RGBA 图像）
         cv_img = generate_fgimage(target, layers)
 
@@ -324,19 +409,16 @@ class Murasame(QLabel):
 
         # ================== 输入模式下 ==================
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            # 回车提交输入
             text = self.input_buffer.strip()
             self.input_mode = False
             if text:
                 self.display_text = f"【{self.pet_name}】\n"
                 self.update()
-                # 这里可以调用 AI 或直接显示
-                #reply, self.history = qwen3_lora(self.history, text, "user")
-                #调用线程
-                # 启动线程（代替原来的直接 qwen3_lora 调用）
+                # 启动AI线程
                 self.start_qwen3_thread(text, role="user")
             else:
                 self.show_text("主人，你说什么？", typing=True)
+
 
         elif event.key() == Qt.Key_Backspace:
             # 如果有拼音候选框，不删（交给输入法处理）

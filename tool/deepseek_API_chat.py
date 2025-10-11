@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
+import os
 from datetime import datetime
 
-import os
 import requests
 
 from tool.config import get_config
@@ -13,6 +13,18 @@ def now_time():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
+def deepseek_post(name: str, payload):
+    print(f"[{now_time()}] [{name}] Prompt:{payload}")
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_key
+    }
+    resp = requests.post(url, json={"payload": payload, "headers": headers})
+    resp = resp.json()
+    reply = resp['choices'][0]['message']['content']
+    print(f"[{now_time()}] [{name}] Reply:{reply}")
+    return reply
 
 def deepseek_talk(history: list, user_input: str, role: str):
     with open("prompt.txt", "r", encoding="utf-8") as f:
@@ -26,42 +38,9 @@ def deepseek_talk(history: list, user_input: str, role: str):
         "max_tokens": 4096,
         "stream": False,
     }
-    print(f"[{now_time()}] [deepseek_talk] Prompt:{history}")
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_key
-    }
-    resp = requests.post(url, json={"payload": payload, "headers": headers})
-    resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
+    reply = deepseek_post(name="deepseek-talk", payload=payload)
     history.append({"role": "assistant", "content": reply})  # 加入历史
-    print(f"[{now_time()}] [deepseek_talk] Reply:{reply}")
     return reply, history
-'''
-def deepseek_sentence(sentence: str):
-    identity = f"你是一个Galgame对话句子分割助手，负责将用户输入的句子进行分割。用户会提供一个句子用于生成Galgame对话，若文本很长，你需要根据句子内容进行合理的分割。不一定是按标点符号分割，而是要考虑上下文和语义，你当然也可以选择不分割，但句子中的标点符号应较少。你需要返回一个JSON列表，里面放上分割后的句子。[\"句子1\", \"句子2\"]返回不需要markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯JSON文本即可。"
-
-    payload = {
-            "messages": [{"role": "system", "content": identity},
-                         {"role": "user", "content": sentence}],
-            "model": "deepseek-chat",
-            "max_tokens": 4096,
-            "stream": False,
-        }
-    print(f"[{now_time()}] [deepseek-sentence] Prompt:{payload}")
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_key
-    }
-
-    resp = requests.post(url, json={"payload": payload, "headers": headers})
-    resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
-    print(f"[{now_time()}] [deepseek-sentence] Reply:{reply}")
-    return reply
-'''
 
 def deepseek_portrait(sentence: str, history: list, type: str):
     if type == 'a':
@@ -89,17 +68,8 @@ def deepseek_portrait(sentence: str, history: list, type: str):
             "max_tokens": 4096,
             "stream": False,
         }
-    print(f"[{now_time()}] [deepseek-portrait] Prompt:{payload}")
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_key
-    }
-    resp = requests.post(url, json={"payload": payload, "headers": headers})
-    resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
+    reply = deepseek_post(name="deepseek-portrait", payload=payload)
     history.append((sentence, reply))
-    print(f"[{now_time()}] [deepseek-portrait] Reply:{reply}")
     return reply, history
 
 def deepseek_translate(sentence: str):
@@ -112,19 +82,7 @@ def deepseek_translate(sentence: str):
             "max_tokens": 4096,
             "stream": False,
         }
-    print(f"[{now_time()}] [deepseek-sentence] Prompt:{payload}")
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_key
-    }
-
-
-
-    resp = requests.post(url, json={"payload": payload, "headers": headers})
-    resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
-    print(f"[{now_time()}] [deepseek-sentence] Reply:{reply}")
+    reply = deepseek_post(name="deepseek-translate", payload=payload)
     return reply
 
 def deepseek_emotion(history: list):
@@ -137,18 +95,27 @@ def deepseek_emotion(history: list):
         "max_tokens": 4096,
         "stream": False,
     }
-    print(f"[{now_time()}] [deepseek-emotion] Prompt:{payload}")
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + API_key
-    }
-
-    resp = requests.post(url, json={"payload": payload, "headers": headers})
-    resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
-    print(f"[{now_time()}] [deepseek-emotion] Reply:{reply}")
+    reply = deepseek_post(name="deepseek-emotion", payload=payload)
     return reply
+
+def deepseek_image_thinker(history: list, prompt: str):
+    identity = '''你现在是一个思考助手，来协助一个AI丛雨桌宠工作。你需要根据我提供给你的屏幕描述，来决定这段描述是否有必要提供给AI桌宠进行处理。我提供的历史是根据时间顺序依次提供，最早的在前，最新的在后。如果历史只有一个那么可以选择不提供。
+    根据上下文判断，只要用户正在专注的事发生了改变就需要提供，如果没有发生改变则可以不提供。
+    你需要详细描述用户的行为变化，说明用户具体做了什么操作，但是描述要尽可能精练，不要太长。
+    这个桌宠是一个绿色头发的小女孩，名叫丛雨。
+   若你觉得需要提供，那么请回复具体描述内容以及进行的操作。
+    '''
+    # 若你觉得不需要提供给AI桌宠，那么请回复“null”。
+    history.append({"role": "user", "content": prompt})
+    payload = {
+        "messages": [{"role": "system", "content": f"{identity}  历史: {history}"}],
+        "model": "deepseek-chat",
+        "max_tokens": 4096,
+        "stream": False,
+    }
+    reply = deepseek_post(name="deepseek-image_thinker", payload=payload)
+    history.append({"role": "assistant", "content": reply})
+    return reply, history
 
 if __name__ == '__main__':
     sentence = "今天一大早我就跑去学校准备参加社团活动，可是天突然下起了大雨，我没带伞只能在教学楼门口躲雨，偏偏这个时候你走过来递给我一把伞，还笑着说“主人，别淋湿了”，害得我一下子脸红心跳得厉害。"

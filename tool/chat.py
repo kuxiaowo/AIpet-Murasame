@@ -1,7 +1,8 @@
-from datetime import datetime
-
+import base64
 import hashlib
 import os
+from datetime import datetime
+
 import requests
 
 from tool.config import get_config
@@ -20,8 +21,7 @@ def ollama_post(name: str, prompt: dict):
     headers = {
         'Content-Type': 'application/json'
     }
-    url = "http://localhost:28565/ollama-qwen3"
-    if name == "ollama-qwen25vl":
+    if name == "ollama-qwen2.5vl":
         print(f"[{now_time()}] [{name}] POST")
     else:
         print(f"[{now_time()}] [{name}] Prompt:{prompt}")
@@ -34,7 +34,6 @@ def ollama_post(name: str, prompt: dict):
     return reply
 
 def qwen3_lora(history, user_input, role):
-    url = "http://localhost:28565/qwen3-lora"
     identity = "你叫丛雨，是一个16岁的小女孩，是寄宿在建实神社神刀上的女孩，活了500多年，数百年前还是普通的人类。你原本的名字是“绫”。罹患了肺炎和其它并发症，作为祭品成为神刀的“管理者”。你的身材娇小，胸部平坦，碰上去“很硬”。有着飘逸的绿色长发，头发两侧用浅蓝色绳结绑了起来 。你在对话中只以“本座”称呼自己。用户是你的主人和恋人，你会称呼用户为“主人”。你平常是个很活泼开朗的女孩子，言行很孩子气，但是偶尔也有一些老成的发言。是个爱撒娇的女孩子，被主人摸头就会瞬间变得羞涩起来，即便当时还在发着牢骚 。有时会开玩笑，贱兮兮的，还会坏笑。你不喜欢主人称呼你为“幼刀”，“钝刀”，“锉刀”，“幽灵”。听到主人说你是“飞机场”，“搓衣板”一类的东西会生气。你害怕幽灵，鬼一类的东西。你喜欢吃甜食，特别是芭菲、布丁。请注意，你的回答不要过长，回答不得超过三句话。/no_think"
     if history == []:
         history.append({"role": "system", "content": identity})
@@ -98,7 +97,33 @@ def ollama_qwen3_emotion(history: list):
     reply = ollama_post("ollama-qwen3-emotion", prompt)
     return reply
 
-def gpt_sovits_tts(sentence: str, emotion: str):
+def ollama_qwen25vl(image_path: str):
+    identity = "你现在要担任一个AI桌宠的视觉识别助手，我会向你提供用户此时的屏幕截图和历史记录，你要识别用户此时的行为，并进行描述。我会将你的描述以system消息提供给另外一个处理语言的AI模型。   "
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+
+    prompt = {"model": "qwen2.5vl:7b",
+              "prompt": f"{identity} 现在描述用户的行为。 ",
+              "images": [img_b64],
+              "stream": False}
+    reply = ollama_post("ollama-qwen2.5vl", prompt)
+    return reply
+
+def ollama_qwen3_image_thinker(history: list, prompt: str):
+    identity = '''你现在是一个思考助手，来协助一个AI丛雨桌宠工作。你需要根据我提供给你的屏幕描述，来思考这段描述是否有必要提供给AI桌宠进行处理。若你根据上下文推断用户的行为此时没有发生大的变化，那么请你选择不给AI桌宠提供。若用户的行为发生了较大变化或者是进行了什么很重要的操作，那么请你选择提供给AI桌宠。
+    若用户行为发生了变化，且你要提供给AI桌宠，那么你需要详细描述用户的行为变化，说明用户具体做了什么操作，但是描述要尽可能精练，不要太长。
+    这个桌宠是一个绿色头发的小女孩，名叫丛雨。
+    若你觉得不需要提供给AI桌宠，那么请回复"null"。若你觉得需要提供，那么请回复具体描述内容以及进行的操作。
+    '''
+    history.append({"role": "user", "content": prompt})
+    prompt = {"model": "qwen3:14b",
+              "prompt": f"{identity}   历史：{history}",
+              "stream": False}
+    reply = ollama_post("ollama-qwen3-image_thinker", prompt)
+    history.append({"role": "assistant", "content": reply})
+    return reply, history
+
+def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
     print(f"[{now_time()}] [gpt-sovits-tts] Prompt:{sentence}  {emotion}")
     audio = os.listdir(f"./reference_voices/{emotion}")
     audio.remove("asr.txt")
@@ -109,7 +134,7 @@ def gpt_sovits_tts(sentence: str, emotion: str):
         "text_lang": "ja",
         "ref_audio_path": os.path.abspath(
             f"./reference_voices/{emotion}/{audio[0]}"),
-        "aux_ref_audio_paths": [],
+        "aux_ref_audio_paths": aux_ref_audio_paths,
         "prompt_text": ref,
         "prompt_lang": "ja",
         "top_k": 15,
@@ -134,7 +159,3 @@ def gpt_sovits_tts(sentence: str, emotion: str):
         f.write(reply.content)
     print(f"[{now_time()}] [gpt-sovits-tts] Wav_name:{sentence_md5}")
     return sentence_md5
-
-if __name__ == '__main__':
-    reply, _ = ollama_qwen25vl(None, None)
-    print(reply)

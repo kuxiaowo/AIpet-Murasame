@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QAction, QMenu
 from classes import Murasame  # 从 classes 包引入你的桌宠类
 
 if __name__ == "__main__":
+
     app = QApplication(sys.argv) ## 创建应用对象
     pet = Murasame()#创建桌宠实例
     pet.show()#显示窗口

@@ -1,8 +1,8 @@
+import io
 from datetime import datetime
 from typing import List, Dict
 
 import aiohttp
-import io
 import requests
 import torch
 import uvicorn
