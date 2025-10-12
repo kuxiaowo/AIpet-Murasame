@@ -5,7 +5,7 @@
     "gpt_sovits_tts": "http://localhost:28565/tts",
     "deepseek_api": "http://localhost:28565/deepseekAPI"
   },
-  "portrait": "b",
+  "portrait": "a",
   "user_name": "Kuxw",
   "model_type": "deepseek",
   "screen_type": "ture"
