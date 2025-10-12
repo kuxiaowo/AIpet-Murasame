@@ -154,7 +154,6 @@ class qwen3_lora_deepseekAPI_Worker(QThread):
 
 
 
-
 class ScreenWorker(QThread):
     # 发出临时文件路径（主线程负责删除）
     screenshot_captured = pyqtSignal(str)

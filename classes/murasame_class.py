@@ -77,7 +77,7 @@ class Murasame(QLabel):
         self._screenshot_worker = None
         self._screenshot_executor = ThreadPoolExecutor(max_workers=2)  # 处理网络调用用
         self.force_stop = False  # 是否处于强制中断状态
-        if screen_type == "ture":
+        if screen_type == "true":
             QTimer.singleShot(1000, lambda: self.start_screenshot_worker(interval=self.interval))
 
 
@@ -135,7 +135,7 @@ class Murasame(QLabel):
     def resume_all_ai(self):
         """用户输入结束后：恢复截图线程与AI响应"""
         self.force_stop = False  # ✅ 解除软中断标志
-        if not (self._screenshot_worker and self._screenshot_worker.isRunning()) and screen_type == "ture":
+        if not (self._screenshot_worker and self._screenshot_worker.isRunning()) and screen_type == "true":
             print("[AIpet] 恢复截图线程")
             self.start_screenshot_worker(interval=self.interval)
 
