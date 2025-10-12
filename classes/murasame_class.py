@@ -415,6 +415,7 @@ class Murasame(QLabel):
                 self.display_text = f"【{self.pet_name}】\n"
                 self.update()
                 # 启动AI线程
+                print(f"[User input] {text}")
                 self.start_qwen3_thread(text, role="user")
             else:
                 self.show_text("主人，你说什么？", typing=True)

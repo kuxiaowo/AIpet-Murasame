@@ -17,7 +17,7 @@ from tool.config import get_config
 # ================= 初始化 =================
 app = FastAPI()
 
-ollama_url = "http://127.0.0.1:11434/api/generate"
+ollama_url = "http://localhost:11434/api/generate"
 
 #加载模型
 base_model_path = "./models/Qwen3-14B"   # 基础模型
