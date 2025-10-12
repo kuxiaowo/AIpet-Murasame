@@ -58,7 +58,7 @@ class Murasame(QLabel):
         #AI对话
         self.history = []
         self.portrait_history = []
-        self.screen_history = []
+        self.screen_history = ["", ""]
 
         #初始立绘
         self.setWindowFlags(
@@ -106,7 +106,7 @@ class Murasame(QLabel):
                         thinker_reply, self.screen_history = deepseek_image_thinker(self.screen_history, desc)
                     elif model_type == "local":
                         thinker_reply, self.screen_history = ollama_qwen3_image_thinker(self.screen_history, desc)
-                    if thinker_reply != "null":
+                    if "null" not in thinker_reply:
                         self.start_qwen3_thread(thinker_reply, role="system", t=True)
                 except Exception as e:
                     print(f"[AIpet] 截图分析失败: {e}")

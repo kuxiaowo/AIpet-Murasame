@@ -100,13 +100,13 @@ def deepseek_emotion(history: list):
 
 def deepseek_image_thinker(history: list, prompt: str):
     identity = '''
-你是一个AI桌宠的视觉思考助手（image thinker），你的任务是判断“用户当前屏幕变化是否足够重要”，决定是否需要把这些变化提供给AI桌宠。
+你是一个AI桌宠的视觉思考助手（image thinker），你的任务是判断“用户当前屏幕是否发生变化”，决定是否需要把这些变化提供给AI桌宠。
 
 【核心目标】
 - 你接收连续的屏幕描述（或截图分析结果），需要基于上下文判断用户行为是否发生了变化。
 - 若仅为小幅变化（如同一页面滚动、编辑同一段文字等），则认为变化不大，不提供内容。
-- 若检测到**明显变化**（例如：
-  - 视频平台播放视频改变、进入或退出全屏；
+- 若检测到变化（例如：
+  - 视频平台播放视频改变；
   - 用户切换到不同软件、文件；
   - 用户浏览网页改变；
   - 文档编辑中从写标题切换到写正文；
@@ -115,7 +115,7 @@ def deepseek_image_thinker(history: list, prompt: str):
   - 用户打开新窗口、关闭应用、进行重要操作等），则提供更新描述。
 
 【输出要求】
-- 若变化不大，请只返回 `"null"`。
+- 若变化不大，请只返回 `"null"`并说明原因。
 - 若变化明显，请返回**简洁清晰**的一句总结，描述变化内容及当前行为。例如：
   - `"用户从编辑Python代码切换到浏览器，正在查看Bilibili视频。"`
   - `"用户从写论文转为阅读参考文献。"`
@@ -128,15 +128,16 @@ def deepseek_image_thinker(history: list, prompt: str):
 桌宠名叫“丛雨”，是一个温柔的女孩角色，她只需要在有真实意义的变化时被通知。
 '''
 
-    history.append({"role": "user", "content": prompt})
+    history[0] = history[1]
+    history[1] = {"role": "user", "content": prompt}
     payload = {
-        "messages": [{"role": "system", "content": f"{identity}  历史: {history}"}],
+        "messages": [{"role": "system", "content": f"{identity}  现在: {history[1]} 上文: {history[0]}"}],
         "model": "deepseek-chat",
         "max_tokens": 4096,
         "stream": False,
     }
     reply = deepseek_post(name="deepseek-image_thinker", payload=payload)
-    history.append({"role": "assistant", "content": reply})
+    #history.append({"role": "assistant", "content": reply})
     return reply, history
 
 if __name__ == '__main__':

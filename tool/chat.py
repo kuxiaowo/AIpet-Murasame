@@ -115,12 +115,13 @@ def ollama_qwen3_image_thinker(history: list, prompt: str):
     这个桌宠是一个绿色头发的小女孩，名叫丛雨。
     若你觉得不需要提供给AI桌宠，那么请回复"null"。若你觉得需要提供，那么请回复具体描述内容以及进行的操作。
     '''
-    history.append({"role": "user", "content": prompt})
+    history[1] = history[2]
+    history[2] = {"role": "user", "content": prompt}
     prompt = {"model": "qwen3:14b",
               "prompt": f"{identity}   历史：{history}",
               "stream": False}
     reply = ollama_post("ollama-qwen3-image_thinker", prompt)
-    history.append({"role": "assistant", "content": reply})
+    #history.append({"role": "assistant", "content": reply})
     return reply, history
 
 def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
