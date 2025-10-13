@@ -104,7 +104,7 @@ async def gpt_sovits_tts(req: gpt_sovits_tts_request):
         async with session.post(
             url,
             json=req.params,
-            timeout=aiohttp.ClientTimeout(total=60)
+            timeout=aiohttp.ClientTimeout(total=300)
         ) as response:
             if response.status == 200:
                 content = await response.read()
@@ -125,7 +125,7 @@ async def deepseekAPI(req: deepseekAPI_request):
                 url,
                 headers=req.headers,
                 json=req.payload,
-                timeout=aiohttp.ClientTimeout(total=30)
+                timeout=aiohttp.ClientTimeout(total=180)
         ) as response:
             if response.status == 200:
                 return await response.json()
