@@ -98,7 +98,7 @@ def ollama_qwen3_emotion(history: list):
     return reply
 
 def ollama_qwen25vl(image_path: str):
-    identity = "你现在要担任一个AI桌宠的视觉识别助手，我会向你提供用户此时的屏幕截图和历史记录，你要识别用户此时的行为，并描述屏幕内容与列出使用的软件。我会将你的描述以system消息提供给另外一个处理语言的AI模型。   "
+    identity = "你现在要担任一个AI桌宠的视觉识别助手，我会向你提供用户此时的屏幕截图和历史记录，你要详细描述屏幕内容与使用的软件，描述页面主题。我会将你的描述以system消息提供给另外一个处理语言的AI模型。   "
     with open(image_path, "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
 

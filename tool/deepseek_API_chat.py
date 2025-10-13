@@ -39,6 +39,7 @@ def deepseek_talk(history: list, user_input: str, role: str):
         "stream": False,
     }
     reply = deepseek_post(name="deepseek-talk", payload=payload)
+    
     history.append({"role": "assistant", "content": reply})  # 加入历史
     return reply, history
 
@@ -103,7 +104,7 @@ def deepseek_image_thinker(history: list, prompt: str):
 你是一个AI桌宠的视觉思考助手（image thinker），你的任务是判断“用户当前屏幕是否发生变化”，决定是否需要把这些变化提供给AI桌宠。
 
 【核心目标】
-- 你接收连续的屏幕描述（或截图分析结果），需要基于上下文判断用户行为是否发生了变化。
+- 你接收连续的屏幕描述（或截图分析结果），需要基于上下文判断用户行为和浏览内容是否发生了变化。
 - 若仅为小幅变化（如同一页面滚动、编辑同一段文字等），则认为变化不大，不提供内容。
 - 若检测到变化（例如：
   - 视频平台播放视频改变；
@@ -113,16 +114,18 @@ def deepseek_image_thinker(history: list, prompt: str):
   - 编程时从写代码切换到调试或运行；
   - 学习任务中从一个主题切换到另一个；
   - 用户打开新窗口、关闭应用、进行重要操作等），则提供更新描述。
+- 一但浏览页面发生变化，使用软件发生变化，就需要提供。
 
 【输出要求】
-- 若变化不大，请只返回 `"null"`并说明原因。
-- 若变化明显，请返回**简洁清晰**的一句总结，描述变化内容及当前行为。例如：
+- 若没有变化，请返回 "null"并**说明原因**。
+
+- 若变化明显，请返回**简洁清晰**的一句总结，描述变化内容及当前行为，不需要返回理由。例如：
   - `"用户从编辑Python代码切换到浏览器，正在查看Bilibili视频。"`
   - `"用户从写论文转为阅读参考文献。"`
   - `"用户关闭了视频播放器，开始在VSCode调试项目。"`
 
 【上下文利用】
-- 你可以参考“历史”中的先前描述，用它来判断这次变化是否值得汇报。
+- 你可以参考“上一次截屏”中的先前描述，用它来判断这次变化是否值得汇报。
 - 你的判断要尽量稳重：宁可漏报小变化，也不要频繁报告细微变化。
 
 桌宠名叫“丛雨”，是一个温柔的女孩角色，她只需要在有真实意义的变化时被通知。
@@ -131,7 +134,7 @@ def deepseek_image_thinker(history: list, prompt: str):
     history[0] = history[1]
     history[1] = {"role": "user", "content": prompt}
     payload = {
-        "messages": [{"role": "system", "content": f"{identity}  现在: {history[1]} 上文: {history[0]}"}],
+        "messages": [{"role": "system", "content": f"{identity}  现在: {history[1]} 上一次截屏: {history[0]}"}],
         "model": "deepseek-chat",
         "max_tokens": 4096,
         "stream": False,
