@@ -54,21 +54,8 @@ if exist "%~dp0requirements.txt" (
 )
 if errorlevel 1 goto fail
 
-echo [信息] 检查并执行 download.py ...
-if exist "%~dp0download.py" (
-    echo [执行] 正在运行 download.py，请稍候...
-    python "%~dp0download.py"
-    if errorlevel 1 (
-        echo [警告] download.py 执行过程中出现问题，请检查日志。
-    ) else (
-        echo [成功] download.py 执行完成。
-    )
-) else (
-    echo [提示] 未找到 download.py，跳过此步骤。
-)
-
 echo.
-echo [成功] 环境 "%ENV_NAME%" 已全部配置完毕！
+echo [成功] 环境 "%ENV_NAME%" 已成功安装并配置完成！
 pause
 exit /b 0
 
