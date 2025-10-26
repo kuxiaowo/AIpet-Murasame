@@ -67,3 +67,5 @@ https://github.com/RVC-Boss/GPT-SoVITS
   "screen_type": "false"      #屏幕识别开关
 }
 ```
+
+I want a little star.
