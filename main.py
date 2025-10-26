@@ -1,11 +1,24 @@
 import sys
+import threading
 
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QAction, QMenu
 
 from classes import Murasame  # 从 classes 包引入你的桌宠类
+from api import app as api_app  # 引入 FastAPI 应用以便在本进程中启动
+import uvicorn
 
 if __name__ == "__main__":
+
+    # 后台启动本地 API 服务（FastAPI + Uvicorn）
+    def _run_api_server():
+        # 使用对象方式配置，避免事件循环冲突
+        config = uvicorn.Config(api_app, host="0.0.0.0", port=28565, log_level="info")
+        server = uvicorn.Server(config)
+        server.run()
+
+    api_thread = threading.Thread(target=_run_api_server, name="uvicorn-thread", daemon=True)
+    api_thread.start()
 
     app = QApplication(sys.argv) ## 创建应用对象
     pet = Murasame()#创建桌宠实例

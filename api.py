@@ -1,9 +1,10 @@
 import io
+import os
+import logging
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import aiohttp
-import requests
 import torch
 import uvicorn
 from fastapi import FastAPI
@@ -14,127 +15,168 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from tool.config import get_config
 
-# ================= 初始化 =================
+
+# ============== App & Logging ==============
 app = FastAPI()
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
+logger = logging.getLogger("api")
 
-ollama_url = "http://localhost:11434/api/generate"
 
-#加载模型
-base_model_path = "./models/Qwen3-14B"   # 基础模型
-lora_model_path = "./models/Murasame"    # LoRA 微调权重
+# Upstream service endpoints
+OLLAMA_UPSTREAM_URL = os.getenv("OLLAMA_UPSTREAM_URL", "http://localhost:11434/api/generate")
+
+
+# ============== Local Model (optional) ==============
+base_model_path = "./models/Qwen3-14B"
+lora_model_path = "./models/Murasame"
+model: Optional[AutoModelForCausalLM] = None
+tokenizer: Optional[AutoTokenizer] = None
+
+
 def load_model_and_tokenizer():
-    # 加载 tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
-    #配置量化参数
+    tok = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,                # 启用 4bit 量化，降低显存占用
-        bnb_4bit_use_double_quant=True,   # 启用二次量化，进一步节省显存
-        bnb_4bit_quant_type="nf4",        # 使用 nf4 量化算法，比 fp4 更好
-        bnb_4bit_compute_dtype=torch.float16  # 推理计算时用半精度 float16
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
     )
-    # 加载基础模型
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model_path,                       # 基础模型路径
-        device_map="auto",                # 自动分配 GPU / CPU
-        quantization_config=bnb_config,   # 使用上面配置的 4bit 量化
-        trust_remote_code=True,           # 同样允许自定义逻辑
-        offload_buffers=True  # 把临时 buffer 放到 CPU，减轻 GPU 压力
+    mdl = AutoModelForCausalLM.from_pretrained(
+        base_model_path,
+        device_map="auto",
+        quantization_config=bnb_config,
+        trust_remote_code=True,
+        offload_buffers=True,
     )
+    mdl = PeftModel.from_pretrained(mdl, lora_model_path)
+    mdl.eval()
+    return mdl, tok
 
-    # 加载 LoRA adapter
-    model = PeftModel.from_pretrained(model, lora_model_path)
-    model.eval()
-
-    return model, tokenizer
 
 def now_time():
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return now
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-#本地qwen3-lora端口
-class qwen3_lora_request(BaseModel):
+# ============== Endpoints ==============
+# qwen3-lora (local inference)
+class Qwen3LoraRequest(BaseModel):
     history: List[Dict[str, str]]
+
+
 @app.post("/qwen3-lora")
-async def qwen3_lora(req: qwen3_lora_request):
+async def qwen3_lora(req: Qwen3LoraRequest):
+    global model, tokenizer
     history = req.history
-    text = tokenizer.apply_chat_template( #apply_chat_template 是 HuggingFace 新 API，用来把 history（对话历史）转成 模型能理解的输入格式
+
+    # Only available in local mode
+    model_type = get_config("./config.json").get("model_type", "deepseek")
+    if model_type != "local":
+        return {"error": "qwen3-lora 不可用：当前为云端模式"}
+
+    if model is None or tokenizer is None:
+        logger.info("Loading local Qwen3 + LoRA weights...")
+        model, tokenizer = load_model_and_tokenizer()
+
+    text = tokenizer.apply_chat_template(
         history,
         tokenize=False,
         add_generation_prompt=True,
-        enable_thinking=False
+        enable_thinking=False,
     )
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=2048,
+            max_new_tokens=512,
             do_sample=True,
             temperature=0.9,
             top_p=0.95,
             top_k=20,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.eos_token_id,
         )
 
-    reply = tokenizer.decode(outputs[0], skip_special_tokens=True).strip()#去掉输入部分，只保留生成的新 tokens
+    # Decode only generated tokens
+    gen_ids = outputs[0][inputs["input_ids"].shape[-1]:]
+    reply = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
     return reply
 
 
-#本地ollama qwen3端口
-class ollama_request(BaseModel):
+# ollama proxy (async)
+class OllamaRequest(BaseModel):
     prompt: dict
     headers: dict
+
+
 @app.post("/ollama")
-async def ollama_qwen3(req: ollama_request):
-    resp = requests.post(ollama_url, headers=req.headers, json=req.prompt)
-    return resp.json()
+async def ollama_qwen3(req: OllamaRequest):
+    try:
+        timeout = aiohttp.ClientTimeout(total=180)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(OLLAMA_UPSTREAM_URL, headers=req.headers, json=req.prompt) as resp:
+                data = await resp.json()
+                if resp.status != 200:
+                    logger.warning(f"Ollama upstream error {resp.status}: {data}")
+                return data
+    except Exception as e:
+        logger.exception("Ollama upstream request failed")
+        return {"error": f"upstream request failed: {e}"}
 
 
-#本地语音合成端口
-
-class gpt_sovits_tts_request(BaseModel):
+# gpt-sovits tts proxy
+class GPTSoVITSTTSRequest(BaseModel):
     params: dict
 
-@app.post("/tts")
-async def gpt_sovits_tts(req: gpt_sovits_tts_request):
-    url = "http://localhost:9880/tts"
 
+@app.post("/tts")
+async def gpt_sovits_tts(req: GPTSoVITSTTSRequest):
+    url = "http://localhost:9880/tts"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=req.params,
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    return StreamingResponse(io.BytesIO(content), media_type="audio/wav")
+                else:
+                    text = await response.text()
+                    logger.warning(f"TTS upstream error {response.status}: {text}")
+                    return {"error": f"TTS API返回错误: {response.status}"}
+    except Exception as e:
+        logger.exception("TTS upstream request failed")
+        return {"error": f"TTS upstream 请求失败: {e}"}
+
+
+# deepseek cloud API passthrough
+class DeepseekAPIRequest(BaseModel):
+    payload: dict
+    headers: dict
+
+
+@app.post("/deepseekAPI")
+async def deepseekAPI(req: DeepseekAPIRequest):
+    url = "https://api.deepseek.com/chat/completions"
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,
-            json=req.params,
-            timeout=aiohttp.ClientTimeout(total=300)
-        ) as response:
-            if response.status == 200:
-                content = await response.read()
-                return StreamingResponse(io.BytesIO(content), media_type="audio/wav")
-            else:
-                return {"error": f"TTS API返回错误: {response.status}"}
-
-#deepseek云端API接口
-class deepseekAPI_request(BaseModel):
-    payload: dict
-    headers: dict
-@app.post("/deepseekAPI")
-async def deepseekAPI(req: deepseekAPI_request):
-    url = "https://api.deepseek.com/chat/completions"
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-                url,
-                headers=req.headers,
-                json=req.payload,
-                timeout=aiohttp.ClientTimeout(total=180)
+            headers=req.headers,
+            json=req.payload,
+            timeout=aiohttp.ClientTimeout(total=180),
         ) as response:
             if response.status == 200:
                 return await response.json()
             else:
                 return {"error": f"API返回错误: {response.status}"}
 
-# ================= 启动 =================
+
+# ============== Entrypoint ==============
 if __name__ == "__main__":
-    model_type = get_config("./config.json")['model_type']
-    if model_type == "local":
+    cfg = get_config("./config.json")
+    if cfg.get("model_type") == "local":
+        # Optional: preload on startup
         model, tokenizer = load_model_and_tokenizer()
     uvicorn.run(app, host="0.0.0.0", port=28565)
+

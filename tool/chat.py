@@ -151,7 +151,7 @@ def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
         "parallel_infer": True,
         "repetition_penalty": 1.35,
         "sample_steps": 32,
-        "super_sampling": False,
+        "super_sampling": False
     }
 
     reply = requests.post(gpt_sovits_tts_url, json={"params": params})
