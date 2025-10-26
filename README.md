@@ -43,7 +43,7 @@ https://github.com/RVC-Boss/GPT-SoVITS
 下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
 （我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容）
 ##### 配置模型文件
-将刚刚下好的模型解压，将文件夹中整个文件放入AIpet目录下（是这个文件夹下就是项目代码的文件夹放入）
+将刚刚下好的项目解压，将其中整个GPT-Sovits文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
 
 ### 开始运行
 
