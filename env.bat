@@ -30,11 +30,12 @@ if exist "%CONDA_BASE%\envs\%ENV_NAME%" (
 if "%ENV_EXISTS%"=="true" (
     echo [提示] 环境 "%ENV_NAME%" 已存在。
     echo.
+    set "user_choice="
     set /p "user_choice=是否删除此环境并重新创建？(Y/N): "
-    if /I "%user_choice%"=="N" (
+    if /I "!user_choice!"=="N" (
         echo [跳过] 保留原有环境。
         goto :install_packages
-    ) else if /I "%user_choice%"=="Y" (
+    ) else if /I "!user_choice!"=="Y" (
         echo [信息] 正在删除旧环境...
         call conda remove -y -n "%ENV_NAME%" --all || goto fail
     ) else (
@@ -42,7 +43,6 @@ if "%ENV_EXISTS%"=="true" (
         goto :install_packages
     )
 )
-
 
 echo [信息] 正在创建新环境 "%ENV_NAME%"（Python %PY_VER%）...
 call conda create -y -n "%ENV_NAME%" python=%PY_VER% || goto fail
@@ -67,6 +67,13 @@ if exist "%~dp0requirements.txt" (
     pip install -r "%~dp0requirements.txt" || goto fail
 ) else (
     echo [警告] 未找到 requirements.txt，跳过此步骤。
+)
+
+echo [信息] 正在下载模型...
+if exist "%~dp0download.py" (
+    python "%~dp0download.py" || goto fail
+) else (
+    echo [警告] 未找到 download.py。
 )
 
 echo.
