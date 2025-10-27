@@ -59,7 +59,7 @@ set "PIP_NO_INPUT=1"
 
 echo [信息] 正在安装 PyTorch（CUDA 13.0）...
 python -c "import sys; print(sys.version)" 1>nul 2>nul || goto fail
-pip install --upgrade pip || goto fail
+
 pip install torch torchvision --index-url %TORCH_URL% || goto fail
 
 echo [信息] 正在安装项目依赖...
