@@ -6,6 +6,7 @@ rem ========= Configuration =========
 set "ENV_NAME=AIpet_env"
 set "PY_VER=3.10"
 set "TORCH_URL=https://download.pytorch.org/whl/cu130"
+set "USE_TUNA_MIRROR=0"
 rem =================================
 
 echo ==============================================
@@ -50,6 +51,10 @@ call conda create -y -n "%ENV_NAME%" python=%PY_VER% || goto fail
 echo [INFO] Activating environment "%ENV_NAME%"...
 call conda activate "%ENV_NAME%" || goto fail
 
+rem ======== NEW: upgrade pip ASAP in the target env ========
+call :upgrade_pip || goto fail
+rem =========================================================
+
 set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 set "PIP_NO_INPUT=1"
 
@@ -75,6 +80,36 @@ if exist "%~dp0download.py" (
 echo.
 echo [SUCCESS] Environment "%ENV_NAME%" has been successfully installed and configured!
 pause
+exit /b 0
+
+:upgrade_pip
+echo [INFO] Upgrading pip in "%ENV_NAME%"...
+for /f "delims=" %%P in ('python -c "import sys;print(sys.executable)"') do set "PYBIN=%%P"
+echo [INFO] Python: "%PYBIN%"
+
+rem 1) show current versions
+python -m pip --version
+
+rem 2) do upgrade (mirror optional)
+if "%USE_TUNA_MIRROR%"=="1" (
+    python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple || goto :try_ensurepip
+) else (
+    python -m pip install --upgrade pip || goto :try_ensurepip
+)
+
+rem 3) verify
+pip --version
+exit /b 0
+
+:try_ensurepip
+echo [WARN] pip upgrade failed; trying ensurepip...
+python -m ensurepip --upgrade || exit /b 1
+if "%USE_TUNA_MIRROR%"=="1" (
+    python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple || exit /b 1
+) else (
+    python -m pip install --upgrade pip || exit /b 1
+)
+pip --version
 exit /b 0
 
 :fail
