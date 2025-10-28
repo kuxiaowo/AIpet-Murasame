@@ -15,7 +15,7 @@
 
 ## 🚀 快速开始
 ### V1.2.0版本支持一键部署与运行
-### [教程](https://www.bilibili.com/video/BV1vjeGzfE1w)
+### [教程视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
 ### 环境准备
 
 #### 1. 创建虚拟环境
