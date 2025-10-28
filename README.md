@@ -11,16 +11,15 @@
 ## 🔗 原项目指路
 
 - **GitHub 项目**: [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)
-- **演示视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
+- **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
 
 ## 🚀 快速开始
 ### V1.2.0版本支持一键部署与运行
+### [教程](https://www.bilibili.com/video/BV1vjeGzfE1w)
 ### 环境准备
 
 #### 1. 创建虚拟环境
 安装anaconda配置环境[anaconda官网](https://www.anaconda.com/download)（如果你用其他的虚拟环境也可以）
-
-执行env.bat自动创建环境
 
 
 #### 2. 安装Ollama（可选）
@@ -43,7 +42,12 @@ https://github.com/RVC-Boss/GPT-SoVITS
 下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
 （我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容）
 ##### 配置模型文件
-将刚刚下好的项目解压，将其中整个GPT-Sovits文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
+将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
+将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
+
+#### 4. 一键安装环境
+
+直接执行env.bat即可
 
 ### 开始运行
 
