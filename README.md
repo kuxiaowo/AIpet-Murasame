@@ -14,7 +14,7 @@
 - **演示视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
 
 ## 🚀 快速开始
-
+### V1.2.0版本支持一键部署与运行
 ### 环境准备
 
 #### 1. 创建虚拟环境
@@ -68,4 +68,4 @@ https://github.com/RVC-Boss/GPT-SoVITS
 }
 ```
 
-I want a little star.
+If you like, i want a little star.
