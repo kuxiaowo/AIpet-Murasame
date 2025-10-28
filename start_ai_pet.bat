@@ -13,7 +13,7 @@ if errorlevel 1 (
 )
 set "PUSHED=1"
 
-set "TTS_DIR=%ROOT%GPT-SoVITS-v2pro-20250604-nvidia50"
+set "TTS_DIR=%ROOT%GPT-SoVITS"
 set "TTS_PY=%TTS_DIR%\runtime\python.exe"
 set "TTS_SCRIPT=%TTS_DIR%\api_v2.py"
 
