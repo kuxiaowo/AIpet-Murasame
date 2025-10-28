@@ -13,7 +13,7 @@ console = Console()
 
 MODELS_DIR = "./models"
 GS_ROOT = os.path.join(
-    os.getcwd(), "GPT-SoVITS-v2pro-20250604-nvidia50"
+    os.getcwd(), "GPT-SoVITS"
 )
 GS_GPT_DIR = os.path.join(GS_ROOT, "GPT_weights")
 GS_SOVITS_DIR = os.path.join(GS_ROOT, "SoVITS_weights")
