@@ -11,7 +11,7 @@
 ## 🔗 原项目指路
 
 - **GitHub 项目**: [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)
-- **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
+- **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
 
 ## 🚀 快速开始
 ### V1.2.0版本支持一键部署与运行
@@ -48,7 +48,19 @@ https://github.com/RVC-Boss/GPT-SoVITS
 #### 4. 一键安装环境
 
 直接执行env.bat即可
-
+##### 手动安装
+1. 创建conda环境
+```bash
+conda create -n AIpet_env python=3.10
+```
+2. 安装依赖
+```bash
+conda activate AIpet_env
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   #Pytorch 其实不在本地跑模型不用装
+cd /d 你的项目地址
+pip -r requirements.txt
+python download.py   #下模型
+```
 ### 开始运行
 
 #### 直接执行start_ai_pet.bat
