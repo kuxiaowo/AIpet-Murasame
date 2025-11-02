@@ -38,9 +38,14 @@ class Murasame(QLabel):
         self.pet_name = "丛雨" #宠物名称
         self.user_name = CONFIG["user_name"] #用户名字
         self.display_text = "" #将要展示的文本
-        self.text_font = QFont("思源黑体Bold.otf", 18)  # 设置字体
-        self.text_x_offset = 140    #文本框左右偏移量
-        self.text_y_offset = -100  #文本框上下偏移量
+        self._font_family = "思源黑体Bold.otf"
+        self._base_font_size = 40
+        self._base_text_x_offset = 140  #文本框左右偏移量
+        self._base_text_y_offset = -100 #文本框上下偏移量
+        self._base_border_size = 2
+        self._current_scale = 1.0
+        self.border_size = self._base_border_size
+        self._update_text_scaling()
 
         #创建打字机效果的计时器
         self.typing_timer = QTimer(self)
@@ -280,7 +285,7 @@ class Murasame(QLabel):
                 align_flag = Qt.AlignHCenter | Qt.AlignBottom #水平居中+底部对齐
 
             # 文字描边（黑色）
-            border_size = 2  #描边的偏移量
+            border_size = self.border_size  #描边的偏移量
             painter.setPen(QColor(44, 22, 28)) #设置画笔颜色RGB 深棕色
             for dx, dy in [   #分别向八个方向偏移绘制八个字体，形成描边
                 (-border_size, 0), (border_size, 0),    #左、右
@@ -328,21 +333,36 @@ class Murasame(QLabel):
 
     def _scale_portrait_pixmap(self, pixmap: QPixmap) -> QPixmap:
         """Scale portrait height proportionally to the current screen."""
-        default_height = max(1, pixmap.height() // 2)
         screen = QGuiApplication.primaryScreen()
         available_height = screen.availableGeometry().height() if screen else None
 
         if available_height:
-            target_height = min(default_height, int(available_height * DEFAULT_PORTRAIT_SCREEN_RATIO))
+            target_height = int(available_height * DEFAULT_PORTRAIT_SCREEN_RATIO)
         else:
-            target_height = default_height
+            target_height = pixmap.height()
 
         target_height = max(1, target_height)
         target_height = min(target_height, pixmap.height())
         if pixmap.height() >= 240:
             target_height = max(240, target_height)
 
+        scale_factor = target_height / max(1, pixmap.height())
+        self._current_scale = max(scale_factor, 0.1)
+        self._update_text_scaling()
+
         return pixmap.scaledToHeight(target_height, Qt.SmoothTransformation)
+
+    def _update_text_scaling(self):
+        """Adjust subtitle font, margins, and outlines to follow portrait scale."""
+        scale = max(self._current_scale, 0.1)
+        scaled_font_size = max(10, int(round(self._base_font_size * scale)))
+        self.text_font = QFont(self._font_family, scaled_font_size)
+
+        self.text_x_offset = max(10, int(round(self._base_text_x_offset * scale)))
+        scaled_y = int(round(self._base_text_y_offset * scale))
+        self.text_y_offset = scaled_y if scaled_y < -10 else -10
+
+        self.border_size = max(1, int(round(self._base_border_size * scale)))
 
     #显示文本及打字机效果
     def show_text(self, text, typing=True):
