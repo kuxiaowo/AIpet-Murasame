@@ -8,5 +8,6 @@
   "portrait": "a",
   "user_name": "Kuxw",
   "model_type": "deepseek",
-  "screen_type": "false"
+  "screen_type": "false",
+  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8
 }

@@ -1,12 +1,14 @@
+import json
 import os
 import textwrap
 import wave
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import cv2
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt, QRect
-from PyQt5.QtGui import QImage
+from PyQt5.QtGui import QGuiApplication, QImage
 from PyQt5.QtGui import QPainter, QColor, QFont, QPixmap, QFontMetrics
 from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
@@ -21,9 +23,11 @@ from tool.generate import generate_fgimage
 def wrap_text(s, width=10):
     return '\n'.join(textwrap.wrap(s, width=width, break_long_words=True, break_on_hyphens=False))
 
-portrait_type = get_config("./config.json")['portrait']
-model_type = get_config("./config.json")['model_type']
-screen_type = get_config("./config.json")['screen_type']
+CONFIG = get_config("./config.json")
+portrait_type = CONFIG['portrait']
+model_type = CONFIG['model_type']
+screen_type = CONFIG['screen_type']
+DEFAULT_PORTRAIT_SCREEN_RATIO = CONFIG['DEFAULT_PORTRAIT_SCREEN_RATIO']
 
 class Murasame(QLabel):
     #初始化
@@ -32,7 +36,7 @@ class Murasame(QLabel):
         #文字
         self.full_text = ""  #打字机效果用到的整体字符串
         self.pet_name = "丛雨" #宠物名称
-        self.user_name = get_config("./config.json")["user_name"] #用户名字
+        self.user_name = CONFIG["user_name"] #用户名字
         self.display_text = "" #将要展示的文本
         self.text_font = QFont("思源黑体Bold.otf", 18)  # 设置字体
         self.text_x_offset = 140    #文本框左右偏移量
@@ -59,6 +63,8 @@ class Murasame(QLabel):
         self.history = []
         self.portrait_history = []
         self.screen_history = ["", ""]
+        self.history_file = Path("./data/history.json")
+        self._load_history()
 
         #初始立绘
         self.setWindowFlags(
@@ -69,7 +75,9 @@ class Murasame(QLabel):
         elif portrait_type == "b":
             self.first_portrait = [1715, 1306, 1719]
         self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)
-        self.portrait_history.append(("", str(self.first_portrait)))
+        if not self.portrait_history:
+            self.portrait_history.append(("", str(self.first_portrait)))
+            self._save_history()
 
         #线程
         self.worker = None
@@ -143,6 +151,7 @@ class Murasame(QLabel):
     def on_qwen3_reply(self, reply, portrait_list, history, portrait_history, voices):
         self.portrait_history = portrait_history
         self.history = history
+        self._save_history()
         def show_next_sentence(index = 0):
             def get_audio_length_wave(audio_file_path):
                 with wave.open(audio_file_path, 'rb') as wave_file:
@@ -293,36 +302,47 @@ class Murasame(QLabel):
 
     #更新立绘
     def update_portrait(self, target, layers):
-        """更新立绘（整合 cvimg_to_qpixmap 转换逻辑）"""
-        # 1. 调用立绘生成函数（返回 numpy RGBA 图像）
+        """Update portrait image by converting numpy RGBA into a QLabel pixmap."""
+        # 1. Generate the RGBA numpy image
         cv_img = generate_fgimage(target, layers)
 
-        # 2. RGBA → BGRA （避免颜色通道错乱导致皮肤发蓝）
-        if cv_img.shape[2] == 4:  # 确保是 RGBA 图像
+        # 2. Convert RGBA to BGRA to keep colors correct in Qt
+        if cv_img.shape[2] == 4:
             cv_img_bgra = cv2.cvtColor(cv_img, cv2.COLOR_RGBA2BGRA)
         else:
-            cv_img_bgra = cv_img  # 如果不是 RGBA，就原样保留
+            cv_img_bgra = cv_img
 
-        # 3. 转换成 QImage
-        h, w, ch = cv_img_bgra.shape #h高度，w宽度，ch通道数
-        bytes_per_line = ch * w      #计算一行有多少字节，一个通道占一个字节，所以字节数等于通道数乘以像素
-        qimg = QImage(cv_img_bgra.data, w, h, bytes_per_line, QImage.Format_RGBA8888)#用 numpy 的底层数据 cv_img.data 来创建一个 Qt 的 QImage，cv_img.data → 像素数据指针，w = 宽，h = 高，bytes_per_line = 每行字节数，QImage.Format_RGBA8888 = 告诉 Qt 这是 RGBA 8位图像
+        # 3. Build a QImage from the numpy buffer
+        h, w, ch = cv_img_bgra.shape
+        bytes_per_line = ch * w
+        qimg = QImage(cv_img_bgra.data, w, h, bytes_per_line, QImage.Format_RGBA8888)
 
-        # 4. 转换成 QPixmap
-        pixmap = QPixmap.fromImage(qimg)#把 QImage 转成 QPixmap，QPixmap 是专门用来在 Qt 界面里显示的图像格式（比 QImage 更快）
-        pixmap = pixmap.scaled(
-            pixmap.width() // 2,
-            pixmap.height() // 2,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
+        # 4. Convert to QPixmap and apply adaptive scaling
+        pixmap = QPixmap.fromImage(qimg)
+        pixmap = self._scale_portrait_pixmap(pixmap)
 
-        # 5. 设置到 QLabel
-        self.setPixmap(pixmap)#设置到 QLabel（或者你的 Murasame 类，继承自 QLabel）
-        # 6. 可选：让 QLabel 大小跟随立绘
+        # 5. Attach to the QLabel and request a repaint
+        self.setPixmap(pixmap)
         self.resize(pixmap.size())
-        # 7. 请求刷新（触发 paintEvent）
         self.update()
+
+    def _scale_portrait_pixmap(self, pixmap: QPixmap) -> QPixmap:
+        """Scale portrait height proportionally to the current screen."""
+        default_height = max(1, pixmap.height() // 2)
+        screen = QGuiApplication.primaryScreen()
+        available_height = screen.availableGeometry().height() if screen else None
+
+        if available_height:
+            target_height = min(default_height, int(available_height * DEFAULT_PORTRAIT_SCREEN_RATIO))
+        else:
+            target_height = default_height
+
+        target_height = max(1, target_height)
+        target_height = min(target_height, pixmap.height())
+        if pixmap.height() >= 240:
+            target_height = max(240, target_height)
+
+        return pixmap.scaledToHeight(target_height, Qt.SmoothTransformation)
 
     #显示文本及打字机效果
     def show_text(self, text, typing=True):
@@ -446,4 +466,37 @@ class Murasame(QLabel):
         self.portrait_history = []
         self.portrait_history.append(("", str(self.first_portrait)))
         self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)
+        self._save_history()
 
+    def _load_history(self):
+        try:
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            print(f"[AIpet] 创建记忆目录失败: {exc}")
+            return
+        if not self.history_file.exists():
+            return
+        try:
+            with self.history_file.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+        except Exception as exc:
+            print(f"[AIpet] 读取记忆失败: {exc}")
+            return
+        history = data.get("history")
+        portrait_history = data.get("portrait_history")
+        if isinstance(history, list):
+            self.history = history
+        if isinstance(portrait_history, list):
+            self.portrait_history = portrait_history
+
+    def _save_history(self):
+        try:
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "history": self.history,
+                "portrait_history": self.portrait_history,
+            }
+            with self.history_file.open("w", encoding="utf-8") as file:
+                json.dump(payload, file, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            print(f"[AIpet] 保存记忆失败: {exc}")
