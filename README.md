@@ -7,11 +7,13 @@
 
 一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目MurasamePet，进行部分重构和重写，并根据GPL-3.0许可证要求进行开源。
 
+## 最新版本咨询
 
+#### 1.2.1 将支持长期记忆与立绘大小调整
 ## 🔗 原项目指路
 
-- **GitHub 项目**: [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)
 - **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
+- **GitHub 项目**: [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)
 
 ## 🚀 快速开始
 ### V1.2.0版本支持一键部署与运行
@@ -65,6 +67,20 @@ python download.py   #下模型
 
 #### 直接执行start_ai_pet.bat
 
+#### 手动启动
+1. 启动桌宠本体(在项目目录启动)
+```bash
+conda activate AIpet_env
+python main.py
+```
+2. 启动TTS
+```bash
+cd /d 项目地址/GPT-SoVITS
+"项目地址/GPT-SoVITS/runtime/python.exe" api_v2.py
+```
+
+3. 开始互动
+
 ### 过程中
 点击丛雨下半部分可以输入内容，鼠标中建按住可以调整位置，长按鼠标按住丛雨的头部并左右移动可以摸头……
 
@@ -80,7 +96,8 @@ python download.py   #下模型
   "portrait": "a",            #立绘模式，可以改为b
   "user_name": "Kuxw",        #用户名字
   "model_type": "deepseek",   #模型类型，local为本地模型
-  "screen_type": "false"      #屏幕识别开关
+  "screen_type": "false",     #屏幕识别开关
+  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8    #桌宠高度最多占屏幕高度的多少
 }
 ```
 
