@@ -67,7 +67,9 @@ python run.py
 python run.py
 ```
 
+
 <details>
+  
 <summary> ⚠️ V1.2.0说明（点击展开）</summary>
 
   ### V1.2.0版本支持一键部署与运行
@@ -197,7 +199,7 @@ If you like, i want a little star.
 
 ---
 
-### 5️⃣ `start_ai_pet.bat` 闪退  
+### 5️⃣ `start_ai_pet.bat` 闪退  （V1.2.0）
 > **问题：** 双击启动脚本后直接关闭窗口。  
 > **解决：**  
 > - 确保路径中 **没有特殊符号或空格**。  
@@ -205,7 +207,7 @@ If you like, i want a little star.
 
 ---
 
-### 6️⃣ 脚本乱码或闪退  
+### 6️⃣ 脚本乱码或闪退  （V1.2.0）
 > **问题：** `env.bat` 或 `start_ai_pet.bat` 乱码、无法运行。  
 > **解决：**  
 > - 重新保存为 **ANSI 编码格式**。  
