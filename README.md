@@ -159,7 +159,7 @@ python run.py
 }
 ```
 
-If you like, i want a little star.
+### ⭐ 如果觉得有用，那请点个 Star 吧！
 
 
 ## 💬 常见问题（Q&A）
