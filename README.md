@@ -5,26 +5,30 @@
 
 ## 📖 项目简介
 
-一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目MurasamePet，进行部分重构和重写，并根据GPL-3.0许可证要求进行开源。
+一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目[LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)，进行部分重写和新加功能，并根据GPL-3.0许可证要求进行开源。
 
 ## 最新版本咨询
 
-#### 1.2.1 将支持长期记忆与立绘大小调整，优化一键运行
-## 🔗 原项目指路
+#### 1.2.1 将支持长期记忆与立绘大小调整，优化一键运行，tts与api异常日志优化（已上线测试版）
 
-- **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
-- **GitHub 项目**: [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)
+## 项目指路
+
+- **演示视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1oi4wzSEJJ)
+- **教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
+
 
 ## 🚀 快速开始
-### V1.2.0版本支持一键部署与运行
-### [教程视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
+### V1.2.1版本支持一键部署与运行
+### 教程视频（准备新做一个）
 ### 环境准备
 
-#### 1. 创建虚拟环境
-安装anaconda配置环境[anaconda官网](https://www.anaconda.com/download)（如果你用其他的虚拟环境也可以）
-
+#### 1. 下载项目文件
+Code > Download ZIP
+解压后放到你需要的路径，路径里不要有特殊符号。
 
 #### 2. 安装Ollama（可选）
+如果你需要本地对话或者是屏幕识别（不稳定）才需要安装
+
 项目里支持deepseek的API调用，需要自己获取并填入APIkey.json
 在 https://ollama.com/download 下载 Ollama 并安装
 ```bash
@@ -47,39 +51,91 @@ https://github.com/RVC-Boss/GPT-SoVITS
 将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
 将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
 
-#### 4. 一键安装环境
+#### 4. 获取Deepseek APIkey
+https://platform.deepseek.com/usage
+注册或登录账号，充值然后新建APIkey
 
-直接执行env.bat即可
-##### 手动安装
-1. 创建conda环境
+#### 5. 一键启动
+运行 run.py (使用默认python环境)
 ```bash
-conda create -n AIpet_env python=3.10
-```
-2. 安装依赖
-```bash
-conda activate AIpet_env  #激活环境
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   #Pytorch 其实不在本地跑模型不用装
-cd /d 你的项目地址
-pip -r requirements.txt   #安装依赖
-python download.py   #下模型
-```
-### 开始运行
-
-#### 直接执行start_ai_pet.bat
-
-#### 手动启动
-1. 启动桌宠本体(在项目目录启动)
-```bash
-conda activate AIpet_env
-python main.py
-```
-2. 启动TTS
-```bash
-cd /d 项目地址/GPT-SoVITS
-"项目地址/GPT-SoVITS/runtime/python.exe" api_v2.py
+python run.py
 ```
 
-3. 开始互动
+如果你需要虚拟环境，可以创建一个python >= 3.10 的环境
+激活环境之后
+```bash
+python run.py
+```
+
+<details>
+<summary> ⚠️ V1.2.0说明（点击展开）</summary>
+
+  ### V1.2.0版本支持一键部署与运行
+  ### [教程视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
+  ### 环境准备
+  
+  #### 1. 创建虚拟环境
+  安装anaconda配置环境[anaconda官网](https://www.anaconda.com/download)（如果你用其他的虚拟环境也可以）
+  
+  
+  #### 2. 安装Ollama（可选）
+  项目里支持deepseek的API调用，需要自己获取并填入APIkey.json
+  在 https://ollama.com/download 下载 Ollama 并安装
+  ```bash
+  ollama pull qwen3:14b
+  ollama pull qwen2.5vl:7b #如果需要屏幕识别
+  ```
+  ~~（注意：本地必须跑一个微调的qwen3-14b模型作为对话模型，其他辅助模型可由deepseek担任）~~
+  
+  V1.0.1版本支持除了语音合成，全部AI跑在云端deepseek，相应的download.py也会检查配置文件，若是"deepseek"则不会下载对话模型，想要后面跑在本地的需要修改配置后再下载一次
+  
+  V1.1.0版本支持屏幕识别，只支持跑在本地qwen2.5vl模型上，可以在配置文件设置此选项的开关
+  
+  
+  #### 3. 部署 GPT-SoVITS
+  https://github.com/RVC-Boss/GPT-SoVITS
+  
+  下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
+  （我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容）
+  ##### 配置模型文件
+  将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
+  将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
+  
+  #### 4. 一键安装环境
+  
+  直接执行env.bat即可
+  ##### 手动安装
+  1. 创建conda环境
+  ```bash
+  conda create -n AIpet_env python=3.10
+  ```
+  2. 安装依赖
+  ```bash
+  conda activate AIpet_env  #激活环境
+  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   #Pytorch 其实不在本地跑模型不用装
+  cd /d 你的项目地址
+  pip -r requirements.txt   #安装依赖
+  python download.py   #下模型
+  ```
+  ### 开始运行
+  
+  #### 直接执行start_ai_pet.bat
+  
+  #### 手动启动
+  1. 启动桌宠本体(在项目目录启动)
+  ```bash
+  conda activate AIpet_env
+  python main.py
+  ```
+  2. 启动TTS
+  ```bash
+  cd /d 项目地址/GPT-SoVITS
+  "项目地址/GPT-SoVITS/runtime/python.exe" api_v2.py
+  ```
+  
+  3. 开始互动
+
+</details>
 
 ### 过程中
 点击丛雨下半部分可以输入内容，鼠标中建按住可以调整位置，长按鼠标按住丛雨的头部并左右移动可以摸头……
