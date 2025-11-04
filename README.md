@@ -9,7 +9,7 @@
 
 ## 最新版本咨询
 
-#### 1.2.1 将支持长期记忆与立绘大小调整
+#### 1.2.1 将支持长期记忆与立绘大小调整，优化一键运行
 ## 🔗 原项目指路
 
 - **演示&教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
@@ -57,10 +57,10 @@ conda create -n AIpet_env python=3.10
 ```
 2. 安装依赖
 ```bash
-conda activate AIpet_env
+conda activate AIpet_env  #激活环境
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   #Pytorch 其实不在本地跑模型不用装
 cd /d 你的项目地址
-pip -r requirements.txt
+pip -r requirements.txt   #安装依赖
 python download.py   #下模型
 ```
 ### 开始运行
@@ -165,7 +165,7 @@ If you like, i want a little star.
 | ✅ | 桌宠显示大小写入配置文件 |
 | ✅ | 添加 Q&A 支持，解决部分常见问题 |
 |  | tts尝试部署到阿里云 |
-|  | 学习原项目一键启动与自动环境配置机制，优化依赖（避免强制下载 PyTorch） |
+|  | python脚本一键启动，兼容性更高，优化依赖（避免强制下载 PyTorch） |
 |  | 检查“置顶逻辑”，确保游戏中始终保持窗口置顶 |
 |  | 完成完善的日志记录 |
 
