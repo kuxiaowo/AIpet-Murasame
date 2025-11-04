@@ -159,24 +159,34 @@ class Murasame(QLabel):
         self._save_history()
         def show_next_sentence(index = 0):
             def get_audio_length_wave(audio_file_path):
-                with wave.open(audio_file_path, 'rb') as wave_file:
-                    frames = wave_file.getnframes()  # 获取音频的帧数
-                    rate = wave_file.getframerate()  # 获取音频的帧速率
-                    duration = frames / float(rate)  # 计算时长（秒）
-                    return duration * 1000  # 转换为毫秒
+                try:
+                    with wave.open(audio_file_path, 'rb') as wave_file:
+                        frames = wave_file.getnframes()  # 获取音频的帧数
+                        rate = wave_file.getframerate()  # 获取音频的帧速率
+                        duration = frames / float(rate)  # 计算时长（秒）
+                        return duration * 1000  # 转换为毫秒
+                except Exception:
+                    return 0
 
             if index >= len(reply):
                 return
             sentence = reply[index]
             portrait = portrait_list[index]
             self.update_portrait(f"ムラサメ{portrait_type}", portrait)
-            voice_path = f"./voices/{voices[index]}.wav"
-            voice_length = get_audio_length_wave(os.path.abspath(voice_path))
-            QSound.play(voice_path)
+            voice_id = voices[index]
+            voice_path = f"./voices/{voice_id}.wav" if voice_id else None
+            voice_length = 0
+            if voice_path and os.path.exists(voice_path):
+                voice_length = get_audio_length_wave(os.path.abspath(voice_path))
+                if voice_length > 0:
+                    QSound.play(voice_path)
             self.show_text(sentence, typing=True)
             # 计算打字机需要的时间（40ms * 每个字）
             delay = max(40 * len(sentence) + 800, voice_length + 400)  # 额外加 0.8 秒停顿
-            QTimer.singleShot(int(delay), lambda: [os.remove(voice_path), show_next_sentence(index + 1)])
+            if voice_path and os.path.exists(voice_path) and voice_length > 0:
+                QTimer.singleShot(int(delay), lambda: [os.remove(voice_path), show_next_sentence(index + 1)])
+            else:
+                QTimer.singleShot(int(delay), lambda: show_next_sentence(index + 1))
 
         show_next_sentence(index=0)
         self.worker = None  # 线程结束后清空引用
@@ -455,7 +465,6 @@ class Murasame(QLabel):
                 self.display_text = f"【{self.pet_name}】\n"
                 self.update()
                 # 启动AI线程
-                print(f"[User input] {text}")
                 self.start_qwen3_thread(text, role="user")
             else:
                 self.show_text("主人，你说什么？", typing=True)

@@ -1,4 +1,5 @@
 import base64
+import json
 import hashlib
 import os
 from datetime import datetime
@@ -155,8 +156,31 @@ def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
     }
 
     reply = requests.post(gpt_sovits_tts_url, json={"params": params})
+
+    # 判定返回是否为音频，否则打印错误与详细信息并跳过写入
+    content_type = reply.headers.get("Content-Type", "")
+    if not content_type.startswith("audio/"):
+        status = getattr(reply, "status_code", "?")
+        detail_str = ""
+        err_msg = None
+        try:
+            data = reply.json()
+            err_msg = data.get("error") or data.get("message")
+            # 打印完整 JSON 详情（去除 ASCII 转义）
+            detail_str = json.dumps(data, ensure_ascii=False)
+        except Exception:
+            text_body = getattr(reply, "text", "")
+            if not text_body:
+                text_body = f"unexpected content-type: {content_type}"
+            # 截断过长文本，避免刷屏
+            detail_str = (text_body[:2000] + "…") if len(text_body) > 2000 else text_body
+        err_msg = err_msg or ""
+        print(f"[{now_time()}] [gpt-sovits-tts][ERROR] HTTP {status} - {err_msg} | detail: {detail_str}")
+        return None
+
     sentence_md5 = hashlib.md5(sentence.encode()).hexdigest()
-    with open(f"./voices/{sentence_md5}.wav", "wb") as f:
+    out_path = f"./voices/{sentence_md5}.wav"
+    with open(out_path, "wb") as f:
         f.write(reply.content)
     print(f"[{now_time()}] [gpt-sovits-tts] Wav_name:{sentence_md5}")
     return sentence_md5

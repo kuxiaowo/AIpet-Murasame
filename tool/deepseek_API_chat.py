@@ -140,15 +140,4 @@ def deepseek_image_thinker(history: list, prompt: str):
         "stream": False,
     }
     reply = deepseek_post(name="deepseek-image_thinker", payload=payload)
-    #history.append({"role": "assistant", "content": reply})
     return reply, history
-
-if __name__ == '__main__':
-    sentence = "今天一大早我就跑去学校准备参加社团活动，可是天突然下起了大雨，我没带伞只能在教学楼门口躲雨，偏偏这个时候你走过来递给我一把伞，还笑着说“主人，别淋湿了”，害得我一下子脸红心跳得厉害。"
-    #history = [("", "[1950, 1368, 1958]")]
-    #reply, history= deepseek_portrait(sentence, history, "a")
-    reply = '''["主人、小雨……嗯……嘻嘻……嘿嘿……嘻嘻嘻……啊哈哈哈哈！", "我喜欢你"]'''
-    history = [{"role": "user", "content": "小雨。。"},
-               {"role": "assistant", "content": reply}]
-    reply = deepseek_portrait(reply, history=[], type="a")
-    print(reply)

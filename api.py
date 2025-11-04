@@ -1,6 +1,5 @@
 import io
 import os
-import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -16,10 +15,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from tool.config import get_config
 
 
-# ============== App & Logging ==============
+# ============== App ==============
 app = FastAPI()
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
-logger = logging.getLogger("api")
 
 
 # Upstream service endpoints
@@ -74,7 +71,6 @@ async def qwen3_lora(req: Qwen3LoraRequest):
         return {"error": "qwen3-lora 不可用：当前为云端模式"}
 
     if model is None or tokenizer is None:
-        logger.info("Loading local Qwen3 + LoRA weights...")
         model, tokenizer = load_model_and_tokenizer()
 
     text = tokenizer.apply_chat_template(
@@ -116,10 +112,10 @@ async def ollama_qwen3(req: OllamaRequest):
             async with session.post(OLLAMA_UPSTREAM_URL, headers=req.headers, json=req.prompt) as resp:
                 data = await resp.json()
                 if resp.status != 200:
-                    logger.warning(f"Ollama upstream error {resp.status}: {data}")
+                    # upstream error; return body to caller
+                    return data
                 return data
     except Exception as e:
-        logger.exception("Ollama upstream request failed")
         return {"error": f"upstream request failed: {e}"}
 
 
@@ -143,10 +139,8 @@ async def gpt_sovits_tts(req: GPTSoVITSTTSRequest):
                     return StreamingResponse(io.BytesIO(content), media_type="audio/wav")
                 else:
                     text = await response.text()
-                    logger.warning(f"TTS upstream error {response.status}: {text}")
                     return {"error": f"TTS API返回错误: {response.status}"}
     except Exception as e:
-        logger.exception("TTS upstream request failed")
         return {"error": f"TTS upstream 请求失败: {e}"}
 
 
@@ -179,4 +173,3 @@ if __name__ == "__main__":
         # Optional: preload on startup
         model, tokenizer = load_model_and_tokenizer()
     uvicorn.run(app, host="0.0.0.0", port=28565)
-

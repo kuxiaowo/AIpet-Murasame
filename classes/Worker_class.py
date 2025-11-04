@@ -46,7 +46,6 @@ class qwen3_lora_Worker(QThread):
         if self.force_stop:
             print("[qwen3-lora] 已中断生成。")
             return
-        print("11")
         reply, history = qwen3_lora(self.history, self.user_input, self.role)  # 对话
         if self.force_stop:print("[ollama-qwn3] 已中断生成。");return
         reply = ollama_qwen3_sentence(reply)  # 句子分割
