@@ -64,6 +64,7 @@ python run.py
 如果你需要虚拟环境，可以创建一个python >= 3.10 的环境
 激活环境之后
 ```bash
+conda activate AIpet_env  #例子，可以用其他的
 python run.py
 ```
 
@@ -167,7 +168,7 @@ python run.py
 ### 1️⃣ GPU不可用  
 > **问题：** 有显卡但 TTS 运行时提示  
 > `Warning: CUDA is not available, set device to CPU.`  
-> **解决：** 更新显卡驱动，确保 CUDA 与 PyTorch 匹配。  
+> **解决：** 尝试更新显卡驱动，确保 CUDA 与 PyTorch 匹配。  
 
 ---
 
@@ -219,12 +220,12 @@ python run.py
 | 状态 | 任务 |
 |:--:|:--|
 | ✅ | 长期记忆功能 |
-|  | 全部模型改用 Qwen 系列 |
 | ✅ | 桌宠显示大小写入配置文件 |
 | ✅ | 添加 Q&A 支持，解决部分常见问题 |
-|  | tts尝试部署到阿里云 |
 | ✅ | python脚本一键启动，兼容性更高，优化依赖（避免强制下载 PyTorch） |
-|  | 检查“置顶逻辑”，确保游戏中始终保持窗口置顶 |
 |  | 完成完善的日志记录 |
+|  | 检查“置顶逻辑”，确保游戏中始终保持窗口置顶 |
+|  | tts尝试部署到阿里云 |
+|  | 全部模型改用 Qwen 系列 |
 |  | 更换衣服 |
 
