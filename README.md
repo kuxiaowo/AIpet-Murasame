@@ -191,7 +191,7 @@ python run.py
 ---
 
 ### 4️⃣ API Key 报错  
-![Q&A4](./readme_resource/qa4.png)  
+![Q&A4](https://github.com/kuxiaowo/AIpet-Murasame/blob/resource/readme_resource/qa4.png) 
 > **问题：** 启动时如图，API 无法使用。  
 > **解决：**  
 > - 检查 **API Key 是否有效、账户余额是否充足**；  
