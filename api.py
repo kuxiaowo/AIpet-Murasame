@@ -1,7 +1,7 @@
 import io
 import os
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING, Any
 
 import aiohttp
 import uvicorn
@@ -10,27 +10,35 @@ from fastapi.responses import StreamingResponse
 
 from tool.config import get_config
 
-
 # ============== App ==============
 app = FastAPI()
-
 
 # Upstream service endpoints
 OLLAMA_UPSTREAM_URL = os.getenv("OLLAMA_UPSTREAM_URL", "http://localhost:11434/api/generate")
 
-
 # ============== Local Model (optional) ==============
 base_model_path = "./models/Qwen3-14B"
 lora_model_path = "./models/Murasame"
-model: Optional[AutoModelForCausalLM] = None
-tokenizer: Optional[AutoTokenizer] = None
+
+# 仅用于类型提示（不影响运行时）
+if TYPE_CHECKING:
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model: Optional["AutoModelForCausalLM"] = None
+tokenizer: Optional["AutoTokenizer"] = None
+
+
+def _lazy_import_local_deps():
+    """仅在需要本地推理时导入重依赖"""
+    import torch
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    return torch, PeftModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
 def load_model_and_tokenizer():
-    import torch
-    from peft import PeftModel
-    from pydantic import BaseModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    torch, PeftModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig = _lazy_import_local_deps()
+
     tok = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -56,6 +64,8 @@ def now_time():
 
 # ============== Endpoints ==============
 # qwen3-lora (local inference)
+from pydantic import BaseModel
+
 class Qwen3LoraRequest(BaseModel):
     history: List[Dict[str, str]]
 
@@ -66,7 +76,7 @@ async def qwen3_lora(req: Qwen3LoraRequest):
     history = req.history
 
     # Only available in local mode
-    model_type = get_config("./config.json").get("model_type", "deepseek")
+    model_type = get_config("./config.json").get("model_type", "deepseek").lower()
     if model_type != "local":
         return {"error": "qwen3-lora 不可用：当前为云端模式"}
 
@@ -81,6 +91,8 @@ async def qwen3_lora(req: Qwen3LoraRequest):
     )
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
+    # 延后导入 torch（本地模式已存在）
+    import torch  # 安全：只有local分支才会走到这里
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
@@ -92,7 +104,6 @@ async def qwen3_lora(req: Qwen3LoraRequest):
             pad_token_id=tokenizer.eos_token_id,
         )
 
-    # Decode only generated tokens
     gen_ids = outputs[0][inputs["input_ids"].shape[-1]:]
     reply = tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
     return reply
@@ -112,7 +123,6 @@ async def ollama_qwen3(req: OllamaRequest):
             async with session.post(OLLAMA_UPSTREAM_URL, headers=req.headers, json=req.prompt) as resp:
                 data = await resp.json()
                 if resp.status != 200:
-                    # upstream error; return body to caller
                     return data
                 return data
     except Exception as e:
@@ -169,7 +179,6 @@ async def deepseekAPI(req: DeepseekAPIRequest):
 # ============== Entrypoint ==============
 if __name__ == "__main__":
     cfg = get_config("./config.json")
-    if cfg.get("model_type") == "local":
-        # Optional: preload on startup
+    if cfg.get("model_type", "deepseek").lower() == "local":
         model, tokenizer = load_model_and_tokenizer()
     uvicorn.run(app, host="0.0.0.0", port=28565)
