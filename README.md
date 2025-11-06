@@ -56,7 +56,7 @@ https://platform.deepseek.com/usage
 注册或登录账号，充值然后新建APIkey
 
 #### 5. 一键启动
-运行 run.py (使用默认python环境)
+运行 run.py (使用默认python环境)(python>=3.10, 如果出错尽量使用3.10)
 ```bash
 python run.py
 ```
