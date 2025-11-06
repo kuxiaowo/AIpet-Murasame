@@ -4,13 +4,9 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 import aiohttp
-import torch
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from peft import PeftModel
-from pydantic import BaseModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from tool.config import get_config
 
@@ -31,6 +27,10 @@ tokenizer: Optional[AutoTokenizer] = None
 
 
 def load_model_and_tokenizer():
+    import torch
+    from peft import PeftModel
+    from pydantic import BaseModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     tok = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
