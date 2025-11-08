@@ -16,7 +16,7 @@ def log(msg, level="INFO"):
     print(f"{prefix} {msg}")
 
 def check_hardware():
-    """检测操作系统与显卡兼容性（仅支持 Windows + NVIDIA GPU）"""
+    """检测操作系统与显卡兼容性（支持 Windows + NVIDIA GPU 或 CPU）"""
     system = platform.system()
     log(f"检测到系统: {system}")
 
@@ -48,17 +48,18 @@ def check_hardware():
     # Step 3️⃣ 判断显卡类型
     gpu_lower = gpu_name.lower()
     if "nvidia" not in gpu_lower:
-        # 检测已知不支持的显卡类型
+        # 如果未找到NVIDIA显卡，允许使用CPU模式
         if any(bad in gpu_lower for bad in ("amd", "radeon", "intel", "iris", "arc")):
             log("当前显卡不受支持：仅支持 NVIDIA 显卡。", "ERROR")
             log("请使用带 NVIDIA GPU 的电脑，或切换到云端模式。", "INFO")
             sys.exit(1)
         else:
-            log("未检测到 NVIDIA 关键字，可能未正确安装驱动。", "WARN")
-            log("若你确定使用的是 NVIDIA 显卡，请检查驱动或 CUDA 安装。", "INFO")
-            sys.exit(1)
+            log("未检测到 NVIDIA 显卡，系统将运行在 CPU 模式。", "INFO")
+            # 继续执行，允许使用CPU
+            return "cpu"
 
     log("系统兼容性检测通过：Windows + NVIDIA 显卡", "SUCCESS")
+    return "nvidia"
 
 def check_python():
     """检测 Python 版本是否满足 ≥ 3.10"""
@@ -126,6 +127,11 @@ def setup_runtime_and_pytorch(config_path="config.json"):
         return "deepseek"
 
     log("检测到本地运行模式。")
+
+    # 如果是CPU模式，直接跳过PyTorch安装
+    if check_hardware() == "cpu":
+        log("检测到 CPU 模式，跳过 PyTorch 安装。", "INFO")
+        return "cpu"
 
     # Step 3️⃣ 检测 CUDA 环境
     cuda_version = None
@@ -223,18 +229,6 @@ def setup_runtime_and_pytorch(config_path="config.json"):
             log("PyTorch 安装失败！请检查网络或 CUDA 环境。", "ERROR")
             sys.exit(1)
 
-    # Step 6️⃣ 验证 CUDA 可用性
-    try:
-        import torch
-        if torch.cuda.is_available():
-            device = torch.cuda.get_device_name(0)
-            version = torch.version.cuda
-            log(f"CUDA 可用: CUDA {version}, GPU: {device}", "SUCCESS")
-        else:
-            log("CUDA 不可用，将使用 CPU 模式运行。", "WARN")
-    except Exception as e:
-        log(f"CUDA 检测失败: {e}", "WARN")
-
     return model_type
 
 def run_download():
@@ -298,4 +292,3 @@ if __name__ == "__main__":
     run_download()
     start_tts_api()
     run_main()
-
