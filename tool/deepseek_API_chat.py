@@ -5,6 +5,7 @@ from datetime import datetime
 import requests
 
 from tool.config import get_config
+from tool.time_utils import build_time_context
 
 url = get_config("./config.json")["local_api"]["deepseek_api"]
 API_key = get_config("./APIkey.json")["APIKEY"]
@@ -31,6 +32,12 @@ def deepseek_talk(history: list, user_input: str, role: str):
         identity = f.read()
     if history == []:
         history.append({"role": "system", "content": identity})
+    # 注入/更新当前时间上下文（包含日期与星期、时间段）
+    time_ctx = build_time_context()
+    if history and history[-1].get("role") == "system" and str(history[-1].get("content", "")).startswith("当前日期"):
+        history[-1] = {"role": "system", "content": time_ctx}
+    else:
+        history.append({"role": "system", "content": time_ctx})
     history.append({"role": role, "content": user_input})
     payload = {
         "messages": history,
@@ -52,7 +59,8 @@ def deepseek_portrait(sentence: str, history: list, type: str):
     头发 >> 1273：穿便衣2时必选的图层；1959：穿除便衣2时必选的图层
 
     以上是你可以选择的图层，基础人物、表情、头发中必须各选一个，额外装饰可以多选，也可以都不选。但是你返回的图层顺序必须是基础人物在最前，之后是表情，之后是额外装饰，最后是头发。
-    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1953, 1801, 1959], [1957, 1996, 1273]]"。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。可以参考之前的历史，使衣服具有连贯性。'''
+    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1953, 1801, 1959], [1957, 1996, 1273]]"。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。
+     通过时间来选择对应的衣服，晚上可以选择睡衣，白天可以选择便衣或者校服。可以参考之前的历史，使衣服具有连贯性，但应该保证时间段穿衣的正确。'''
     else:
         identity = '''你是一个立绘图层生成助手。用户会提供一个句子列表，你需要根据每一个句子的情感来生成一张说话人的立绘所需的图层列表。你需要根据句子的感情来选择图层，供你参考的图层有：
     基础人物 >> 1718：睡衣；1717：便衣；1716：校服；1715：便衣2
@@ -61,7 +69,10 @@ def deepseek_portrait(sentence: str, history: list, type: str):
     头发 >> 1261：头发（必选）
 
     以上是你可以选择的图层，基础人物、表情、头发中必须各选一个，额外装饰可以多选，也可以都不选。但是你返回的图层顺序必须是基础人物在最前，之后是表情，之后是额外装饰，最后是头发。
-    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1718, 1475, 1261], [1717, 1755, 1261]]。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。可以参考之前的历史，使衣服具有连贯性。'''
+    返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1718, 1475, 1261], [1717, 1755, 1261]]。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。
+    通过时间来选择对应的衣服，晚上可以选择睡衣，白天可以选择便衣或者校服。可以参考之前的历史，使衣服具有连贯性，但应该保证时间段穿衣的正确。'''
+    # 附加当前日期（含星期）与时间段，以便立绘更贴合时间场景
+    identity = f"{identity}\n{build_time_context()}"
     payload = {
             "messages": [{"role": "system", "content": f"{identity}  历史: {history}"},
                          {"role": "user", "content": sentence}],

@@ -7,6 +7,7 @@ from datetime import datetime
 import requests
 
 from tool.config import get_config
+from tool.time_utils import build_time_context
 
 
 def now_time():
@@ -38,6 +39,12 @@ def qwen3_lora(history, user_input, role):
     identity = "你叫丛雨，是一个16岁的小女孩，是寄宿在建实神社神刀上的女孩，活了500多年，数百年前还是普通的人类。你原本的名字是“绫”。罹患了肺炎和其它并发症，作为祭品成为神刀的“管理者”。你的身材娇小，胸部平坦，碰上去“很硬”。有着飘逸的绿色长发，头发两侧用浅蓝色绳结绑了起来 。你在对话中只以“本座”称呼自己。用户是你的主人和恋人，你会称呼用户为“主人”。你平常是个很活泼开朗的女孩子，言行很孩子气，但是偶尔也有一些老成的发言。是个爱撒娇的女孩子，被主人摸头就会瞬间变得羞涩起来，即便当时还在发着牢骚 。有时会开玩笑，贱兮兮的，还会坏笑。你不喜欢主人称呼你为“幼刀”，“钝刀”，“锉刀”，“幽灵”。听到主人说你是“飞机场”，“搓衣板”一类的东西会生气。你害怕幽灵，鬼一类的东西。你喜欢吃甜食，特别是芭菲、布丁。请注意，你的回答不要过长，回答不得超过三句话。/no_think"
     if history == []:
         history.append({"role": "system", "content": identity})
+    # 每轮对话前注入当前日期与时间段（星期几 + 粗粒度时段）
+    time_ctx = build_time_context()
+    if history and history[-1].get("role") == "system" and str(history[-1].get("content", "")).startswith("当前日期"):
+        history[-1] = {"role": "system", "content": time_ctx}
+    else:
+        history.append({"role": "system", "content": time_ctx})
     history.append({"role": role, "content": user_input})
     print(f"[{now_time()}] [qwen3-lora] Prompt:{history}")
     reply = requests.post(qwen3_lora_url, json={"history": history})
@@ -75,6 +82,7 @@ def ollama_qwen3_portrait(sentence: str, history: list, type):
 
     以上是你可以选择的图层，基础人物、表情、头发中必须各选一个，额外装饰可以多选，也可以都不选。但是你返回的图层顺序必须是基础人物在最前，之后是表情，之后是额外装饰，最后是头发。
     返回请给出一个JSON列表，里面放上每个句子的图层ID，例如"[[1718, 1475, 1261], [1717, 1755, 1261]]。你不需要返回markdown格式的JSON，你也不需要加入```json这样的内容，你只需要返回纯文本即可。可以参考之前的历史，使衣服具有连贯性。/no_think'''
+    sysprompt = f"{sysprompt}\n{build_time_context()}"
     prompt = {"model": "qwen3:14b",
               "prompt": f"{sysprompt} 句子：{sentence}  之前的历史：{history}",
               "stream": False}
