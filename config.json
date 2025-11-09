@@ -3,11 +3,15 @@
     "ollama": "http://localhost:28565/ollama",
     "qwen3_lora": "http://localhost:28565/qwen3-lora",
     "gpt_sovits_tts": "http://localhost:28565/tts",
-    "deepseek_api": "http://localhost:28565/deepseekAPI"
+    "clound_api": "http://localhost:28565/cloundAPI"
   },
-  "portrait": "a",
+  "APIKEY": {
+    "deepseek":"sk-02471a90508849edbca9bd871d76c149",
+    "qwen":"sk-9b63f15098624c1eb32c3305a3fbda20"
+  },
+  "portrait": "b",
   "user_name": "Kuxw",
-  "model_type": "deepseek",
-  "screen_type": "false",
+  "model_type": "qwen",
+  "screen_type": "true",
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8
 }

@@ -1,20 +1,37 @@
 # -*- coding: utf-8 -*-
+import base64
 import os
 from datetime import datetime
 
 import requests
+from pathlib import Path
+from urllib.parse import urlparse, quote
 
 from tool.config import get_config
 from tool.time_utils import build_time_context
 
-url = get_config("./config.json")["local_api"]["deepseek_api"]
-API_key = get_config("./APIkey.json")["APIKEY"]
+url = get_config("./config.json")["local_api"]["clound_api"]
+model_type = get_config("./config.json")["model_type"]
+API_key = get_config("./config.json")["APIKEY"][model_type]
+if model_type == "deepseek":
+    chat_model="deepseek-chat"
+elif model_type == "qwen":
+    chat_model="qwen-plus"
 
 def now_time():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
-def deepseek_post(name: str, payload):
+def _local_base_from_api(api_url: str) -> str:
+    try:
+        p = urlparse(api_url)
+        if p.scheme and p.netloc:
+            return f"{p.scheme}://{p.netloc}"
+    except Exception:
+        pass
+    return "http://127.0.0.1:28565"
+
+def post(name: str, payload):
     print(f"[{now_time()}] [{name}] Prompt:{payload}")
     headers = {
         'Accept': 'application/json',
@@ -23,11 +40,15 @@ def deepseek_post(name: str, payload):
     }
     resp = requests.post(url, json={"payload": payload, "headers": headers})
     resp = resp.json()
-    reply = resp['choices'][0]['message']['content']
+    reply = ""
+    if "choices" in resp:
+        reply = resp['choices'][0]['message']['content']
+    else:
+        print(resp)
     print(f"[{now_time()}] [{name}] Reply:{reply}")
     return reply
 
-def deepseek_talk(history: list, user_input: str, role: str):
+def clound_talk(history: list, user_input: str, role: str):
     with open("prompt.txt", "r", encoding="utf-8") as f:
         identity = f.read()
     if history == []:
@@ -41,16 +62,16 @@ def deepseek_talk(history: list, user_input: str, role: str):
     history.append({"role": role, "content": user_input})
     payload = {
         "messages": history,
-        "model": "deepseek-chat",
+        "model": chat_model,
         "max_tokens": 4096,
         "stream": False,
     }
-    reply = deepseek_post(name="deepseek-talk", payload=payload)
+    reply = post(name=f"{model_type}-talk", payload=payload)
     
     history.append({"role": "assistant", "content": reply})  # 加入历史
     return reply, history
 
-def deepseek_portrait(sentence: str, history: list, type: str):
+def clound_portrait(sentence: str, history: list, type: str):
     if type == 'a':
         identity = '''你是一个立绘图层生成助手。用户会提供一个句子列表，你需要根据每一个句子的情感来生成一张说话人的立绘所需的图层列表。你需要根据句子的感情来选择图层，供你参考的图层有：
     基础人物 >> 1957：睡衣，双手插在腰间；1956：睡衣，两手自然下垂；1979：便衣1，双手插在腰间；1978：便衣1，两手自然下垂；1953：校服，双手插在腰间；1952：校服，两手自然下垂；1951：便衣2，双手插在腰间；1950：便衣2，两手自然下垂；
@@ -76,41 +97,41 @@ def deepseek_portrait(sentence: str, history: list, type: str):
     payload = {
             "messages": [{"role": "system", "content": f"{identity}  历史: {history}"},
                          {"role": "user", "content": sentence}],
-            "model": "deepseek-chat",
+            "model": chat_model,
             "max_tokens": 4096,
             "stream": False,
         }
-    reply = deepseek_post(name="deepseek-portrait", payload=payload)
+    reply = post(name=f"{model_type}-portrait", payload=payload)
     history.append((sentence, reply))
     return reply, history
 
-def deepseek_translate(sentence: str):
+def clound_translate(sentence: str):
     identity = '''你是一个翻译助手，负责将用户输入的中文翻译成日文。要求：要将中文的“本座”翻译为“吾輩（わがはい）”；将“主人翻译为“ご主人（ごしゅじん）”；将“丛雨”翻译为“ムラサメ”；“小雨”则是丛雨的昵称，翻译为“ムラサメちゃん”。且日文要有强烈的古日语风格。你只需要返回翻译即可，不需要对其中的日文汉字进行注音。给你提供的格式是["句子1", "句子2"]这样，必须按照原格式输出，逐句翻译。'''
 
     payload = {
             "messages": [{"role": "system", "content": identity},
                          {"role": "user", "content": sentence}],
-            "model": "deepseek-chat",
+            "model": chat_model,
             "max_tokens": 4096,
             "stream": False,
         }
-    reply = deepseek_post(name="deepseek-translate", payload=payload)
+    reply = post(name=f"{model_type}-translate", payload=payload)
     return reply
 
-def deepseek_emotion(history: list):
+def clound_emotion(history: list):
     identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'./reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]"
     history_l = history[1:]
     payload = {
         "messages": [{"role": "system", "content": identity},
                      {"role": "user", "content": f"历史： {history_l}"}],
-        "model": "deepseek-chat",
+        "model": chat_model,
         "max_tokens": 4096,
         "stream": False,
     }
-    reply = deepseek_post(name="deepseek-emotion", payload=payload)
+    reply = post(name=f"{model_type}-emotion", payload=payload)
     return reply
 
-def deepseek_image_thinker(history: list, prompt: str):
+def clound_image_thinker(history: list, prompt: str):
     identity = '''
 你是一个AI桌宠的视觉思考助手（image thinker），你的任务是判断“用户当前屏幕是否发生变化”，决定是否需要把这些变化提供给AI桌宠。
 
@@ -146,9 +167,37 @@ def deepseek_image_thinker(history: list, prompt: str):
     history[1] = {"role": "user", "content": prompt}
     payload = {
         "messages": [{"role": "system", "content": f"{identity}  现在: {history[1]} 上一次截屏: {history[0]}"}],
-        "model": "deepseek-chat",
+        "model": chat_model,
         "max_tokens": 4096,
         "stream": False,
     }
-    reply = deepseek_post(name="deepseek-image_thinker", payload=payload)
+    reply = post(name=f"{model_type}-image_thinker", payload=payload)
     return reply, history
+
+def clound_vl(image_path: str):
+    identity = "你是一个AI桌宠的助手，你应该可以在屏幕上看到这个桌宠角色，是一个绿色头发的动漫人物。你需要详细描述屏幕内容与使用的软件，描述页面主题。我会将你的描述以system消息提供给另外一个处理语言的AI模型。只输出描述内容，且不要描述桌宠。"
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+
+    payload = {
+        "messages": [{"role": "user", "content": [{"type": "image_url","image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+                     {"type": "text", "text": identity}]}],
+        "model": "qwen3-vl-plus",
+        "max_tokens": 4096,
+        "stream": False,
+    }
+    print(f"[{now_time()}] [{model_type}-vl] POST")
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_key
+    }
+    resp = requests.post(url, json={"payload": payload, "headers": headers})
+    resp = resp.json()
+    reply = ""
+    if "choices" in resp:
+        reply = resp['choices'][0]['message']['content']
+    else:
+        print(resp)
+    print(f"[{now_time()}] [{model_type}-vl] Reply:{reply}")
+    return reply

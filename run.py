@@ -118,13 +118,16 @@ def setup_runtime_and_pytorch(config_path="config.json"):
         return "deepseek"
 
     # Step 2️⃣ 判断模式
-    if model_type not in ("local", "deepseek"):
+    if model_type not in ("local", "deepseek", "qwen"):
         log(f"未识别的 model_type: {model_type}，默认视为 DeepSeek 云端模式。", "WARN")
         return "deepseek"
 
     if model_type == "deepseek":
         log("检测到 DeepSeek 云端模式，跳过 PyTorch 安装。")
         return "deepseek"
+    elif model_type == "qwen":
+        log("检测到 Qwen 云端模式，跳过 PyTorch 安装。")
+        return "qwen"
 
     log("检测到本地运行模式。")
 

@@ -2,6 +2,8 @@ import json
 import os
 import textwrap
 import wave
+import shutil
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,9 +16,10 @@ from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
 
 from classes.Worker_class import ScreenWorker
-from classes.Worker_class import qwen3_lora_Worker, qwen3_lora_deepseekAPI_Worker
-from tool import get_config
-from tool import ollama_qwen25vl, ollama_qwen3_image_thinker, deepseek_image_thinker
+from classes.Worker_class import qwen3_lora_Worker, clound_API_Worker
+from tool.config import get_config
+from tool.chat import ollama_qwen25vl, ollama_qwen3_image_thinker
+from tool.clound_API_chat import clound_image_thinker, clound_vl
 from tool.generate import generate_fgimage
 
 
@@ -75,6 +78,11 @@ class Murasame(QLabel):
         self.setWindowFlags(
         Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)  # Qt.FramelessWindowHint去掉标题栏和边框， Qt.WindowStaysOnTopHint窗口总在最前面 ，Qt.Tool工具窗口（在任务栏不单独显示图标）
         self.setAttribute(Qt.WA_TranslucentBackground, True)  # 让整个窗口支持透明区域。
+        def to_list(text):
+            try:
+                return json.loads(text)
+            except:
+                return [text]
         if portrait_type == "a":
             self.first_portrait = [1950, 1368, 1958]
         elif portrait_type == "b":
@@ -109,23 +117,33 @@ class Murasame(QLabel):
             self._screenshot_worker = None
 
     def on_screenshot_captured(self, image_path):
+        model_type = get_config("./config.json")["model_type"]
         def task(path):
             try:
                 try:
-                    if self.force_stop:print("[ollama-qwen2.5vl] 已中断生成。");return
-                    desc = ollama_qwen25vl(path)
-                    if self.force_stop:print("[image_thinker] 已中断生成。");return
-                    if model_type == "deepseek":
-                        thinker_reply, self.screen_history = deepseek_image_thinker(self.screen_history, desc)
+                    if model_type == "deepseek" or model_type == "qwen":
+                        if self.force_stop: print("[clound-vl] 已中断生成。");return
+                        desc = clound_vl(path)
+                        if self.force_stop: print("[image_thinker] 已中断生成。");return
+                        thinker_reply, self.screen_history = clound_image_thinker(self.screen_history, desc)
                     elif model_type == "local":
+                        if self.force_stop: print("[ollama-qwen2.5vl] 已中断生成。");return
+                        desc = ollama_qwen25vl(path)
+                        if self.force_stop: print("[image_thinker] 已中断生成。");return
                         thinker_reply, self.screen_history = ollama_qwen3_image_thinker(self.screen_history, desc)
                     if "null" not in thinker_reply:
-                        self.start_qwen3_thread(thinker_reply, role="system", t=True)
+                        self.start_thread(thinker_reply, role="system", t=True)
                 except Exception as e:
                     print(f"[AIpet] 截图分析失败: {e}")
             finally:
                 try:
                     os.remove(path)
+                except:
+                    pass
+                # 分析/上传完成后删除 temgraph 中的副本（若存在）
+                try:
+                    if 'persist_path' in locals() and isinstance(persist_path, Path) and persist_path.exists():
+                        os.remove(str(persist_path))
                 except:
                     pass
 
@@ -153,7 +171,7 @@ class Murasame(QLabel):
             self.start_screenshot_worker(interval=self.interval)
 
     #qwen3线程的槽函数
-    def on_qwen3_reply(self, reply, portrait_list, history, portrait_history, voices):
+    def on_reply(self, reply, portrait_list, history, portrait_history, voices):
         self.portrait_history = portrait_history
         self.history = history
         self._save_history()
@@ -193,7 +211,7 @@ class Murasame(QLabel):
 
 
     # 启动一个新线程（安全版） 打断旧线程
-    def start_qwen3_thread(self, text, role, t = False):
+    def start_thread(self, text, role, t = False):
         # 结束旧线程
         if self.worker and self.worker.isRunning():
             self.worker.stop_all()  # ✅ 通知线程中断
@@ -202,10 +220,10 @@ class Murasame(QLabel):
         # 启动新线程
         if model_type == "local":
             self.worker = qwen3_lora_Worker(self.history, self.portrait_history, text, role, t=t)
-        elif model_type == "deepseek":
-            self.worker = qwen3_lora_deepseekAPI_Worker(self.history, self.portrait_history, text, role, t=t)
+        else:
+            self.worker = clound_API_Worker(self.history, self.portrait_history, text, role, t=t)
 
-        self.worker.finished.connect(self.on_qwen3_reply)
+        self.worker.finished.connect(self.on_reply)
         self.worker.start()
 
     def focusInEvent(self, event):
@@ -248,7 +266,7 @@ class Murasame(QLabel):
         # 判断是不是在“摸头”
         if self.touch_head and self.head_press_x is not None:
             if abs(event.x() - self.head_press_x) > 50:
-                self.start_qwen3_thread("主人摸了摸你的头", role="system")
+                self.start_thread("主人摸了摸你的头", role="system")
                 self.touch_head = False
 
         # 中键拖动窗口
@@ -465,7 +483,7 @@ class Murasame(QLabel):
                 self.display_text = f"【{self.pet_name}】\n"
                 self.update()
                 # 启动AI线程
-                self.start_qwen3_thread(text, role="user")
+                self.start_thread(text, role="user")
             else:
                 self.show_text("主人，你说什么？", typing=True)
 

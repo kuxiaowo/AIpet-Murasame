@@ -4,7 +4,7 @@ import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QAction, QMenu
 
-from classes import Murasame  # 从 classes 包引入你的桌宠类
+from classes.murasame_class import Murasame  # 从 classes 包引入你的桌宠类
 from api import app as api_app  # 引入 FastAPI 应用以便在本进程中启动
 import uvicorn
 

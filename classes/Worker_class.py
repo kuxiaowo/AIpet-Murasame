@@ -1,4 +1,3 @@
-
 import json
 import tempfile
 import time
@@ -7,10 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QGuiApplication
 
-from tool import deepseek_portrait, deepseek_translate, deepseek_emotion, deepseek_talk
-from tool import get_config
-from tool import qwen3_lora, ollama_qwen3_sentence, ollama_qwen3_portrait, gpt_sovits_tts, ollama_qwen3_emotion, \
-    ollama_qwen3_translate
+from tool.clound_API_chat import clound_portrait, clound_translate, clound_talk, clound_emotion
+from tool.config import get_config
+from tool.chat import qwen3_lora, ollama_qwen3_sentence, ollama_qwen3_portrait, gpt_sovits_tts, ollama_qwen3_emotion, ollama_qwen3_translate
 
 portrait_type = get_config("./config.json")['portrait']
 
@@ -79,7 +77,7 @@ class qwen3_lora_Worker(QThread):
 
         self.finished.emit(reply, portrait_list, history, portrait_history, voices)  # 发回主线程
 
-class qwen3_lora_deepseekAPI_Worker(QThread):
+class clound_API_Worker(QThread):
     finished = pyqtSignal(list, list, list, list, list)
 
     def __init__(self, history, portrait_history, user_input, role="user", t = False):
@@ -110,7 +108,7 @@ class qwen3_lora_deepseekAPI_Worker(QThread):
 
         # 1. 先获取对话回复（这个必须串行，因为依赖前面的历史）
         if self.force_stop:print("[deepseek] 已中断生成。");return
-        reply, history = deepseek_talk(self.history, self.user_input, self.role)
+        reply, history = clound_talk(self.history, self.user_input, self.role)
         '''
         reply = deepseek_sentence(reply)  # 句子分割
         history[-1]["content"] = reply
@@ -119,9 +117,9 @@ class qwen3_lora_deepseekAPI_Worker(QThread):
         if self.force_stop:print("[deepseek] 已中断生成。");return
         with ThreadPoolExecutor(max_workers=5) as executor:  # 增加线程数
             # 提交所有任务
-            future_portrait = executor.submit(deepseek_portrait, reply, self.portrait_history, portrait_type)
-            future_emotion = executor.submit(deepseek_emotion, history)
-            future_translate = executor.submit(deepseek_translate, reply)
+            future_portrait = executor.submit(clound_portrait, reply, self.portrait_history, portrait_type)
+            future_translate = executor.submit(clound_translate, reply)
+            future_emotion = executor.submit(clound_emotion, history)
 
             # 获取所有结果
             portrait_result, portrait_history = future_portrait.result()

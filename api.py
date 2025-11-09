@@ -76,7 +76,7 @@ async def qwen3_lora(req: Qwen3LoraRequest):
     history = req.history
 
     # Only available in local mode
-    model_type = get_config("./config.json").get("model_type", "deepseek").lower()
+    model_type = get_config("./config.json")["model_type"]
     if model_type != "local":
         return {"error": "qwen3-lora 不可用：当前为云端模式"}
 
@@ -155,14 +155,20 @@ async def gpt_sovits_tts(req: GPTSoVITSTTSRequest):
 
 
 # deepseek cloud API passthrough
-class DeepseekAPIRequest(BaseModel):
+class CloundAPIRequest(BaseModel):
     payload: dict
     headers: dict
 
 
-@app.post("/deepseekAPI")
-async def deepseekAPI(req: DeepseekAPIRequest):
-    url = "https://api.deepseek.com/chat/completions"
+@app.post("/cloundAPI")
+async def cloundAPI(req: CloundAPIRequest):
+    url_deepseek = "https://api.deepseek.com/chat/completions"
+    url_qwen = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    model_type = get_config("./config.json")["model_type"]
+    if model_type == "deepseek":
+        url = url_deepseek
+    elif model_type == "qwen":
+        url = url_qwen
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,
@@ -173,7 +179,7 @@ async def deepseekAPI(req: DeepseekAPIRequest):
             if response.status == 200:
                 return await response.json()
             else:
-                return {"error": f"API返回错误: {response.status}"}
+                return {"error": f"API返回错误: {await response.json()}"}
 
 
 # ============== Entrypoint ==============
