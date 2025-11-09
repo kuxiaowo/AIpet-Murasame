@@ -13,8 +13,8 @@
 
 ## 项目指路
 
-- **演示视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1oi4wzSEJJ)
-- **教程视频**: [Bilibili 视频](https://www.bilibili.com/video/BV1F6ykBwEDu)
+- **演示视频**: [【丛雨AI桌宠】让丛雨陪在你身边](https://www.bilibili.com/video/BV1oi4wzSEJJ)
+- **教程视频**: [丛雨AI桌宠V1.2.0部署教程](https://www.bilibili.com/video/BV1F6ykBwEDu)
 
 
 ## 🚀 快速开始
