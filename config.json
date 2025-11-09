@@ -6,8 +6,8 @@
     "clound_api": "http://localhost:28565/cloundAPI"
   },
   "APIKEY": {
-    "deepseek":"sk-02471a90508849edbca9bd871d76c149",
-    "qwen":"sk-9b63f15098624c1eb32c3305a3fbda20"
+    "deepseek":"",
+    "qwen":""
   },
   "portrait": "b",
   "user_name": "Kuxw",
