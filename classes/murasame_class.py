@@ -140,12 +140,6 @@ class Murasame(QLabel):
                     os.remove(path)
                 except:
                     pass
-                # 分析/上传完成后删除 temgraph 中的副本（若存在）
-                try:
-                    if 'persist_path' in locals() and isinstance(persist_path, Path) and persist_path.exists():
-                        os.remove(str(persist_path))
-                except:
-                    pass
 
         self._screenshot_executor.submit(task, image_path)
 
