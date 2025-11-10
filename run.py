@@ -49,14 +49,9 @@ def check_hardware():
     gpu_lower = gpu_name.lower()
     if "nvidia" not in gpu_lower:
         # 如果未找到NVIDIA显卡，允许使用CPU模式
-        if any(bad in gpu_lower for bad in ("amd", "radeon", "intel", "iris", "arc")):
-            log("当前显卡不受支持：仅支持 NVIDIA 显卡。", "ERROR")
-            log("请使用带 NVIDIA GPU 的电脑，或切换到云端模式。", "INFO")
-            sys.exit(1)
-        else:
-            log("未检测到 NVIDIA 显卡，系统将运行在 CPU 模式。", "INFO")
-            # 继续执行，允许使用CPU
-            return "cpu"
+        log("未检测到 NVIDIA 显卡，系统将运行在 CPU 模式。", "INFO")
+        # 继续执行，允许使用CPU
+        return "cpu"
 
     log("系统兼容性检测通过：Windows + NVIDIA 显卡", "SUCCESS")
     return "nvidia"
