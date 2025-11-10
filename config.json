@@ -11,7 +11,7 @@
   },
   "portrait": "b",
   "user_name": "Kuxw",
-  "model_type": "qwen",
+  "model_type": "deepseek",
   "screen_type": "true",
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8
 }
