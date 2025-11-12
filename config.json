@@ -3,7 +3,7 @@
     "ollama": "http://localhost:28565/ollama",
     "qwen3_lora": "http://localhost:28565/qwen3-lora",
     "gpt_sovits_tts": "http://localhost:28565/tts",
-    "clound_api": "http://localhost:28565/cloundAPI"
+    "cloud_api": "http://localhost:28565/cloudAPI"
   },
   "APIKEY": {
     "deepseek":"",
@@ -12,6 +12,7 @@
   "portrait": "b",
   "user_name": "Kuxw",
   "model_type": "deepseek",
+  "tts_type": "local",
   "screen_type": "false",
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8
 }

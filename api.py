@@ -149,19 +149,19 @@ async def gpt_sovits_tts(req: GPTSoVITSTTSRequest):
                     return StreamingResponse(io.BytesIO(content), media_type="audio/wav")
                 else:
                     text = await response.text()
-                    return {"error": f"TTS API返回错误: {response.status}"}
+                    return {"error": f"TTS API返回错误: {await response.json()}"}
     except Exception as e:
         return {"error": f"TTS upstream 请求失败: {e}"}
 
 
 # deepseek cloud API passthrough
-class CloundAPIRequest(BaseModel):
+class cloudAPIRequest(BaseModel):
     payload: dict
     headers: dict
 
 
-@app.post("/cloundAPI")
-async def cloundAPI(req: CloundAPIRequest):
+@app.post("/cloudAPI")
+async def cloudAPI(req: cloudAPIRequest):
     url_deepseek = "https://api.deepseek.com/chat/completions"
     url_qwen = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     model_type = get_config("./config.json")["model_type"]

@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QGuiApplication
 
-from tool.clound_API_chat import clound_portrait, clound_translate, clound_talk, clound_emotion
+from tool.cloud_API_chat import cloud_portrait, cloud_translate, cloud_talk, cloud_emotion
 from tool.config import get_config
 from tool.chat import qwen3_lora, ollama_qwen3_sentence, ollama_qwen3_portrait, gpt_sovits_tts, ollama_qwen3_emotion, ollama_qwen3_translate
 
@@ -77,7 +77,7 @@ class qwen3_lora_Worker(QThread):
 
         self.finished.emit(reply, portrait_list, history, portrait_history, voices)  # 发回主线程
 
-class clound_API_Worker(QThread):
+class cloud_API_Worker(QThread):
     finished = pyqtSignal(list, list, list, list, list)
 
     def __init__(self, history, portrait_history, user_input, role="user", t = False):
@@ -101,14 +101,11 @@ class clound_API_Worker(QThread):
     '''
     def run(self):
         def to_list(text):
-            try:
-                return json.loads(text)
-            except:
-                return [text]
+            return json.loads(text)
 
         # 1. 先获取对话回复（这个必须串行，因为依赖前面的历史）
         if self.force_stop:print("[deepseek] 已中断生成。");return
-        reply, history = clound_talk(self.history, self.user_input, self.role)
+        reply, history = cloud_talk(self.history, self.user_input, self.role)
         '''
         reply = deepseek_sentence(reply)  # 句子分割
         history[-1]["content"] = reply
@@ -117,9 +114,9 @@ class clound_API_Worker(QThread):
         if self.force_stop:print("[deepseek] 已中断生成。");return
         with ThreadPoolExecutor(max_workers=5) as executor:  # 增加线程数
             # 提交所有任务
-            future_portrait = executor.submit(clound_portrait, reply, self.portrait_history, portrait_type)
-            future_translate = executor.submit(clound_translate, reply)
-            future_emotion = executor.submit(clound_emotion, history)
+            future_portrait = executor.submit(cloud_portrait, reply, self.portrait_history, portrait_type)
+            future_translate = executor.submit(cloud_translate, reply)
+            future_emotion = executor.submit(cloud_emotion, history)
 
             # 获取所有结果
             portrait_result, portrait_history = future_portrait.result()

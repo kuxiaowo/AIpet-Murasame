@@ -16,10 +16,10 @@ from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
 
 from classes.Worker_class import ScreenWorker
-from classes.Worker_class import qwen3_lora_Worker, clound_API_Worker
+from classes.Worker_class import qwen3_lora_Worker, cloud_API_Worker
 from tool.config import get_config
 from tool.chat import ollama_qwen25vl, ollama_qwen3_image_thinker
-from tool.clound_API_chat import clound_image_thinker, clound_vl
+from tool.cloud_API_chat import cloud_image_thinker, cloud_vl
 from tool.generate import generate_fgimage
 
 
@@ -122,10 +122,10 @@ class Murasame(QLabel):
             try:
                 try:
                     if model_type == "deepseek" or model_type == "qwen":
-                        if self.force_stop: print("[clound-vl] 已中断生成。");return
-                        desc = clound_vl(path)
+                        if self.force_stop: print("[cloud-vl] 已中断生成。");return
+                        desc = cloud_vl(path)
                         if self.force_stop: print("[image_thinker] 已中断生成。");return
-                        thinker_reply, self.screen_history = clound_image_thinker(self.screen_history, desc)
+                        thinker_reply, self.screen_history = cloud_image_thinker(self.screen_history, desc)
                     elif model_type == "local":
                         if self.force_stop: print("[ollama-qwen2.5vl] 已中断生成。");return
                         desc = ollama_qwen25vl(path)
@@ -138,6 +138,12 @@ class Murasame(QLabel):
             finally:
                 try:
                     os.remove(path)
+                except:
+                    pass
+                # 分析/上传完成后删除 temgraph 中的副本（若存在）
+                try:
+                    if 'persist_path' in locals() and isinstance(persist_path, Path) and persist_path.exists():
+                        os.remove(str(persist_path))
                 except:
                     pass
 
@@ -215,7 +221,7 @@ class Murasame(QLabel):
         if model_type == "local":
             self.worker = qwen3_lora_Worker(self.history, self.portrait_history, text, role, t=t)
         else:
-            self.worker = clound_API_Worker(self.history, self.portrait_history, text, role, t=t)
+            self.worker = cloud_API_Worker(self.history, self.portrait_history, text, role, t=t)
 
         self.worker.finished.connect(self.on_reply)
         self.worker.start()

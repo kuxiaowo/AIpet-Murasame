@@ -17,6 +17,7 @@ def now_time():
 ollama_url = get_config("./config.json")["local_api"]["ollama"]
 qwen3_lora_url = get_config("./config.json")["local_api"]["qwen3_lora"]
 gpt_sovits_tts_url = get_config("./config.json")["local_api"]["gpt_sovits_tts"]
+tts_type = get_config("./config.json")["tts_type"]
 
 
 def ollama_post(name: str, prompt: dict):
@@ -137,13 +138,16 @@ def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
     print(f"[{now_time()}] [gpt-sovits-tts] Prompt:{sentence}  {emotion}")
     audio = os.listdir(f"./reference_voices/{emotion}")
     audio.remove("asr.txt")
+    if tts_type == "local":
+        path = os.path.abspath(f"./reference_voices/{emotion}/{audio[0]}")
+    elif tts_type == "cloud":
+        path = f"/root/reference_voices/{emotion}/{audio[0]}"
     with open(f"./reference_voices/{emotion}/asr.txt", "r", encoding="utf-8") as f:
         ref = f.read().strip()
     params = {
         "text": sentence,
         "text_lang": "ja",
-        "ref_audio_path": os.path.abspath(
-            f"./reference_voices/{emotion}/{audio[0]}"),
+        "ref_audio_path": path,
         "aux_ref_audio_paths": aux_ref_audio_paths,
         "prompt_text": ref,
         "prompt_lang": "ja",
