@@ -4,7 +4,7 @@ import sys
 import os
 import json
 import time
-
+from tool.config import get_config
 def log(msg, level="INFO"):
     levels = {
         "INFO": "[AIpet]",
@@ -250,28 +250,43 @@ def run_download():
 
 def start_tts_api():
     """使用 GPT-SoVITS 自带解释器在新的控制台窗口中启动 TTS API。"""
-    python_path = os.path.abspath(r".\GPT-SoVITS\runtime\python.exe")
-    script_path = os.path.abspath(r".\GPT-SoVITS\api_v2.py")
-    work_dir = r".\GPT-SoVITS"
+    tts_type = get_config("./config.json")["tts_type"]
+    if tts_type == "local":
+        log("检测到 tts_type = local", "INFO")
+        python_path = os.path.abspath(r".\GPT-SoVITS\runtime\python.exe")
+        script_path = os.path.abspath(r".\GPT-SoVITS\api_v2.py")
+        work_dir = r".\GPT-SoVITS"
 
-    if not os.path.exists(os.path.join(work_dir, script_path)):
-        log(f"未找到脚本: {os.path.join(work_dir, script_path)}", "ERROR")
-        return None
+        if not os.path.exists(os.path.join(work_dir, script_path)):
+            log(f"未找到脚本: {os.path.join(work_dir, script_path)}", "ERROR")
+            return None
 
-    log(f"使用解释器 {python_path} 启动 TTS 服务（新控制台）...")
+        log(f"使用解释器 {python_path} 启动 TTS 服务（新控制台）...")
 
-    try:
-        proc = subprocess.Popen(
-            [python_path, script_path],
-            cwd=work_dir,
-            creationflags=(0x00000010 if os.name == "nt" else 0)
-        )
-        time.sleep(5)
-        log("TTS 服务已在新控制台启动。")
-        return proc
-    except Exception as e:
-        log(f"启动 TTS 失败: {e}", "ERROR")
-        return None
+        try:
+            proc = subprocess.Popen(
+                [python_path, script_path],
+                cwd=work_dir,
+                creationflags=(0x00000010 if os.name == "nt" else 0)
+            )
+            time.sleep(5)
+            log("TTS 服务已在新控制台启动。")
+            return proc
+        except Exception as e:
+            log(f"启动 TTS 失败: {e}", "ERROR")
+            return None
+    elif tts_type == "cloud":
+        try:
+            proc = subprocess.Popen(
+                  ["ssh", "aipet", "bash", "run.sh"],
+                  creationflags=(0x00000010 if os.name == "nt" else 0)
+            )
+            time.sleep(5)
+            log("TTS 服务已在新控制台启动。")
+            return proc
+        except Exception as e:
+            log(f"启动 TTS 失败: {e}", "ERROR")
+            return None
 
 def run_main():
     script_path = os.path.abspath(r".\main.py")
@@ -283,15 +298,14 @@ def run_main():
     log(f"正在运行主程序：{script_path}", "INFO")
     try:
         subprocess.run(["python", "main.py"],)
-        log("桌宠启动成功。", "SUCCESS")
     except subprocess.CalledProcessError as e:
         log(f"桌宠启动失败: {e}", "ERROR")
 
 if __name__ == "__main__":
-    check_hardware()
-    check_python()
-    install_requirements()
-    setup_runtime_and_pytorch()
-    run_download()
+    #check_hardware()
+    #check_python()
+    #install_requirements()
+    #setup_runtime_and_pytorch()
+    #run_download()
     start_tts_api()
     run_main()
