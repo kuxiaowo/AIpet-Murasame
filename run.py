@@ -302,10 +302,10 @@ def run_main():
         log(f"桌宠启动失败: {e}", "ERROR")
 
 if __name__ == "__main__":
-    #check_hardware()
-    #check_python()
-    #install_requirements()
-    #setup_runtime_and_pytorch()
-    #run_download()
+    check_hardware()
+    check_python()
+    install_requirements()
+    setup_runtime_and_pytorch()
+    run_download()
     start_tts_api()
     run_main()
