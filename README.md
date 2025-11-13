@@ -55,8 +55,26 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
   [AutoDL云算力](https://www.autodl.com/home)
 
   我用的这个，认证学生优惠还挺大的。
-  算力市场，选择显卡与地区，具体操作查看教学视频。
+  
+  算力市场，选择显卡与地区，镜像选择社区镜像，选择“AIpet-Murasame_GPT-SoVITs”，创建实例。
 
+  可以参考教程设置免密登录[AutoDL帮助文档](https://www.autodl.com/docs/ssh/)
+  控制台，容器实例，右上角选择设置密钥登陆。打开cmd：
+  ```bash
+  ssh-keygen -t rsa
+  ```
+  在user/.ssh/id_rsa.pub中复制全部公钥(一定是.pub!!! 私钥不能泄露!!!)到SSH公钥中。
+  开机实例，复制ssh登录指令。(ssh -p 12345 root@connect.cqa1.seetacloud.com)
+  将本项目中.ssh/config文件放入你的user/.ssh/目录下，用记事本打开
+  ```
+  Host aipet
+    HostName 这里填入root@后面的网址
+    Port 这里填-p后面的端口
+    User root 
+    IdentityFile ~/.ssh/id_rsa
+    LocalForward 9880 localhost:9880
+  ```
+  保存
 
 
 #### 4. 获取APIkey
