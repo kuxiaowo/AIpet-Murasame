@@ -278,7 +278,7 @@ def start_tts_api():
     elif tts_type == "cloud":
         try:
             proc = subprocess.Popen(
-                  ["ssh", "aipet", "bash", "run.sh"],
+                  ["ssh", "aipet", "-t", "bash -lc 'bash run.sh; bash'"],
                   creationflags=(0x00000010 if os.name == "nt" else 0)
             )
             time.sleep(5)
@@ -302,10 +302,10 @@ def run_main():
         log(f"桌宠启动失败: {e}", "ERROR")
 
 if __name__ == "__main__":
-    check_hardware()
-    check_python()
-    install_requirements()
-    setup_runtime_and_pytorch()
-    run_download()
+    #check_hardware()
+    #check_python()
+    #install_requirements()
+    #setup_runtime_and_pytorch()
+    #   run_download()
     start_tts_api()
     run_main()
