@@ -7,7 +7,7 @@
 
 一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目[LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)，进行部分重写和新加功能，并根据GPL-3.0许可证要求进行开源。
 
-## 最新版本咨询
+## 最新版本资讯
 
 #### 1.2.2 将支持长期tts部署云端，修复对话bug，全部模型可走qwen系列，屏幕识别优化。
 
@@ -18,8 +18,10 @@
 
 
 ## 🚀 快速开始
-### V1.2.1版本支持一键部署与运行
+### V1.2.2版本支持一键部署与运行
 ### 教程视频（准备新做一个）
+
+
 ### 环境准备
 
 #### 1. 下载项目文件
@@ -27,33 +29,46 @@ Code > Download ZIP
 解压后放到你需要的路径，路径里不要有特殊符号。
 
 #### 2. 安装Ollama（可选）
-如果你需要本地对话或者是屏幕识别（不稳定）才需要安装
+##### 如果你需要本地对话才需要安装
 
-项目里支持deepseek的API调用，需要自己获取并填入APIkey.json
+项目里支持deepseek与qwen的API调用，需要自己获取并填入APIkey.json
+
 在 https://ollama.com/download 下载 Ollama 并安装
 ```bash
 ollama pull qwen3:14b
-ollama pull qwen2.5vl:7b #如果需要屏幕识别
+ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
 ```
-~~（注意：本地必须跑一个微调的qwen3-14b模型作为对话模型，其他辅助模型可由deepseek担任）~~
-
-V1.0.1版本支持除了语音合成，全部AI跑在云端deepseek，相应的download.py也会检查配置文件，若是"deepseek"则不会下载对话模型，想要后面跑在本地的需要修改配置后再下载一次
-
-V1.1.0版本支持屏幕识别，只支持跑在本地qwen2.5vl模型上，可以在配置文件设置此选项的开关
 
 
 #### 3. 部署 GPT-SoVITS
-https://github.com/RVC-Boss/GPT-SoVITS
 
-下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
-（我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容）
+##### 1 本地部署
+  https://github.com/RVC-Boss/GPT-SoVITS
+
+  下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
+  (我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容)
 ##### 配置模型文件
 将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
 将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
 
-#### 4. 获取Deepseek APIkey
-https://platform.deepseek.com/usage
-注册或登录账号，充值然后新建APIkey
+##### 2 云端部署
+  [AutoDL云算力](https://www.autodl.com/home)
+
+  我用的这个，认证学生优惠还挺大的。
+  算力市场，选择显卡与地区，具体操作查看教学视频。
+
+
+
+#### 4. 获取APIkey
+
+##### 1 Deepseek
+   https://platform.deepseek.com/usage
+   注册或登录账号，充值然后新建APIkey
+   (想要云端屏幕识别功能，必须有qwen APIkey，只有qwen有图像识别模型)
+
+##### 2 Qwen系列模型(有免费额度)
+   [阿里模型](https://bailian.console.aliyun.com/?spm=5176.29597918.J_SEsSjsNv72yRuRFS2VknO.2.49d77b08RWidjt&tab=model#/efm/model_experience_center/text)
+   注册或登陆账号，左下角密钥管理，创建APIkey(新用户初始每个模型有100万tokens免费额度)
 
 #### 5. 一键启动
 运行 run.py (使用默认python环境)(python>=3.10, 如果出错尽量使用3.10)
@@ -139,6 +154,22 @@ python run.py
   
   3. 开始互动
 
+  ### 配置文件
+  ``` json
+  {
+    "local_api": {              #本地api端口，如果远程部署自己改地址
+      "ollama": "http://localhost:28565/ollama",
+      "qwen3_lora": "http://localhost:28565/qwen3-lora",
+      "gpt_sovits_tts": "http://localhost:28565/tts",
+      "deepseek_api": "http://localhost:28565/deepseekAPI"
+    },
+    "portrait": "a",            #立绘模式，可以改为b
+    "user_name": "Kuxw",        #用户名字
+    "model_type": "deepseek",   #模型类型，local为本地模型
+    "screen_type": "false",     #屏幕识别开关
+  }
+  ```
+
 </details>
 
 --------------------------------------------------------------------------------------------------
@@ -149,7 +180,7 @@ python run.py
 ### 配置文件
 ``` json
 {
-  "local_api": {              #本地api端口，如果远程部署自己改地址
+  "local_api": {              #本地api端口，如果api转发远程部署自己改地址
     "ollama": "http://localhost:28565/ollama",
     "qwen3_lora": "http://localhost:28565/qwen3-lora",
     "gpt_sovits_tts": "http://localhost:28565/tts",
@@ -157,9 +188,10 @@ python run.py
   },
   "portrait": "a",            #立绘模式，可以改为b
   "user_name": "Kuxw",        #用户名字
-  "model_type": "deepseek",   #模型类型，local为本地模型
-  "screen_type": "false",     #屏幕识别开关
-  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8    #桌宠高度最多占屏幕高度的多少
+  "model_type": "deepseek",   #模型类型，local为本地模型，qwen为qwen系列模型，deepseek为deepseek模型(屏幕识别默认qwen模型，所以建议直接走qwen)
+  "tts_type": "local",        #语音合成，local为本地模型，cloud为云端模型
+  "screen_type": "false",     #屏幕识别开关，false关闭， true开启
+  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8    #桌宠高度最多占屏幕高度的比例
 }
 ```
 
