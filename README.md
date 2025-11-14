@@ -56,7 +56,7 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
 
   我用的这个，认证学生优惠还挺大的。
   
-  算力市场，选择显卡与地区，镜像选择社区镜像，选择“AIpet-Murasame_GPT-SoVITs”，创建实例。
+  算力市场，选择显卡与地区，镜像选择社区镜像，选择“kuxiaowo/AIpet-Murasame/AIpet-Murasame_GPT-SoVITs”，创建实例。
 
   可以参考教程设置免密登录[AutoDL帮助文档](https://www.autodl.com/docs/ssh/)
   控制台，容器实例，右上角选择设置密钥登陆。打开cmd：
