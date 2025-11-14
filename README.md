@@ -24,11 +24,11 @@
 
 ### 环境准备
 
-#### 1. 下载项目文件
+### 1. 下载项目文件
 Code > Download ZIP
 解压后放到你需要的路径，路径里不要有特殊符号。
 
-#### 2. 安装Ollama（可选）
+### 2. 安装Ollama（可选）
 ##### 如果你需要本地对话才需要安装
 
 项目里支持deepseek与qwen的API调用，需要自己获取并填入APIkey.json
@@ -40,16 +40,13 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
 ```
 
 
-#### 3. 部署 GPT-SoVITS
+### 3. 部署 GPT-SoVITS
 
 ##### 1 本地部署
   https://github.com/RVC-Boss/GPT-SoVITS
 
   下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
   (我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容)
-##### 配置模型文件
-将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
-将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
 
 ##### 2 云端部署
   [AutoDL云算力](https://www.autodl.com/home)
@@ -77,7 +74,7 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
   保存
 
 
-#### 4. 获取APIkey
+### 4. 获取APIkey
 
 ##### 1 Deepseek
    https://platform.deepseek.com/usage
@@ -88,7 +85,7 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
    [阿里模型](https://bailian.console.aliyun.com/?spm=5176.29597918.J_SEsSjsNv72yRuRFS2VknO.2.49d77b08RWidjt&tab=model#/efm/model_experience_center/text)
    注册或登陆账号，左下角密钥管理，创建APIkey(新用户初始每个模型有100万tokens免费额度)
 
-#### 5. 一键启动
+### 5. 一键启动
 运行 run.py (使用默认python环境)(python>=3.10, 如果出错尽量使用3.10)
 ```bash
 python run.py
