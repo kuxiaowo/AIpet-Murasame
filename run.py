@@ -235,18 +235,23 @@ def setup_runtime_and_pytorch(config_path="config.json"):
     return model_type
 
 def run_download():
-    script_path = os.path.abspath(r".\download.py")
+    tts_type = get_config("./config.json")["tts_type"]
+    if tts_type == "local":
+        log("检测到 tts_type = local", "INFO")
+        script_path = os.path.abspath(r".\download.py")
 
-    if not os.path.exists(script_path):
-        log(f"未找到文件: {script_path}", "ERROR")
-        return
+        if not os.path.exists(script_path):
+            log(f"未找到文件: {script_path}", "ERROR")
+            return
 
-    log(f"正在运行模型下载脚本：{script_path}", "INFO")
-    try:
-        subprocess.run(["python", "download.py"],)
-        log("模型下载完成。", "SUCCESS")
-    except subprocess.CalledProcessError as e:
-        log(f"下载脚本运行失败: {e}", "ERROR")
+        log(f"正在运行模型下载脚本：{script_path}", "INFO")
+        try:
+            subprocess.run(["python", "download.py"],)
+            log("模型下载完成。", "SUCCESS")
+        except subprocess.CalledProcessError as e:
+            log(f"下载脚本运行失败: {e}", "ERROR")
+    elif tts_type == "cloud":
+        log("检测到 tts_type = cloud, 跳过模型下载", "INFO")
 
 def start_tts_api():
     """使用 GPT-SoVITS 自带解释器在新的控制台窗口中启动 TTS API。"""
@@ -276,6 +281,7 @@ def start_tts_api():
             log(f"启动 TTS 失败: {e}", "ERROR")
             return None
     elif tts_type == "cloud":
+        log("检测到 tts_type = cloud", "INFO")
         try:
             proc = subprocess.Popen(
                   ["ssh", "aipet", "-t", "bash -lc 'bash run.sh; bash'"],
