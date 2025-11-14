@@ -169,6 +169,8 @@ async def cloudAPI(req: cloudAPIRequest):
         url = url_deepseek
     elif model_type == "qwen":
         url = url_qwen
+    if req.payload["model"] == "qwen3-vl-plus":
+        url = url_qwen
     async with aiohttp.ClientSession() as session:
         async with session.post(
             url,

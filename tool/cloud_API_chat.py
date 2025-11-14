@@ -22,15 +22,6 @@ def now_time():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return now
 
-def _local_base_from_api(api_url: str) -> str:
-    try:
-        p = urlparse(api_url)
-        if p.scheme and p.netloc:
-            return f"{p.scheme}://{p.netloc}"
-    except Exception:
-        pass
-    return "http://127.0.0.1:28565"
-
 def post(name: str, payload):
     print(f"[{now_time()}] [{name}] Prompt:{payload}")
     headers = {
@@ -175,7 +166,8 @@ def cloud_image_thinker(history: list, prompt: str):
     return reply, history
 
 def cloud_vl(image_path: str):
-    identity = "你是一个AI桌宠的助手，你应该可以在屏幕上看到这个桌宠角色，是一个绿色头发的动漫人物。你需要详细描述屏幕内容与使用的软件，描述页面主题。我会将你的描述以system消息提供给另外一个处理语言的AI模型。只输出描述内容，且不要描述桌宠。"
+    API_key = get_config("./config.json")["APIKEY"]["qwen"]
+    identity = "你是一个AI桌宠的助手，你应该可以在屏幕上看到这个桌宠角色，是一个绿色头发的动漫人物。你需要简要描述屏幕内容与使用的软件，描述页面主题。我会将你的描述以system消息提供给另外一个处理语言的AI模型。只输出描述内容，且不要描述桌宠。"
     with open(image_path, "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
 
@@ -186,7 +178,7 @@ def cloud_vl(image_path: str):
         "max_tokens": 4096,
         "stream": False,
     }
-    print(f"[{now_time()}] [{model_type}-vl] POST")
+    print(f"[{now_time()}] [qwen-vl] POST")
     headers = {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -199,5 +191,6 @@ def cloud_vl(image_path: str):
         reply = resp['choices'][0]['message']['content']
     else:
         print(resp)
-    print(f"[{now_time()}] [{model_type}-vl] Reply:{reply}")
+    print(f"[{now_time()}] [qwen-vl] Reply:{reply}")
     return reply
+
