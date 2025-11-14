@@ -47,9 +47,6 @@ ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
 
   下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
   (我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容)
-##### 配置模型文件
-将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
-将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
 
 ##### 2 云端部署
   [AutoDL云算力](https://www.autodl.com/home)
