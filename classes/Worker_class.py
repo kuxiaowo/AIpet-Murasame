@@ -102,9 +102,10 @@ class cloud_API_Worker(QThread):
     def run(self):
         def to_list(text):
             try:
-                return json.loads(text)
+                text = json.loads(text)  # 把字符串解析成 Python 列表
             except Exception as e:
-                return [text]
+                text = [text]  # 如果解析失败，就退化成单句
+            return text
 
         # 1. 先获取对话回复（这个必须串行，因为依赖前面的历史）
         if self.force_stop:print("[deepseek] 已中断生成。");return
