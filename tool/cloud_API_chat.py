@@ -4,15 +4,14 @@ import os
 from datetime import datetime
 
 import requests
-from pathlib import Path
-from urllib.parse import urlparse, quote
 
 from tool.config import get_config
 from tool.time_utils import build_time_context
 
 url = get_config("./config.json")["local_api"]["cloud_api"]
 model_type = get_config("./config.json")["model_type"]
-API_key = get_config("./config.json")["APIKEY"][model_type]
+if model_type != "local":
+    API_key = get_config("./config.json")["APIKEY"][model_type]
 if model_type == "deepseek":
     chat_model="deepseek-chat"
 elif model_type == "qwen":
@@ -44,6 +43,8 @@ def cloud_talk(history: list, user_input: str, role: str):
         identity = f.read()
     if history == []:
         history.append({"role": "system", "content": identity})
+    else:
+        history[0] = {"role": "system", "content": identity}
     # 注入/更新当前时间上下文（包含日期与星期、时间段）
     time_ctx = build_time_context()
     if history and history[-1].get("role") == "system" and str(history[-1].get("content", "")).startswith("当前日期"):
@@ -121,53 +122,9 @@ def cloud_emotion(history: list):
     }
     reply = post(name=f"{model_type}-emotion", payload=payload)
     return reply
-
-def cloud_image_thinker(history: list, prompt: str):
-    identity = '''
-你是一个AI桌宠的视觉思考助手（image thinker），你的任务是判断“用户当前屏幕是否发生变化”，决定是否需要把这些变化提供给AI桌宠。
-
-【核心目标】
-- 你接收连续的屏幕描述（或截图分析结果），需要基于上下文判断用户行为和浏览内容是否发生了变化。
-- 若仅为小幅变化（如同一页面滚动、编辑同一段文字等），则认为变化不大，不提供内容。
-- 若检测到变化（例如：
-  - 视频平台播放视频改变；
-  - 用户切换到不同软件、文件；
-  - 用户浏览网页改变；
-  - 文档编辑中从写标题切换到写正文；
-  - 编程时从写代码切换到调试或运行；
-  - 学习任务中从一个主题切换到另一个；
-  - 用户打开新窗口、关闭应用、进行重要操作等），则提供更新描述。
-- 一但浏览页面发生变化，使用软件发生变化，就需要提供。
-
-【输出要求】
-- 若没有变化，请返回 "null"并**说明原因**。
-
-- 若变化明显，请返回**简洁清晰**的一句总结，描述变化内容及当前行为，不需要返回理由。例如：
-  - `"用户从编辑Python代码切换到浏览器，正在查看Bilibili视频。"`
-  - `"用户从写论文转为阅读参考文献。"`
-  - `"用户关闭了视频播放器，开始在VSCode调试项目。"`
-
-【上下文利用】
-- 你可以参考“上一次截屏”中的先前描述，用它来判断这次变化是否值得汇报。
-- 你的判断要尽量稳重：宁可漏报小变化，也不要频繁报告细微变化。
-
-桌宠名叫“丛雨”，是一个温柔的女孩角色，她只需要在有真实意义的变化时被通知。
-'''
-
-    history[0] = history[1]
-    history[1] = {"role": "user", "content": prompt}
-    payload = {
-        "messages": [{"role": "system", "content": f"{identity}  现在: {history[1]} 上一次截屏: {history[0]}"}],
-        "model": chat_model,
-        "max_tokens": 4096,
-        "stream": False,
-    }
-    reply = post(name=f"{model_type}-image_thinker", payload=payload)
-    return reply, history
-
 def cloud_vl(image_path: str):
     API_key = get_config("./config.json")["APIKEY"]["qwen"]
-    identity = "你是一个AI桌宠的助手，你应该可以在屏幕上看到这个桌宠角色，是一个绿色头发的动漫人物。你需要简要描述屏幕内容与使用的软件，描述页面主题。我会将你的描述以system消息提供给另外一个处理语言的AI模型。只输出描述内容，且不要描述桌宠。"
+    identity = "你是一个AI桌宠的助手，你应该可以在屏幕上看到这个桌宠角色，是一个绿色头发的动漫人物。你需要简要描述用户正在做的事与使用的软件。我会将你的描述以system消息提供给另外一个处理语言的AI模型。只输出描述内容，且不要描述桌宠。"
     with open(image_path, "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
 

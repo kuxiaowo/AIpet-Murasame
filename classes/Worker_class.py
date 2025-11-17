@@ -101,15 +101,14 @@ class cloud_API_Worker(QThread):
     '''
     def run(self):
         def to_list(text):
-            return json.loads(text)
+            try:
+                return json.loads(text)
+            except Exception as e:
+                return [text]
 
         # 1. 先获取对话回复（这个必须串行，因为依赖前面的历史）
         if self.force_stop:print("[deepseek] 已中断生成。");return
         reply, history = cloud_talk(self.history, self.user_input, self.role)
-        '''
-        reply = deepseek_sentence(reply)  # 句子分割
-        history[-1]["content"] = reply
-        '''
         # 2. 使用线程池并发执行所有 DeepSeek 任务和 TTS 任务
         if self.force_stop:print("[deepseek] 已中断生成。");return
         with ThreadPoolExecutor(max_workers=5) as executor:  # 增加线程数
@@ -147,7 +146,7 @@ class cloud_API_Worker(QThread):
         self.finished.emit(reply_list, portrait_list, history, portrait_history, voices)
 
 
-
+screen_index = get_config("./config.json")["screen_index"]
 class ScreenWorker(QThread):
     # 发出临时文件路径（主线程负责删除）
     screenshot_captured = pyqtSignal(str)
@@ -157,7 +156,8 @@ class ScreenWorker(QThread):
         self.interval = interval_sec
 
     def run(self):
-        screen = QGuiApplication.primaryScreen()
+        screens = QGuiApplication.screens()
+        screen = screens[screen_index]
         if screen is None:
             return
         while not self.isInterruptionRequested():

@@ -119,21 +119,6 @@ def ollama_qwen25vl(image_path: str):
     reply = ollama_post("ollama-qwen2.5vl", prompt)
     return reply
 
-def ollama_qwen3_image_thinker(history: list, prompt: str):
-    identity = '''你现在是一个思考助手，来协助一个AI丛雨桌宠工作。你需要根据我提供给你的屏幕描述，来思考这段描述是否有必要提供给AI桌宠进行处理。若你根据上下文推断用户的行为此时没有发生大的变化，那么请你选择不给AI桌宠提供。若用户的行为发生了较大变化或者是进行了什么很重要的操作，那么请你选择提供给AI桌宠。
-    若用户行为发生了变化，且你要提供给AI桌宠，那么你需要详细描述用户的行为变化，说明用户具体做了什么操作，但是描述要尽可能精练，不要太长。
-    这个桌宠是一个绿色头发的小女孩，名叫丛雨。
-    若你觉得不需要提供给AI桌宠，那么请回复"null"。若你觉得需要提供，那么请回复具体描述内容以及进行的操作。
-    '''
-    history[1] = history[2]
-    history[2] = {"role": "user", "content": prompt}
-    prompt = {"model": "qwen3:14b",
-              "prompt": f"{identity}   历史：{history}",
-              "stream": False}
-    reply = ollama_post("ollama-qwen3-image_thinker", prompt)
-    #history.append({"role": "assistant", "content": reply})
-    return reply, history
-
 def gpt_sovits_tts(sentence: str, emotion: str, aux_ref_audio_paths: list = []):
     print(f"[{now_time()}] [gpt-sovits-tts] Prompt:{sentence}  {emotion}")
     audio = os.listdir(f"./reference_voices/{emotion}")

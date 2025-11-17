@@ -1,7 +1,7 @@
 import io
 import os
 from datetime import datetime
-from typing import List, Dict, Optional, TYPE_CHECKING, Any
+from typing import List, Dict, Optional, TYPE_CHECKING
 
 import aiohttp
 import uvicorn
