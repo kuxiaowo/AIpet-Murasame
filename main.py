@@ -2,6 +2,7 @@ import sys
 import threading
 import json
 
+from PyQt5.QtCore import QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QAction, QMenu
 
@@ -10,8 +11,15 @@ from api import app as api_app
 import uvicorn
 
 from tool.config import get_config
+from tool.voice_trigger import CapslockVoiceTrigger
 
 screen_index = get_config("./config.json")["screen_index"]
+
+
+class VoiceBridge(QObject):
+    text_ready = pyqtSignal(str)
+    record_start = pyqtSignal()
+    record_end = pyqtSignal()
 
 
 def save_screen_type(pet: Murasame) -> None:
@@ -82,5 +90,35 @@ if __name__ == "__main__":
     tray_icon.setContextMenu(tray_menu)
     tray_icon.show()
 
-    sys.exit(app.exec_())  # 进入事件循环
+    # ===== CapsLock 语音触发 =====
+    bridge = VoiceBridge()
 
+    bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
+    bridge.record_start.connect(
+        lambda: pet.show_text("正在录音......", typing=False)
+    )
+    bridge.record_end.connect(
+        lambda: pet.show_text("录音结束，正在识别......", typing=False)
+    )
+
+    def _on_voice_text_ready(text: str) -> None:
+        bridge.text_ready.emit(text)
+
+    def _on_record_start() -> None:
+        bridge.record_start.emit()
+
+    def _on_record_end() -> None:
+        bridge.record_end.emit()
+
+    try:
+        voice_trigger = CapslockVoiceTrigger(
+            on_text_ready=_on_voice_text_ready,
+            hold_seconds=2.0,
+            on_record_start=_on_record_start,
+            on_record_end=_on_record_end,
+        )
+        voice_trigger.start()
+    except Exception as e:
+        print(f"[AIpet] 启用 CapsLock 语音触发失败: {e}")
+
+    sys.exit(app.exec_())  # 进入事件循环

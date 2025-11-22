@@ -165,7 +165,7 @@ class ScreenWorker(QThread):
             # 抓屏（全屏）
             pixmap = screen.grabWindow(0)
             # 存到临时文件
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png", dir="tmp")
             tmp_name = tmp.name
             tmp.close()
             pixmap.save(tmp_name, "PNG")

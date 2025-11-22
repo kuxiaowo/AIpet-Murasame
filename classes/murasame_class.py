@@ -353,7 +353,7 @@ class Murasame(QLabel):
             self.away_trigger_time = time.time()
             print(f"[AIpet] 空闲超过 {self.idle_away_seconds} 秒，判定为离开屏幕")
             prompt = (
-                "系统提示：用户已经离开屏幕更长时间，没有对电脑进行任何输入。"
+                "系统提示：用户已经离开屏幕更长时间，没有对电脑进行任何输入。忽视最近的对话。"
                 "你需要以“丛雨”的身份，问问主人还在不在，提醒适当休息。"
                 "不要和之前问主人走神或是思考的提示重复。"
             )
@@ -366,7 +366,7 @@ class Murasame(QLabel):
             self.idle_thinking_triggered = True
             print(f"[AIpet] 空闲超过 {self.idle_thinking_seconds} 秒")
             prompt = (
-                "系统提示：用户已经有一段时间没有对电脑进行输入操作。"
+                "系统提示：用户已经有一段时间没有对电脑进行输入操作。忽视最近的对话。"
                 "可能是在发呆、走神或者安静地思考。请你以“丛雨”的身份，"
                 "用温柔、贴心但不过分打扰的方式主动搭话，可以简单关心一下主人在想什么，或者是不是走神，在摸鱼，"
                 "或者轻轻提醒他注意放松，回答不超过三句话。"

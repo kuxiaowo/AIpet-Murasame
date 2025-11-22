@@ -94,6 +94,10 @@ def install_requirements():
             [sys.executable, "-m", "pip", "install", "-r", req_path, "--upgrade", "--no-warn-script-location"],
             check=True
         )
+        subprocess.run(
+            ["conda", "install", "nvidia::cudnn", "cuda-version=12", "-y"],
+            check=True
+        )
         log("所有依赖安装完成。", "SUCCESS")
     except subprocess.CalledProcessError:
         log("依赖安装失败！请检查网络或 pip 源设置。", "ERROR")

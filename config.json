@@ -6,14 +6,15 @@
     "cloud_api": "http://localhost:28565/cloudAPI"
   },
   "APIKEY": {
-    "deepseek": "sk-02471a90508849edbca9bd871d76c149",
-    "qwen": "sk-e317d30f962248a08eaa692d20284c03"
+    "deepseek": "",
+    "qwen": ""
   },
   "portrait": "b",
   "user_name": "Kuxw",
   "model_type": "deepseek",
   "tts_type": "local",
   "screen_type": "false",
+  "stt_model": "large-v3",
   "screen_interval": 300,
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8,
   "screen_index": 0,
