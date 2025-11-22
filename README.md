@@ -6,10 +6,12 @@
 ## 📖 项目简介
 
 一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目[LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)，进行部分重写和新加功能，并根据GPL-3.0许可证要求进行开源。
+语音合成：[GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
+语音识别：[faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 
 ## 最新版本资讯
 
-#### 1.2.2 将支持长期tts部署云端，修复对话bug，全部模型可走qwen系列，屏幕识别优化。
+#### 1.3.0 语音对话及闲置语音。
 
 ## 项目指路
 
@@ -18,7 +20,7 @@
 
 
 ## 🚀 快速开始
-### V1.2.2版本支持一键部署与运行
+### V1.2.2以上版本支持一键部署与运行
 ### 教程视频（准备新做一个）
 
 
@@ -206,7 +208,12 @@ python run.py
   "model_type": "deepseek",   #模型类型，local为本地模型，qwen为qwen系列模型，deepseek为deepseek模型(屏幕识别默认qwen模型，所以建议直接走qwen)
   "tts_type": "local",        #语音合成，local为本地模型，cloud为云端模型
   "screen_type": "false",     #屏幕识别开关，false关闭， true开启
+  "stt_model": "large-v3",    #选择语音识别模型，具体可见原项目
+  "screen_interval": 300,     #屏幕截图间隔(s)
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8    #桌宠高度最多占屏幕高度的比例
+  "screen_index": 0,          #桌宠运行在哪个屏幕，并在那个屏幕截图
+  "idle_thinking_minutes": 1, #短时间离开的判断阈值
+  "idle_away_minutes": 2      #长时间离开的判断阈值
 }
 ```
 
