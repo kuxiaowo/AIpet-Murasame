@@ -155,6 +155,7 @@ class ScreenWorker(QThread):
     def __init__(self, interval_sec=3.0, parent=None):
         super().__init__(parent)
         self.interval = interval_sec
+        os.makedirs("tmp", exist_ok=True)
 
     def run(self):
         screens = QGuiApplication.screens()
