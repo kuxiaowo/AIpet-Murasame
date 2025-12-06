@@ -11,9 +11,11 @@ from api import app as api_app
 import uvicorn
 
 from tool.config import get_config
-from tool.voice_trigger import CapslockVoiceTrigger
 
-screen_index = get_config("./config.json")["screen_index"]
+
+CONFIG = get_config("./config.json")
+screen_index = CONFIG["screen_index"]
+VOICE_TRIGGER_ENABLED = CONFIG.get("voice_trigger")
 
 
 class VoiceBridge(QObject):
@@ -91,34 +93,38 @@ if __name__ == "__main__":
     tray_icon.show()
 
     # ===== CapsLock 语音触发 =====
-    bridge = VoiceBridge()
+    if VOICE_TRIGGER_ENABLED == "true":
+        from tool.voice_trigger import CapslockVoiceTrigger
+        bridge = VoiceBridge()
 
-    bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
-    bridge.record_start.connect(
-        lambda: pet.show_text("正在录音......", typing=False)
-    )
-    bridge.record_end.connect(
-        lambda: pet.show_text("录音结束，正在识别......", typing=False)
-    )
-
-    def _on_voice_text_ready(text: str) -> None:
-        bridge.text_ready.emit(text)
-
-    def _on_record_start() -> None:
-        bridge.record_start.emit()
-
-    def _on_record_end() -> None:
-        bridge.record_end.emit()
-
-    try:
-        voice_trigger = CapslockVoiceTrigger(
-            on_text_ready=_on_voice_text_ready,
-            hold_seconds=2.0,
-            on_record_start=_on_record_start,
-            on_record_end=_on_record_end,
+        bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
+        bridge.record_start.connect(
+            lambda: pet.show_text("正在录音......", typing=False)
         )
-        voice_trigger.start()
-    except Exception as e:
-        print(f"[AIpet] 启用 CapsLock 语音触发失败: {e}")
+        bridge.record_end.connect(
+            lambda: pet.show_text("录音结束，正在识别......", typing=False)
+        )
+
+        def _on_voice_text_ready(text: str) -> None:
+            bridge.text_ready.emit(text)
+
+        def _on_record_start() -> None:
+            bridge.record_start.emit()
+
+        def _on_record_end() -> None:
+            bridge.record_end.emit()
+
+        try:
+            voice_trigger = CapslockVoiceTrigger(
+                on_text_ready=_on_voice_text_ready,
+                hold_seconds=2.0,
+                on_record_start=_on_record_start,
+                on_record_end=_on_record_end,
+            )
+            voice_trigger.start()
+        except Exception as e:
+            print(f"[AIpet] 启用 CapsLock 语音触发失败: {e}")
+    else:
+        print("[AIpet] 已在配置中关闭 CapsLock 语音触发")
 
     sys.exit(app.exec_())  # 进入事件循环

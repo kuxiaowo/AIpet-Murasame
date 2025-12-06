@@ -331,9 +331,9 @@ class Murasame(QLabel):
                 print("[AIpet] 触发回归")
                 greeting_prompt = (
                     "系统提示：用户刚刚从离开状态回到电脑前。"
-                    "你以“丛雨”的身份，用温柔、愉快的语气简单打个招呼，"
+                    "你以“丛雨”的身份，简单打个招呼"
                     "可以说“欢迎回来”、问问主人要不要继续刚才的事情之类，"
-                    "回答简短。不要去之前重复。"
+                    "回答简短。不要与之前重复。"
                 )
                 self.start_thread(greeting_prompt, role="system", t=True)
                 # 防止重复问候

@@ -14,6 +14,7 @@
   "model_type": "deepseek",
   "tts_type": "local",
   "screen_type": "false",
+  "voice_trigger": "false",
   "stt_model": "large-v3",
   "screen_interval": 300,
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8,

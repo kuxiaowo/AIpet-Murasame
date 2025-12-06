@@ -46,7 +46,8 @@ def qwen3_lora(history, user_input, role):
         history[-1] = {"role": "system", "content": time_ctx}
     else:
         history.append({"role": "system", "content": time_ctx})
-    history.append({"role": role, "content": user_input})
+    if role != "system":
+        history.append({"role": role, "content": user_input})
     print(f"[{now_time()}] [qwen3-lora] Prompt:{history}")
     reply = requests.post(qwen3_lora_url, json={"history": history})
     reply = reply.json()
