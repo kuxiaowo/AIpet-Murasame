@@ -38,6 +38,10 @@ def _lazy_import_local_deps():
 
 def load_model_and_tokenizer():
     torch, PeftModel, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig = _lazy_import_local_deps()
+    if torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
 
     tok = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     bnb_config = BitsAndBytesConfig(
@@ -46,9 +50,10 @@ def load_model_and_tokenizer():
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.float16,
     )
+
     mdl = AutoModelForCausalLM.from_pretrained(
         base_model_path,
-        device_map="auto",
+        device_map=device,
         quantization_config=bnb_config,
         trust_remote_code=True,
         offload_buffers=True,

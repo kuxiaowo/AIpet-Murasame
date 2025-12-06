@@ -111,7 +111,7 @@ def cloud_translate(sentence: str):
     return reply
 
 def cloud_emotion(history: list):
-    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。所有供你参考的标签有{'，'.join(os.listdir(r'./reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]"
+    identity = f"你是一个情感分析助手，负责分析“丛雨”说的话的情感。你现在需要将用户输入的句子进行分析，综合用户的输入和丛雨的输出返回一个丛雨最新一句话每个分句情感的标签。你只可以选择的标签有{'，'.join(os.listdir(r'./reference_voices'))}。你需要直接返回一个情感列表，不需要其他任何内容。如[\"开心\", \"平静\"]"
     history_l = history[1:]
     payload = {
         "messages": [{"role": "system", "content": identity},

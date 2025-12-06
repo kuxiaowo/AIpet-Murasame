@@ -19,6 +19,6 @@
   "screen_interval": 300,
   "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8,
   "screen_index": 0,
-  "idle_thinking_minutes": 1,
-  "idle_away_minutes": 2
+  "idle_thinking_minutes": 6,
+  "idle_away_minutes": 10
 }

@@ -17,11 +17,13 @@
 
 - **演示视频**: [【丛雨AI桌宠】让丛雨陪在你身边](https://www.bilibili.com/video/BV1oi4wzSEJJ)
 - **教程视频**: [丛雨AI桌宠V1.2.0部署教程](https://www.bilibili.com/video/BV1F6ykBwEDu)
+- **教程视频**: [丛雨AI桌宠V1.2.2部署教程](https://www.bilibili.com/video/BV1ghCMBjEKK)
+- **教程视频**: [丛雨AI桌宠V1.3.0部署教程](https://www.bilibili.com/video/BV1iw2XBREpd)
 
 
 ## 🚀 快速开始
 ### V1.2.2以上版本支持一键部署与运行
-### 教程视频（准备新做一个）
+### 教程视频[丛雨AI桌宠V1.3.0部署教程](https://www.bilibili.com/video/BV1iw2XBREpd)
 
 
 ### 环境准备
@@ -208,9 +210,10 @@ python run.py
   "model_type": "deepseek",   #模型类型，local为本地模型，qwen为qwen系列模型，deepseek为deepseek模型(屏幕识别默认qwen模型，所以建议直接走qwen)
   "tts_type": "local",        #语音合成，local为本地模型，cloud为云端模型
   "screen_type": "false",     #屏幕识别开关，false关闭， true开启
+  "voice_trigger": "false",   #语音识别开关
   "stt_model": "large-v3",    #选择语音识别模型，具体可见原项目
   "screen_interval": 300,     #屏幕截图间隔(s)
-  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8    #桌宠高度最多占屏幕高度的比例
+  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8,    #桌宠高度最多占屏幕高度的比例
   "screen_index": 0,          #桌宠运行在哪个屏幕，并在那个屏幕截图
   "idle_thinking_minutes": 1, #短时间离开的判断阈值
   "idle_away_minutes": 2      #长时间离开的判断阈值
