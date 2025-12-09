@@ -1,6 +1,7 @@
 import json
 import tempfile
 import time
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from PyQt5.QtCore import QThread, pyqtSignal
