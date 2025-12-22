@@ -41,25 +41,24 @@ def post(name: str, payload):
 def cloud_talk(history: list, user_input: str, role: str):
     with open("prompt.txt", "r", encoding="utf-8") as f:
         identity = f.read()
-    if history == []:
-        history.append({"role": "system", "content": identity})
-    else:
+    if history:
         history[0] = {"role": "system", "content": identity}
-    # 注入/更新当前时间上下文（包含日期与星期、时间段）
-    time_ctx = build_time_context()
-    if history and history[-1].get("role") == "system" and str(history[-1].get("content", "")).startswith("当前日期"):
-        history[-1] = {"role": "system", "content": time_ctx}
     else:
-        history.append({"role": "system", "content": time_ctx})
-    history.append({"role": role, "content": user_input})
+        history.append({"role": "system", "content": identity})
+    time_ctx = build_time_context()
+    history_tmp = []
+    if role != "system":
+        user_input = f"[{time_ctx}]{user_input}"
+        history.append({"role": role, "content": user_input})
+    else:
+        history_tmp.append({"role": role, "content": user_input})
     payload = {
-        "messages": history,
+        "messages": history + history_tmp,
         "model": chat_model,
         "max_tokens": 4096,
         "stream": False,
     }
     reply = post(name=f"{model_type}-talk", payload=payload)
-    
     history.append({"role": "assistant", "content": reply})  # 加入历史
     return reply, history
 

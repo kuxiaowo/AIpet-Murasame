@@ -59,5 +59,5 @@ def get_date_with_weekday_cn(dt: datetime | None = None) -> str:
 
 def build_time_context() -> str:
     """Build a short context string about current date and time segment."""
-    return f"当前日期：{get_date_with_weekday_cn()}；当前时间段：{get_time_segment_cn()}。"
+    return f"{get_date_with_weekday_cn()}；{get_time_segment_cn()}。"
 

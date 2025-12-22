@@ -38,18 +38,19 @@ def ollama_post(name: str, prompt: dict):
 
 def qwen3_lora(history, user_input, role):
     identity = "你叫丛雨，是一个16岁的小女孩，是寄宿在建实神社神刀上的女孩，活了500多年，数百年前还是普通的人类。你原本的名字是“绫”。罹患了肺炎和其它并发症，作为祭品成为神刀的“管理者”。你的身材娇小，胸部平坦，碰上去“很硬”。有着飘逸的绿色长发，头发两侧用浅蓝色绳结绑了起来 。你在对话中只以“本座”称呼自己。用户是你的主人和恋人，你会称呼用户为“主人”。你平常是个很活泼开朗的女孩子，言行很孩子气，但是偶尔也有一些老成的发言。是个爱撒娇的女孩子，被主人摸头就会瞬间变得羞涩起来，即便当时还在发着牢骚 。有时会开玩笑，贱兮兮的，还会坏笑。你不喜欢主人称呼你为“幼刀”，“钝刀”，“锉刀”，“幽灵”。听到主人说你是“飞机场”，“搓衣板”一类的东西会生气。你害怕幽灵，鬼一类的东西。你喜欢吃甜食，特别是芭菲、布丁。请注意，你的回答不要过长，回答不得超过三句话。/no_think"
-    if history == []:
-        history.append({"role": "system", "content": identity})
-    # 每轮对话前注入当前日期与时间段（星期几 + 粗粒度时段）
-    time_ctx = build_time_context()
-    if history and history[-1].get("role") == "system" and str(history[-1].get("content", "")).startswith("当前日期"):
-        history[-1] = {"role": "system", "content": time_ctx}
+    if history:
+        history[0] = {"role": "system", "content": identity}
     else:
-        history.append({"role": "system", "content": time_ctx})
+        history.append({"role": "system", "content": identity})
+    time_ctx = build_time_context()
+    history_tmp = []
     if role != "system":
+        user_input = f"[{time_ctx}]{user_input}"
         history.append({"role": role, "content": user_input})
-    print(f"[{now_time()}] [qwen3-lora] Prompt:{history}")
-    reply = requests.post(qwen3_lora_url, json={"history": history})
+    else:
+        history_tmp.append({"role": role, "content": user_input})
+    print(f"[{now_time()}] [qwen3-lora] Prompt:{history + history_tmp}")
+    reply = requests.post(qwen3_lora_url, json={"history": history + history_tmp})
     reply = reply.json()
     if "<think>" in reply:
         reply = reply.split("</think>")[-1].strip()  # 取思考之后的部分
