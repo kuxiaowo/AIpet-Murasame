@@ -15,7 +15,6 @@ portrait_type = get_config("./config.json")['portrait']
 
 
 class qwen3_lora_Worker(QThread):
-    '''将历史与用户信息交给对话模型，然后将回复交给句子分割模型'''
     finished = pyqtSignal(list, list, list, list, list)  # 返回 (AI回复, history)
 
     def __init__(self, history, portrait_history, user_input, role="user", t = False):
@@ -28,11 +27,11 @@ class qwen3_lora_Worker(QThread):
         self.force_stop = False
 
     def stop_all(self):
-        """外部调用，用于请求线程中断"""
+    
         self.force_stop = True
 
     def stop_screen(self):
-        """外部调用，用于请求线程中断"""
+      
         if self.t:
             self.force_stop = True
     def run(self):
