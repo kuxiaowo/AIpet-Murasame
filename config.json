@@ -13,6 +13,7 @@
   "user_name": "Kuxw",
   "model_type": "deepseek",
   "tts_type": "local",
+  "force_gpu_check": "false",
   "screen_type": "false",
   "voice_trigger": "false",
   "stt_model": "large-v3",

@@ -5,6 +5,10 @@ import os
 import json
 import time
 from tool.config import get_config
+
+SUPPORTED_CLOUD_MODEL_TYPES = ("deepseek", "qwen")
+
+
 def log(msg, level="INFO"):
     levels = {
         "INFO": "[AIpet]",
@@ -14,6 +18,51 @@ def log(msg, level="INFO"):
     }
     prefix = levels.get(level, "[AIpet]")
     print(f"{prefix} {msg}")
+
+
+def load_runtime_config(config_path="config.json"):
+    if not os.path.exists(config_path):
+        log("未找到 config.json，使用默认云端配置。", "WARN")
+        return {
+            "model_type": "deepseek",
+            "tts_type": "cloud",
+            "force_gpu_check": "false",
+        }
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        log(f"无法解析 config.json: {e}，使用默认云端配置。", "WARN")
+        return {
+            "model_type": "deepseek",
+            "tts_type": "cloud",
+            "force_gpu_check": "false",
+        }
+
+
+def config_enabled(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def should_check_hardware(cfg):
+    model_type = str(cfg.get("model_type", "deepseek")).strip().lower()
+    tts_type = str(cfg.get("tts_type", "cloud")).strip().lower()
+
+    if config_enabled(cfg.get("force_gpu_check", False)):
+        log("检测到 force_gpu_check = true，将强制执行显卡检查。", "INFO")
+        return True
+
+    if model_type == "local":
+        log("检测到 model_type = local，需要检查本机显卡。", "INFO")
+        return True
+
+    if tts_type == "local":
+        log("检测到 tts_type = local，需要检查本机显卡。", "INFO")
+        return True
+
+    log("检测到对话与 TTS 均为云端模式，跳过本机显卡检查。", "INFO")
+    return False
 
 def check_hardware():
     """检测操作系统与显卡兼容性（支持 Windows + NVIDIA GPU 或 CPU）"""
@@ -106,15 +155,16 @@ def install_requirements():
         log(f"    {sys.executable} -m pip install -r {req_path}", "INFO")
         sys.exit(1)
 
-def setup_runtime_and_pytorch(config_path="config.json"):
+def setup_runtime_and_pytorch(config_path="config.json", cfg=None, hardware_type=None):
     # Step 1️⃣ 判断配置文件
-    if not os.path.exists(config_path):
+    if cfg is None and not os.path.exists(config_path):
         log("未找到 config.json，默认进入 DeepSeek 云端模式。", "WARN")
         return "deepseek"
 
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
+        if cfg is None:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
         model_type = cfg.get("model_type", "deepseek").lower()
         log(f"读取配置: model_type = {model_type}")
     except Exception as e:
@@ -123,7 +173,7 @@ def setup_runtime_and_pytorch(config_path="config.json"):
         return "deepseek"
 
     # Step 2️⃣ 判断模式
-    if model_type not in ("local", "deepseek", "qwen"):
+    if model_type not in ("local", *SUPPORTED_CLOUD_MODEL_TYPES):
         log(f"未识别的 model_type: {model_type}，默认视为 DeepSeek 云端模式。", "WARN")
         return "deepseek"
 
@@ -137,7 +187,10 @@ def setup_runtime_and_pytorch(config_path="config.json"):
     log("检测到本地运行模式。")
 
     # 如果是CPU模式，直接跳过PyTorch安装
-    if check_hardware() == "cpu":
+    if hardware_type is None:
+        hardware_type = check_hardware()
+
+    if hardware_type == "cpu":
         log("检测到 CPU 模式，跳过 PyTorch 安装。", "INFO")
         return "cpu"
 
@@ -313,10 +366,11 @@ def run_main():
         log(f"桌宠启动失败: {e}", "ERROR")
 
 if __name__ == "__main__":
-    check_hardware()
+    cfg = load_runtime_config()
+    hardware_type = check_hardware() if should_check_hardware(cfg) else None
     check_python()
     install_requirements()
-    setup_runtime_and_pytorch()
+    setup_runtime_and_pytorch(cfg=cfg, hardware_type=hardware_type)
     run_download()
     start_tts_api()
     run_main()
