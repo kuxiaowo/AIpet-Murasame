@@ -9,7 +9,7 @@
 语音合成：[GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
 语音识别：[faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 
-## 最新版本资讯
+## 最新版本
 
 #### 1.3.0 语音对话及闲置语音。
 
