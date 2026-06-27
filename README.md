@@ -3,6 +3,8 @@
 # 本项目仅供学习交流使用，所使用的所有数据均归YuzuSoft所有
 # 本项目严格禁止用于任何商业用途
 
+English version: [README](docs/en/README.md)
+
 ## 📖 项目简介
 
 一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目[LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)，进行部分重写和新加功能，并根据GPL-3.0许可证要求进行开源。
