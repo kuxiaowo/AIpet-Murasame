@@ -3,7 +3,7 @@
 # 本项目仅供学习交流使用，所使用的所有数据均归YuzuSoft所有
 # 本项目严格禁止用于任何商业用途
 
-English version: [README](docs/en/README.md)
+[**English**](docs/en/README.md)
 
 ## 📖 项目简介
 
