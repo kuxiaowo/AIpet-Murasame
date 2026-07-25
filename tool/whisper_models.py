@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 
@@ -56,11 +55,13 @@ def managed_whisper_dir(model_name: str) -> Path:
 
 
 def find_local_model(model_name: str) -> str | None:
-    """Return the cached model path without making a network request."""
+    """Check only an explicit directory or AIpet's managed default directory."""
 
-    local_path = Path(model_name).expanduser()
-    if local_path.is_dir():
-        return str(local_path.resolve())
+    if looks_like_local_model_path(model_name):
+        local_path = Path(model_name).expanduser()
+        if _whisper_model_is_ready(local_path):
+            return str(local_path.resolve())
+        return None
 
     managed_path = managed_whisper_dir(model_name)
     marker = managed_path / ".aipet-download.json"
@@ -76,39 +77,23 @@ def find_local_model(model_name: str) -> str | None:
             return str(managed_path.resolve())
     except (OSError, ValueError, KeyError, TypeError):
         pass
-
-    try:
-        from faster_whisper.utils import download_model
-    except ImportError:
-        return None
-
-    try:
-        return str(download_model(model_name, local_files_only=True))
-    except Exception:
-        return None
+    return None
 
 
-def download_whisper_model(model_name: str) -> str:
-    """Download a model through faster-whisper's normal Hugging Face cache."""
-
-    try:
-        from faster_whisper.utils import download_model
-    except ImportError as exc:
-        raise RuntimeError(
-            "faster-whisper is not installed. Install requirements-voice.txt first."
-        ) from exc
-    return str(download_model(model_name))
-
-
-def _main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Download a faster-whisper model."
+def looks_like_local_model_path(value: str) -> bool:
+    normalized = value.strip()
+    if not normalized:
+        return False
+    path = Path(normalized).expanduser()
+    return (
+        path.is_absolute()
+        or normalized.startswith((".", "~"))
     )
-    parser.add_argument("model")
-    args = parser.parse_args()
-    print(download_whisper_model(args.model))
-    return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(_main())
+def _whisper_model_is_ready(path: Path) -> bool:
+    return (
+        path.is_dir()
+        and (path / "model.bin").is_file()
+        and (path / "config.json").is_file()
+    )

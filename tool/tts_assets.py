@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
-from tool.config import PROJECT_ROOT, get_model_dir
+from tool.config import get_model_dir
 from tool.network import is_loopback_url
 
 
@@ -59,9 +58,8 @@ def locate_tts_assets(
     engine_root = locate_gpt_sovits_root(configured_engine_root)
     gpt_weight, sovits_weight = locate_murasame_weights(
         configured_model_dir=configured_model_dir,
-        engine_root=engine_root,
     )
-    reference_root = locate_reference_voices()
+    reference_root = locate_reference_voices(configured_model_dir)
     return TTSAssetState(
         engine_root=engine_root,
         engine_ready=_engine_assets_are_ready(engine_root),
@@ -73,75 +71,36 @@ def locate_tts_assets(
 
 
 def locate_gpt_sovits_root(configured: str = "") -> Path | None:
-    candidates: list[Path] = []
-    if configured.strip():
-        candidates.append(Path(configured).expanduser())
-    environment_path = os.getenv("GPT_SOVITS_HOME", "").strip()
-    if environment_path:
-        candidates.append(Path(environment_path).expanduser())
-    candidates.extend(
-        [
-            managed_gpt_sovits_dir(),
-            PROJECT_ROOT / "GPT-SoVITS",
-            PROJECT_ROOT.parent / "GPT-SoVITS",
-        ]
+    candidate = (
+        Path(configured).expanduser()
+        if configured.strip()
+        else managed_gpt_sovits_dir()
     )
-
-    ancestors = [PROJECT_ROOT, *list(PROJECT_ROOT.parents)[:3]]
-    for ancestor in ancestors:
-        try:
-            candidates.extend(ancestor.glob("*/GPT-SoVITS"))
-        except OSError:
-            continue
-
-    seen: set[str] = set()
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except OSError:
-            continue
-        key = os.path.normcase(str(resolved))
-        if key in seen:
-            continue
-        seen.add(key)
-        if (resolved / "api_v2.py").is_file():
-            return resolved
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return None
+    if (resolved / "api_v2.py").is_file():
+        return resolved
     return None
 
 
 def locate_murasame_weights(
     *,
     configured_model_dir: str = "",
-    engine_root: Path | None = None,
 ) -> tuple[Path | None, Path | None]:
-    paired_directories: list[Path] = []
-    if configured_model_dir.strip():
-        paired_directories.append(Path(configured_model_dir).expanduser())
-    paired_directories.append(managed_tts_model_dir())
-    if engine_root is not None:
-        paired_directories.append(engine_root.parent / "models" / "Murasame_SoVITS")
-
-    for directory in paired_directories:
-        gpt = _valid_weight(directory / GPT_WEIGHT_NAME, MIN_GPT_WEIGHT_SIZE)
-        sovits = _valid_weight(
+    directory = (
+        Path(configured_model_dir).expanduser()
+        if configured_model_dir.strip()
+        else managed_tts_model_dir()
+    )
+    return (
+        _valid_weight(directory / GPT_WEIGHT_NAME, MIN_GPT_WEIGHT_SIZE),
+        _valid_weight(
             directory / SOVITS_WEIGHT_NAME,
             MIN_SOVITS_WEIGHT_SIZE,
-        )
-        if gpt is not None and sovits is not None:
-            return gpt, sovits
-
-    if engine_root is not None:
-        gpt = _valid_weight(
-            engine_root / "GPT_weights" / GPT_WEIGHT_NAME,
-            MIN_GPT_WEIGHT_SIZE,
-        )
-        sovits = _valid_weight(
-            engine_root / "SoVITS_weights" / SOVITS_WEIGHT_NAME,
-            MIN_SOVITS_WEIGHT_SIZE,
-        )
-        if gpt is not None and sovits is not None:
-            return gpt, sovits
-    return None, None
+        ),
+    )
 
 
 def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
@@ -208,14 +167,15 @@ def _valid_weight(path: Path, minimum_size: int) -> Path | None:
     return None
 
 
-def locate_reference_voices() -> Path | None:
-    candidates = (
-        managed_tts_model_dir() / "reference_voices",
-        PROJECT_ROOT / "reference_voices",
+def locate_reference_voices(configured_model_dir: str = "") -> Path | None:
+    model_directory = (
+        Path(configured_model_dir).expanduser()
+        if configured_model_dir.strip()
+        else managed_tts_model_dir()
     )
-    for root in candidates:
-        if _reference_voices_are_ready(root):
-            return root.resolve()
+    root = model_directory / "reference_voices"
+    if _reference_voices_are_ready(root):
+        return root.resolve()
     return None
 
 

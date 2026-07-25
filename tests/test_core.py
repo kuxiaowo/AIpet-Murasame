@@ -28,6 +28,7 @@ from tool.network import is_loopback_url
 from tool.portraits import default_layers, layers_for
 from tool.storage import HistoryStore
 from tool.tts import TTSClient
+from tool.tts_assets import TTSAssetState
 
 
 class CoreTests(unittest.TestCase):
@@ -248,9 +249,30 @@ class CoreTests(unittest.TestCase):
         post.return_value = response
 
         with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference_root = root / "model" / "reference_voices"
+            reference_dir = reference_root / "平静"
+            reference_dir.mkdir(parents=True)
+            (reference_dir / "asr.txt").write_text(
+                "reference transcript",
+                encoding="utf-8",
+            )
+            reference_audio = reference_dir / "ref.wav"
+            reference_audio.write_bytes(b"RIFF-reference")
+            state = TTSAssetState(
+                engine_root=root / "engine",
+                engine_ready=True,
+                gpt_weight=root / "model" / "murasame-gpt.ckpt",
+                sovits_weight=root / "model" / "murasame-sovits.pth",
+                reference_root=reference_root,
+                reference_voices_ready=True,
+            )
             with patch(
                 "tool.tts.get_cache_dir",
-                return_value=Path(directory),
+                return_value=root,
+            ), patch(
+                "tool.tts.locate_tts_assets",
+                return_value=state,
             ), patch(
                 "tool.tts.get_tts_service_manager",
             ) as service_manager, patch(
@@ -261,6 +283,10 @@ class CoreTests(unittest.TestCase):
                 path = TTSClient(settings).synthesize("こんにちは", "平静")
                 self.assertEqual(path.read_bytes(), b"RIFF-test")
                 service_manager.return_value.ensure_running.assert_called_once()
+                self.assertEqual(
+                    post.call_args.kwargs["json"]["ref_audio_path"],
+                    str(reference_audio.resolve()),
+                )
         self.assertFalse(
             TTSClient(AppSettings()).session.trust_env,
             "localhost TTS must bypass ambient proxy settings",

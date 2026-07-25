@@ -13,7 +13,13 @@ def transcribe_full(
 
     from faster_whisper import WhisperModel
 
-    selected_model = find_local_model(model_size) or model_size
+    selected_model = find_local_model(model_size)
+    if selected_model is None:
+        raise RuntimeError(
+            "Whisper model was not found at the configured path or AIpet's "
+            "managed default directory. Select a local directory or download "
+            "the model in Settings."
+        )
     selected_device = device
     if selected_device == "auto":
         selected_device = "cuda"

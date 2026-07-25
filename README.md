@@ -162,7 +162,7 @@ Open **Settings…** from the tray menu at any time.
 - Edit server URLs and timeout values.
 - Select separate chat and vision models.
 - Enable or disable DeepSeek V4 thinking mode.
-- Select a built-in faster-whisper model, check its local status, and download it with in-card byte progress.
+- Select a built-in faster-whisper model or enter a local directory. AIpet checks only that directory or its managed default—never other Hugging Face caches—and can download a selected model with in-card byte progress.
 - Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
 - Test the connection and populate model lists from the selected service.
@@ -212,9 +212,9 @@ AIpet calls a GPT-SoVITS-compatible endpoint directly; the default is:
 http://127.0.0.1:9880/tts
 ```
 
-The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. If GPT-SoVITS runs on another machine, set **Remote reference root** to the path that server uses for this repository's `reference_voices` directory.
+The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. Reference audio is stored under `reference_voices` inside the configured voice model directory, so only one voice model path is required.
 
-For a loopback endpoint, AIpet checks the configured engine directory, `GPT_SOVITS_HOME`, and a small set of nearby installation locations. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice`.
+For a loopback endpoint, AIpet checks the path entered by the user, or only its managed default directory when the field is empty. It no longer scans environment variables or nearby folders for models. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice` and are downloaded into the voice model directory.
 
 When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. Remote endpoints are health-checked but never launched or stopped locally.
 

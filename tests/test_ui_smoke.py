@@ -65,6 +65,11 @@ class UISmokeTests(unittest.TestCase):
                 )
                 self.assertFalse(dialog.whisper_progress.isHidden())
                 self.assertEqual(dialog.whisper_progress.value(), 500)
+                (Path(directory) / "model.bin").write_bytes(b"model")
+                (Path(directory) / "config.json").write_text(
+                    "{}",
+                    encoding="utf-8",
+                )
                 dialog.stt_model.setCurrentText(directory)
                 dialog.stt_enabled.setChecked(True)
                 deadline = time.monotonic() + 2

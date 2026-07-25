@@ -126,7 +126,6 @@ class TTSSettings(BaseModel):
         default="http://127.0.0.1:9880/tts",
         min_length=1,
     )
-    remote_reference_root: str = ""
     engine_root: str = ""
     model_dir: str = ""
     timeout_seconds: int = Field(default=300, ge=10, le=900)

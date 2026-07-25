@@ -64,6 +64,7 @@ from tool.tts_service import (
 from tool.whisper_models import (
     WHISPER_MODELS,
     find_local_model,
+    looks_like_local_model_path,
     model_repository,
 )
 
@@ -134,10 +135,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "speech_group": "Speech",
         "tts_enabled": "Use GPT-SoVITS-compatible TTS",
         "tts_endpoint": "TTS endpoint",
-        "remote_reference_root": "Remote reference root",
         "tts_timeout": "TTS timeout",
         "tts_engine_root": "GPT-SoVITS directory",
-        "tts_model_dir": "Voice model directory",
+        "tts_model_dir": "Voice model directory (includes references)",
         "browse": "Browse…",
         "tts_disabled": (
             "Enable TTS to check the engine, voice model, references, and service."
@@ -198,17 +198,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "files",
         "download_steps": "steps",
         "stt_enabled": "Hold Caps Lock for speech input",
-        "whisper_model": "Whisper model",
+        "whisper_model": "Whisper model or local directory",
         "stt_device": "STT device",
         "whisper_download": "Download model",
         "whisper_disabled": (
-            "Enable speech input to check whether the selected model is cached."
+            "Enable speech input to check the selected path or managed default."
         ),
-        "whisper_checking": "Checking the local faster-whisper cache…",
+        "whisper_checking": "Checking the selected or managed model directory…",
         "whisper_installed": "Available locally: {path}",
         "whisper_missing": (
-            "Not found locally. Downloading requires faster-whisper and an "
-            "internet connection."
+            "Not found in the selected path or managed default directory. "
+            "Enter a local path or download the selected model."
+        ),
+        "whisper_path_missing": (
+            "The entered local model directory is incomplete or does not exist."
         ),
         "whisper_downloading": (
             "Downloading {model}: {detail}"
@@ -320,10 +323,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "speech_group": "语音",
         "tts_enabled": "使用 GPT-SoVITS 兼容 TTS",
         "tts_endpoint": "TTS 地址",
-        "remote_reference_root": "远程参考音频根目录",
         "tts_timeout": "TTS 超时",
         "tts_engine_root": "GPT-SoVITS 目录",
-        "tts_model_dir": "角色语音模型目录",
+        "tts_model_dir": "角色语音模型目录（含参考音频）",
         "browse": "浏览…",
         "tts_disabled": "启用 TTS 后，将检查引擎、角色模型、参考音频和服务。",
         "tts_invalid": "请先填写有效的 TTS 地址。",
@@ -373,15 +375,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "个文件",
         "download_steps": "个步骤",
         "stt_enabled": "长按 Caps Lock 进行语音输入",
-        "whisper_model": "Whisper 模型",
+        "whisper_model": "Whisper 模型或本地目录",
         "stt_device": "语音识别设备",
         "whisper_download": "下载模型",
-        "whisper_disabled": "启用语音输入后，将检测所选模型是否已缓存在本地。",
-        "whisper_checking": "正在检查本地 faster-whisper 缓存……",
+        "whisper_disabled": "启用语音输入后，将检查填写目录或程序管理的默认目录。",
+        "whisper_checking": "正在检查填写目录或程序管理的默认目录……",
         "whisper_installed": "本地已安装：{path}",
         "whisper_missing": (
-            "本地未找到。下载需要已安装 faster-whisper，并且网络可用。"
+            "填写目录和程序管理的默认目录中均未找到。"
+            "可填写本地目录，或下载当前所选模型。"
         ),
+        "whisper_path_missing": "填写的本地模型目录不存在或模型文件不完整。",
         "whisper_downloading": "正在下载 {model}：{detail}",
         "whisper_preparing": "正在准备 {model}：{detail}",
         "whisper_verifying": "正在校验 {model}：{detail}",
@@ -762,7 +766,6 @@ class SettingsDialog(QDialog):
         speech_form = QFormLayout(self.speech_group)
         self.tts_enabled = QCheckBox()
         self.tts_url = QLineEdit()
-        self.tts_reference_root = QLineEdit()
         self.tts_timeout = self._spinbox(10, 900)
         self.tts_engine_root = QLineEdit()
         self.tts_engine_browse = QPushButton()
@@ -804,11 +807,6 @@ class SettingsDialog(QDialog):
         )
         speech_form.addRow(self.tts_enabled)
         self._add_row(speech_form, "tts_endpoint", self.tts_url)
-        self._add_row(
-            speech_form,
-            "remote_reference_root",
-            self.tts_reference_root,
-        )
         self._add_row(speech_form, "tts_timeout", self.tts_timeout)
         self._add_row(
             speech_form,
@@ -970,7 +968,6 @@ class SettingsDialog(QDialog):
         self.vision_interval.setValue(settings.vision.interval_seconds)
         self.tts_enabled.setChecked(settings.tts.enabled)
         self.tts_url.setText(settings.tts.base_url)
-        self.tts_reference_root.setText(settings.tts.remote_reference_root)
         self.tts_timeout.setValue(settings.tts.timeout_seconds)
         self.tts_engine_root.setText(settings.tts.engine_root)
         self.tts_model_dir.setText(settings.tts.model_dir)
@@ -1213,8 +1210,11 @@ class SettingsDialog(QDialog):
                     message=snapshot.message,
                 )
             else:
-                self.whisper_download_button.setEnabled(True)
-                self._set_whisper_status("whisper_missing")
+                is_path = looks_like_local_model_path(model_name)
+                self.whisper_download_button.setEnabled(not is_path)
+                self._set_whisper_status(
+                    "whisper_path_missing" if is_path else "whisper_missing"
+                )
 
     def _finish_whisper_check(
         self,
@@ -1235,7 +1235,11 @@ class SettingsDialog(QDialog):
 
     def _download_whisper_model(self) -> None:
         model_name = self.stt_model.currentText().strip()
-        if not self.stt_enabled.isChecked() or not model_name:
+        if (
+            not self.stt_enabled.isChecked()
+            or not model_name
+            or looks_like_local_model_path(model_name)
+        ):
             return
 
         job_id = self.download_manager.start_whisper(model_name)
@@ -1278,8 +1282,8 @@ class SettingsDialog(QDialog):
         local_endpoint = is_loopback_url(self.tts_url.text().strip())
         self.tts_engine_root.setEnabled(enabled and local_endpoint)
         self.tts_engine_browse.setEnabled(enabled and local_endpoint)
-        self.tts_model_dir.setEnabled(enabled and local_endpoint)
-        self.tts_model_browse.setEnabled(enabled and local_endpoint)
+        self.tts_model_dir.setEnabled(enabled)
+        self.tts_model_browse.setEnabled(enabled)
         self.tts_download_button.setEnabled(False)
         self.tts_service_button.setVisible(local_endpoint)
         self._set_tts_service_button("start", False)
@@ -1315,9 +1319,6 @@ class SettingsDialog(QDialog):
             settings = TTSSettings(
                 enabled=True,
                 base_url=self.tts_url.text().strip(),
-                remote_reference_root=(
-                    self.tts_reference_root.text().strip()
-                ),
                 engine_root=self.tts_engine_root.text().strip(),
                 model_dir=self.tts_model_dir.text().strip(),
                 timeout_seconds=self.tts_timeout.value(),
@@ -1443,7 +1444,6 @@ class SettingsDialog(QDialog):
             settings = TTSSettings(
                 enabled=True,
                 base_url=self.tts_url.text().strip(),
-                remote_reference_root=self.tts_reference_root.text().strip(),
                 engine_root=self.tts_engine_root.text().strip(),
                 model_dir=self.tts_model_dir.text().strip(),
                 timeout_seconds=self.tts_timeout.value(),
@@ -1837,7 +1837,6 @@ class SettingsDialog(QDialog):
             tts=TTSSettings(
                 enabled=self.tts_enabled.isChecked(),
                 base_url=self.tts_url.text().strip(),
-                remote_reference_root=self.tts_reference_root.text().strip(),
                 engine_root=self.tts_engine_root.text().strip(),
                 model_dir=self.tts_model_dir.text().strip(),
                 timeout_seconds=self.tts_timeout.value(),

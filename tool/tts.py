@@ -65,19 +65,10 @@ class TTSClient:
             raise TTSError(f"缺少情绪参考语音: {emotion}")
 
         local_audio = audio_files[0]
-        if config.remote_reference_root.strip():
-            reference_path = (
-                Path(config.remote_reference_root)
-                / emotion
-                / local_audio.name
-            ).as_posix()
-        else:
-            reference_path = str(local_audio.resolve())
-
         params = {
             "text": text,
             "text_lang": "ja",
-            "ref_audio_path": reference_path,
+            "ref_audio_path": str(local_audio.resolve()),
             "aux_ref_audio_paths": [],
             "prompt_text": transcript_path.read_text(encoding="utf-8").strip(),
             "prompt_lang": "ja",

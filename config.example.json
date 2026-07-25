@@ -28,7 +28,6 @@
   "tts": {
     "enabled": false,
     "base_url": "http://127.0.0.1:9880/tts",
-    "remote_reference_root": "",
     "engine_root": "",
     "model_dir": "",
     "timeout_seconds": 300
