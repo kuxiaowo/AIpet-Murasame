@@ -5,10 +5,31 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tool.tts_assets import configure_local_tts_weights, locate_tts_assets
+from tool.tts_assets import (
+    configure_local_tts_weights,
+    locate_tts_assets,
+    tts_service_is_reachable,
+)
 
 
 class TTSAssetTests(unittest.TestCase):
+    def test_reachability_uses_openapi_without_calling_tts(self) -> None:
+        response = Mock(status_code=200)
+        response.json.return_value = {"paths": {"/tts": {}}}
+        with patch(
+            "requests.Session.get",
+            return_value=response,
+        ) as get:
+            self.assertTrue(
+                tts_service_is_reachable(
+                    "http://127.0.0.1:9880/tts"
+                )
+            )
+        self.assertEqual(
+            get.call_args.args[0],
+            "http://127.0.0.1:9880/openapi.json",
+        )
+
     def test_locates_configured_engine_and_voice_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

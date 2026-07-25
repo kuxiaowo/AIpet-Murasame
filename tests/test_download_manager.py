@@ -5,14 +5,22 @@ import http.server
 import tempfile
 import threading
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from classes.download_manager import (
+    TTS_ENGINE_ARCHIVE,
+    TTS_ENGINE_ARCHIVE_NVIDIA50,
     TTS_REFERENCE_MODEL,
     AssetDownloadWorker,
     RemoteFile,
+    _activate_extracted_engine,
+    _extract_gpt_sovits_archive,
+    _find_7zip,
+    _sha256,
     _tts_files,
+    select_tts_engine_archive,
 )
 
 
@@ -22,6 +30,142 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class DownloadWorkerTests(unittest.TestCase):
+    def test_finds_7zip_before_bsdtar_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "7z.exe"
+            executable.write_bytes(b"7z")
+            with patch(
+                "classes.download_manager.shutil.which",
+                side_effect=lambda name: (
+                    str(executable) if name == "7z" else None
+                ),
+            ):
+                self.assertEqual(_find_7zip(), executable.resolve())
+
+    def test_hash_reports_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.bin"
+            path.write_bytes(b"x" * (2 * 1024 * 1024 + 5))
+            progress: list[int] = []
+
+            _sha256(path, progress.append)
+
+            self.assertTrue(progress)
+            self.assertEqual(progress[-1], path.stat().st_size)
+
+    def test_atomically_replaces_managed_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "staging" / "GPT-SoVITS"
+            source.mkdir(parents=True)
+            (source / "api_v2.py").write_text("new", encoding="utf-8")
+            destination = root / "GPT-SoVITS"
+            destination.mkdir()
+            (destination / "api_v2.py").write_text(
+                "old",
+                encoding="utf-8",
+            )
+            stages: list[str] = []
+
+            _activate_extracted_engine(
+                source,
+                destination,
+                lambda stage, _done, _total, _current: stages.append(
+                    stage
+                ),
+            )
+
+            self.assertEqual(
+                (destination / "api_v2.py").read_text(encoding="utf-8"),
+                "new",
+            )
+            self.assertFalse(source.exists())
+            self.assertIn("installing", stages)
+            self.assertIn("cleaning", stages)
+            self.assertFalse(
+                any(root.glob(".GPT-SoVITS-backup-*"))
+            )
+
+    def test_selects_engine_archive_for_gpu_generation(self) -> None:
+        self.assertEqual(
+            select_tts_engine_archive(["NVIDIA GeForce RTX 5070 Ti"]),
+            TTS_ENGINE_ARCHIVE_NVIDIA50,
+        )
+        self.assertEqual(
+            select_tts_engine_archive(["NVIDIA GeForce RTX 4090"]),
+            TTS_ENGINE_ARCHIVE,
+        )
+        self.assertEqual(
+            select_tts_engine_archive(
+                ["NVIDIA RTX 5000 Ada Generation"],
+            ),
+            TTS_ENGINE_ARCHIVE,
+        )
+        self.assertEqual(
+            select_tts_engine_archive([]),
+            TTS_ENGINE_ARCHIVE,
+        )
+
+    def test_tts_download_includes_selected_engine_archive(self) -> None:
+        with patch(
+            "classes.download_manager.detect_nvidia_gpu_names",
+            return_value=["NVIDIA GeForce RTX 5080"],
+        ):
+            files = _tts_files(include_engine=True)
+
+        archives = [
+            item for item in files if item.relative_path.endswith(".7z")
+        ]
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(
+            Path(archives[0].relative_path).name,
+            TTS_ENGINE_ARCHIVE_NVIDIA50,
+        )
+        self.assertGreater(archives[0].size, 8_000_000_000)
+
+    def test_extracts_nested_gpt_sovits_engine(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source" / "package" / "GPT-SoVITS"
+            source.mkdir(parents=True)
+            (source / "api_v2.py").write_text("# api", encoding="utf-8")
+            config = source / "GPT_SoVITS" / "configs"
+            config.mkdir(parents=True)
+            (config / "tts_infer.yaml").write_text(
+                "device: cpu",
+                encoding="utf-8",
+            )
+            archive = root / "engine.7z"
+            with zipfile.ZipFile(archive, mode="w") as package:
+                for item in (root / "source" / "package").rglob("*"):
+                    if item.is_file():
+                        package.write(
+                            item,
+                            item.relative_to(root / "source"),
+                        )
+
+            destination = root / "installed" / "GPT-SoVITS"
+            progress: list[tuple[int, int, str]] = []
+            _extract_gpt_sovits_archive(
+                archive,
+                destination,
+                lambda completed, total, current: progress.append(
+                    (completed, total, current)
+                ),
+            )
+
+            self.assertTrue((destination / "api_v2.py").is_file())
+            self.assertTrue(
+                (
+                    destination
+                    / "GPT_SoVITS"
+                    / "configs"
+                    / "tts_infer.yaml"
+                ).is_file()
+            )
+            self.assertTrue(progress)
+            self.assertEqual(progress[-1][0], progress[-1][1])
+
     def test_tts_download_uses_dedicated_reference_repository(self) -> None:
         files = _tts_files()
         references = [

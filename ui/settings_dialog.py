@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import ValidationError
-from PyQt5.QtCore import QThread, QUrl, pyqtSignal
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -32,7 +31,6 @@ from PyQt5.QtWidgets import (
 
 from classes.download_manager import (
     TTS_JOB_ID,
-    TTS_MODEL_PAGE,
     DownloadManager,
     DownloadSnapshot,
     whisper_job_id,
@@ -54,14 +52,18 @@ from tool.config import (
 from tool.network import is_loopback_url
 from tool.tts_assets import (
     TTSAssetState,
+    configure_local_tts_weights,
     locate_tts_assets,
     managed_tts_model_dir,
     tts_service_is_reachable,
 )
+from tool.tts_service import (
+    TTSServiceError,
+    get_tts_service_manager,
+)
 from tool.whisper_models import (
     WHISPER_MODELS,
     find_local_model,
-    model_page_url,
     model_repository,
 )
 
@@ -146,6 +148,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_ready_offline": (
             "Voice model is ready, but the TTS service is not running."
         ),
+        "tts_service_start": "Start TTS service",
+        "tts_service_stop": "Stop TTS service",
+        "tts_service_online": "TTS service online",
+        "tts_service_locating": "Locating the GPT-SoVITS runtime…",
+        "tts_service_starting": "Starting the GPT-SoVITS process…",
+        "tts_service_waiting": "Waiting for the TTS API to become ready…",
+        "tts_service_waiting_existing": (
+            "Another request is starting the TTS service; waiting…"
+        ),
+        "tts_service_loading_weights": "Loading the character voice weights…",
+        "tts_service_stopping": "Stopping the TTS service…",
+        "tts_service_started": "The TTS service is ready.",
+        "tts_service_stopped": "The TTS service has stopped.",
+        "tts_service_failed": "TTS service operation failed: {message}",
         "tts_model_missing": "The Murasame voice model is missing.",
         "tts_engine_missing": (
             "The voice model is ready, but the GPT-SoVITS directory was not found."
@@ -163,14 +179,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "for non-commercial, educational use and reference proprietary "
             "character material."
         ),
+        "tts_download_consent_body_with_engine": (
+            "GPT-SoVITS was not detected. Download the complete engine package "
+            "selected for your NVIDIA GPU together with the character weights "
+            "and reference voices? The download is about 8–9 GB and requires "
+            "additional free space while extracting. The assets are intended "
+            "for non-commercial, educational use."
+        ),
         "tts_download": "Download voice model",
+        "tts_preparing": "Preparing the TTS download: {detail}",
         "tts_downloading": "Downloading the Murasame voice model: {detail}",
+        "tts_checking_files": "Checking downloaded files: {detail}",
+        "tts_extracting": "Extracting GPT-SoVITS: {detail}",
+        "tts_installing": "Installing GPT-SoVITS: {detail}",
+        "tts_cleaning": "Cleaning temporary files: {detail}",
         "tts_downloaded": "Voice model download completed: {path}",
         "tts_download_failed": "Voice model download failed: {message}",
+        "download_files": "files",
+        "download_steps": "steps",
         "stt_enabled": "Hold Caps Lock for speech input",
         "whisper_model": "Whisper model",
         "stt_device": "STT device",
-        "whisper_download": "Open model page & download",
+        "whisper_download": "Download model",
         "whisper_disabled": (
             "Enable speech input to check whether the selected model is cached."
         ),
@@ -183,6 +213,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_downloading": (
             "Downloading {model}: {detail}"
         ),
+        "whisper_preparing": "Preparing {model}: {detail}",
+        "whisper_verifying": "Checking {model}: {detail}",
         "whisper_downloaded": "Download complete. Available locally: {path}",
         "whisper_download_failed": "Download failed: {message}",
         "behavior_group": "Display and idle behavior",
@@ -298,6 +330,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_checking": "正在检查 GPT-SoVITS 组件……",
         "tts_ready_online": "角色语音模型完整，TTS 服务在线。",
         "tts_ready_offline": "角色语音模型完整，但 TTS 服务尚未运行。",
+        "tts_service_start": "启动 TTS 服务",
+        "tts_service_stop": "停止 TTS 服务",
+        "tts_service_online": "TTS 服务在线",
+        "tts_service_locating": "正在定位 GPT-SoVITS 运行环境……",
+        "tts_service_starting": "正在启动 GPT-SoVITS 进程……",
+        "tts_service_waiting": "正在等待 TTS API 就绪……",
+        "tts_service_waiting_existing": "已有请求正在启动 TTS 服务，正在等待……",
+        "tts_service_loading_weights": "正在加载角色语音权重……",
+        "tts_service_stopping": "正在停止 TTS 服务……",
+        "tts_service_started": "TTS 服务已就绪。",
+        "tts_service_stopped": "TTS 服务已停止。",
+        "tts_service_failed": "TTS 服务操作失败：{message}",
         "tts_model_missing": "本地缺少丛雨角色语音模型。",
         "tts_engine_missing": "角色语音模型完整，但没有找到 GPT-SoVITS 目录。",
         "tts_engine_incomplete": (
@@ -312,14 +356,26 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "（约 231 MB）？这些资源仅用于非商业和学习用途，"
             "并涉及角色专有素材。"
         ),
+        "tts_download_consent_body_with_engine": (
+            "未检测到 GPT-SoVITS。是否根据 NVIDIA 显卡型号自动选择并下载"
+            "完整引擎，同时下载角色权重和参考音频？下载量约 8～9 GB，"
+            "解压时还需要额外可用空间。这些资源仅用于非商业和学习用途。"
+        ),
         "tts_download": "下载角色语音模型",
+        "tts_preparing": "正在准备 TTS 下载：{detail}",
         "tts_downloading": "正在下载丛雨语音模型：{detail}",
+        "tts_checking_files": "正在校验已下载文件：{detail}",
+        "tts_extracting": "正在解压 GPT-SoVITS：{detail}",
+        "tts_installing": "正在安装 GPT-SoVITS：{detail}",
+        "tts_cleaning": "正在清理临时文件：{detail}",
         "tts_downloaded": "角色语音模型下载完成：{path}",
         "tts_download_failed": "角色语音模型下载失败：{message}",
+        "download_files": "个文件",
+        "download_steps": "个步骤",
         "stt_enabled": "长按 Caps Lock 进行语音输入",
         "whisper_model": "Whisper 模型",
         "stt_device": "语音识别设备",
-        "whisper_download": "打开模型页面并下载",
+        "whisper_download": "下载模型",
         "whisper_disabled": "启用语音输入后，将检测所选模型是否已缓存在本地。",
         "whisper_checking": "正在检查本地 faster-whisper 缓存……",
         "whisper_installed": "本地已安装：{path}",
@@ -327,6 +383,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "本地未找到。下载需要已安装 faster-whisper，并且网络可用。"
         ),
         "whisper_downloading": "正在下载 {model}：{detail}",
+        "whisper_preparing": "正在准备 {model}：{detail}",
+        "whisper_verifying": "正在校验 {model}：{detail}",
         "whisper_downloaded": "下载完成，本地路径：{path}",
         "whisper_download_failed": "下载失败：{message}",
         "behavior_group": "显示与空闲行为",
@@ -409,6 +467,53 @@ class TTSCheckWorker(QThread):
         self.checked.emit(state, reachable)
 
 
+class TTSServiceWorker(QThread):
+    stage_changed = pyqtSignal(str)
+    succeeded = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self,
+        settings: TTSSettings,
+        action: str,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.settings = settings.model_copy(deep=True)
+        self.action = action
+
+    def run(self) -> None:
+        manager = get_tts_service_manager()
+        try:
+            if self.action == "stop":
+                manager.stop()
+                self.succeeded.emit("stopped")
+                return
+
+            state = locate_tts_assets(
+                configured_engine_root=self.settings.engine_root,
+                configured_model_dir=self.settings.model_dir,
+            )
+            if not state.model_ready:
+                raise TTSServiceError(
+                    "The Murasame voice weights are incomplete."
+                )
+            manager.ensure_running(
+                self.settings,
+                state=state,
+                progress=self.stage_changed.emit,
+            )
+            self.stage_changed.emit("loading_weights")
+            configure_local_tts_weights(
+                self.settings.base_url,
+                state,
+                self.settings.timeout_seconds,
+            )
+            self.succeeded.emit("started")
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class SettingsDialog(QDialog):
     """Visual bilingual configuration and personality creation window."""
 
@@ -428,8 +533,12 @@ class SettingsDialog(QDialog):
         self._whisper_check_worker: WhisperModelCheckWorker | None = None
         self._pending_whisper_model: str | None = None
         self._tts_check_worker: TTSCheckWorker | None = None
+        self._tts_service_worker: TTSServiceWorker | None = None
+        self._tts_service_error: str | None = None
+        self._tts_service_button_mode = "start"
         self._pending_tts_check = False
         self._tts_download_prompted = False
+        self._tts_engine_download_needed = False
         self._result: AppSettings | None = None
         self.download_manager = download_manager or DownloadManager(
             QApplication.instance()
@@ -666,10 +775,18 @@ class SettingsDialog(QDialog):
         self.tts_progress = QProgressBar()
         self.tts_progress.setTextVisible(True)
         self.tts_progress.hide()
+        self.tts_extract_progress = QProgressBar()
+        self.tts_extract_progress.setTextVisible(True)
+        self.tts_extract_progress.hide()
         self.tts_download_button = QPushButton()
         self.tts_download_button.setEnabled(False)
         self.tts_download_button.clicked.connect(
             self._request_tts_download
+        )
+        self.tts_service_button = QPushButton()
+        self.tts_service_button.setEnabled(False)
+        self.tts_service_button.clicked.connect(
+            self._toggle_tts_service
         )
         self.stt_enabled = QCheckBox()
         self.stt_model = self._editable_combo()
@@ -710,7 +827,9 @@ class SettingsDialog(QDialog):
             ),
         )
         speech_form.addRow(self.tts_status)
+        speech_form.addRow(self.tts_service_button)
         speech_form.addRow(self.tts_progress)
+        speech_form.addRow(self.tts_extract_progress)
         speech_form.addRow(self.tts_download_button)
         speech_form.addRow(self.stt_enabled)
         self._add_row(speech_form, "whisper_model", self.stt_model)
@@ -939,6 +1058,7 @@ class SettingsDialog(QDialog):
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
         self.tts_download_button.setText(self._text("tts_download"))
+        self._render_tts_service_button()
         self.stt_enabled.setText(self._text("stt_enabled"))
         self.whisper_download_button.setText(
             self._text("whisper_download")
@@ -1028,7 +1148,11 @@ class SettingsDialog(QDialog):
         snapshot = self.download_manager.snapshot(
             whisper_job_id(repository)
         )
-        downloading = snapshot.status in {"preparing", "downloading"}
+        downloading = snapshot.status in {
+            "preparing",
+            "checking",
+            "downloading",
+        }
         self.stt_model.setEnabled(enabled and not downloading)
         self.stt_device.setEnabled(enabled)
         self.whisper_download_button.setEnabled(False)
@@ -1076,7 +1200,11 @@ class SettingsDialog(QDialog):
             snapshot = self.download_manager.snapshot(
                 whisper_job_id(repository)
             )
-            if snapshot.status in {"preparing", "downloading"}:
+            if snapshot.status in {
+                "preparing",
+                "checking",
+                "downloading",
+            }:
                 self._render_whisper_download(model_name, snapshot)
             elif snapshot.status == "failed":
                 self.whisper_download_button.setEnabled(True)
@@ -1110,7 +1238,6 @@ class SettingsDialog(QDialog):
         if not self.stt_enabled.isChecked() or not model_name:
             return
 
-        QDesktopServices.openUrl(QUrl(model_page_url(model_name)))
         job_id = self.download_manager.start_whisper(model_name)
         snapshot = self.download_manager.snapshot(job_id)
         self.whisper_download_button.setEnabled(False)
@@ -1124,6 +1251,20 @@ class SettingsDialog(QDialog):
     ) -> None:
         self._render_progress(self.whisper_progress, snapshot)
         detail = self._download_detail(snapshot)
+        if snapshot.status == "preparing":
+            self._set_whisper_status(
+                "whisper_preparing",
+                model=model_name,
+                detail=detail,
+            )
+            return
+        if snapshot.status == "checking":
+            self._set_whisper_status(
+                "whisper_verifying",
+                model=model_name,
+                detail=detail,
+            )
+            return
         self._set_whisper_status(
             "whisper_downloading",
             model=model_name,
@@ -1140,11 +1281,26 @@ class SettingsDialog(QDialog):
         self.tts_model_dir.setEnabled(enabled and local_endpoint)
         self.tts_model_browse.setEnabled(enabled and local_endpoint)
         self.tts_download_button.setEnabled(False)
+        self.tts_service_button.setVisible(local_endpoint)
+        self._set_tts_service_button("start", False)
+        if (
+            self._tts_service_worker is not None
+            and self._tts_service_worker.isRunning()
+        ):
+            return
         snapshot = self.download_manager.snapshot(TTS_JOB_ID)
-        self._render_progress(self.tts_progress, snapshot)
-        if snapshot.status in {"preparing", "downloading"}:
+        if snapshot.status in {
+            "preparing",
+            "checking",
+            "downloading",
+            "extracting",
+            "installing",
+            "cleaning",
+        }:
             self._render_tts_download(snapshot)
             return
+        self.tts_progress.hide()
+        self.tts_extract_progress.hide()
         if not enabled:
             self._set_tts_status("tts_disabled")
             return
@@ -1189,14 +1345,40 @@ class SettingsDialog(QDialog):
             self._set_tts_status(key)
             return
 
-        if state.engine_root is not None and not self.tts_engine_root.text().strip():
+        configured_engine = self.tts_engine_root.text().strip()
+        if state.engine_root is not None and (
+            not configured_engine
+            or not (
+                Path(configured_engine).expanduser() / "api_v2.py"
+            ).is_file()
+        ):
             self.tts_engine_root.setText(str(state.engine_root))
         if (
             state.model_directory is not None
-            and not self.tts_model_dir.text().strip()
+            and (
+                not self.tts_model_dir.text().strip()
+                or not Path(
+                    self.tts_model_dir.text().strip()
+                ).expanduser().is_dir()
+            )
         ):
             self.tts_model_dir.setText(str(state.model_directory))
 
+        self._tts_engine_download_needed = (
+            not reachable and not state.engine_ready
+        )
+        if reachable:
+            if get_tts_service_manager().owns_running_process():
+                self._set_tts_service_button("stop", True)
+            else:
+                self._set_tts_service_button("online", False)
+        else:
+            can_start = (
+                state.engine_ready
+                and state.model_ready
+                and state.reference_voices_ready
+            )
+            self._set_tts_service_button("start", can_start)
         if not state.reference_voices_ready:
             self._set_tts_status("tts_references_missing")
             self.tts_download_button.setEnabled(True)
@@ -1205,15 +1387,24 @@ class SettingsDialog(QDialog):
                 self._request_tts_download()
             return
         if state.model_ready:
-            self.tts_download_button.setEnabled(False)
             if reachable:
+                self.tts_download_button.setEnabled(False)
                 self._set_tts_status("tts_ready_online")
             elif state.engine_root is None:
+                self.tts_download_button.setEnabled(True)
                 self._set_tts_status("tts_engine_missing")
             elif not state.engine_ready:
+                self.tts_download_button.setEnabled(True)
                 self._set_tts_status("tts_engine_incomplete")
             else:
+                self.tts_download_button.setEnabled(False)
                 self._set_tts_status("tts_ready_offline")
+            if (
+                self._tts_engine_download_needed
+                and not self._tts_download_prompted
+            ):
+                self._tts_download_prompted = True
+                self._request_tts_download()
             return
 
         self._set_tts_status("tts_model_missing")
@@ -1223,13 +1414,111 @@ class SettingsDialog(QDialog):
         self._tts_download_prompted = True
         self._request_tts_download()
 
+    def _set_tts_service_button(
+        self,
+        mode: str,
+        enabled: bool,
+    ) -> None:
+        self._tts_service_button_mode = mode
+        self.tts_service_button.setEnabled(enabled)
+        self._render_tts_service_button()
+
+    def _render_tts_service_button(self) -> None:
+        if not hasattr(self, "tts_service_button"):
+            return
+        key = {
+            "start": "tts_service_start",
+            "stop": "tts_service_stop",
+            "online": "tts_service_online",
+        }.get(self._tts_service_button_mode, "tts_service_start")
+        self.tts_service_button.setText(self._text(key))
+
+    def _toggle_tts_service(self) -> None:
+        if (
+            self._tts_service_worker is not None
+            and self._tts_service_worker.isRunning()
+        ):
+            return
+        try:
+            settings = TTSSettings(
+                enabled=True,
+                base_url=self.tts_url.text().strip(),
+                remote_reference_root=self.tts_reference_root.text().strip(),
+                engine_root=self.tts_engine_root.text().strip(),
+                model_dir=self.tts_model_dir.text().strip(),
+                timeout_seconds=self.tts_timeout.value(),
+            )
+        except ValidationError:
+            self._set_tts_status("tts_invalid")
+            return
+
+        action = (
+            "stop"
+            if get_tts_service_manager().owns_running_process()
+            else "start"
+        )
+        self._tts_service_error = None
+        self.tts_service_button.setEnabled(False)
+        self._set_tts_status(
+            "tts_service_stopping"
+            if action == "stop"
+            else "tts_service_locating"
+        )
+        worker = TTSServiceWorker(settings, action, self)
+        self._tts_service_worker = worker
+        worker.stage_changed.connect(self._on_tts_service_stage)
+        worker.succeeded.connect(self._on_tts_service_succeeded)
+        worker.failed.connect(self._on_tts_service_failed)
+        worker.finished.connect(
+            lambda: self._finish_tts_service_worker(worker)
+        )
+        worker.start()
+
+    def _on_tts_service_stage(self, stage: str) -> None:
+        key = {
+            "locating_engine": "tts_service_locating",
+            "starting_process": "tts_service_starting",
+            "waiting_for_api": "tts_service_waiting",
+            "waiting_for_existing_start": "tts_service_waiting_existing",
+            "loading_weights": "tts_service_loading_weights",
+        }.get(stage)
+        if key is not None:
+            self._set_tts_status(key)
+
+    def _on_tts_service_succeeded(self, action: str) -> None:
+        self._set_tts_status(
+            "tts_service_stopped"
+            if action == "stopped"
+            else "tts_service_started"
+        )
+
+    def _on_tts_service_failed(self, message: str) -> None:
+        self._tts_service_error = message
+        self._set_tts_status("tts_service_failed", message=message)
+
+    def _finish_tts_service_worker(
+        self,
+        worker: TTSServiceWorker,
+    ) -> None:
+        if self._tts_service_worker is worker:
+            self._tts_service_worker = None
+        worker.deleteLater()
+        if self._tts_service_error is None:
+            self._update_tts_state()
+        else:
+            self.tts_service_button.setEnabled(True)
+
     def _request_tts_download(self) -> None:
         if not self.tts_enabled.isChecked():
             return
         answer = QMessageBox.question(
             self,
             self._text("tts_download_consent_title"),
-            self._text("tts_download_consent_body"),
+            self._text(
+                "tts_download_consent_body_with_engine"
+                if self._tts_engine_download_needed
+                else "tts_download_consent_body"
+            ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -1237,8 +1526,9 @@ class SettingsDialog(QDialog):
             return
         destination = managed_tts_model_dir()
         self.tts_model_dir.setText(str(destination))
-        QDesktopServices.openUrl(QUrl(TTS_MODEL_PAGE))
-        self.download_manager.start_tts()
+        self.download_manager.start_tts(
+            include_engine=self._tts_engine_download_needed,
+        )
         self.tts_download_button.setEnabled(False)
         self._render_tts_download(
             self.download_manager.snapshot(TTS_JOB_ID)
@@ -1253,7 +1543,47 @@ class SettingsDialog(QDialog):
             self._update_tts_state()
 
     def _render_tts_download(self, snapshot: DownloadSnapshot) -> None:
+        if snapshot.status == "extracting":
+            self.tts_progress.hide()
+            self._render_progress(
+                self.tts_extract_progress,
+                snapshot,
+            )
+            self._set_tts_status(
+                "tts_extracting",
+                detail=self._extraction_detail(snapshot),
+            )
+            return
+        if snapshot.status in {"installing", "cleaning"}:
+            self.tts_progress.hide()
+            self._render_progress(
+                self.tts_extract_progress,
+                snapshot,
+            )
+            key = (
+                "tts_installing"
+                if snapshot.status == "installing"
+                else "tts_cleaning"
+            )
+            self._set_tts_status(
+                key,
+                detail=self._installation_detail(snapshot),
+            )
+            return
+        self.tts_extract_progress.hide()
         self._render_progress(self.tts_progress, snapshot)
+        if snapshot.status == "preparing":
+            self._set_tts_status(
+                "tts_preparing",
+                detail=self._download_detail(snapshot),
+            )
+            return
+        if snapshot.status == "checking":
+            self._set_tts_status(
+                "tts_checking_files",
+                detail=self._download_detail(snapshot),
+            )
+            return
         self._set_tts_status(
             "tts_downloading",
             detail=self._download_detail(snapshot),
@@ -1265,12 +1595,20 @@ class SettingsDialog(QDialog):
         snapshot: DownloadSnapshot,
     ) -> None:
         if job_id == TTS_JOB_ID:
-            if snapshot.status in {"preparing", "downloading"}:
+            if snapshot.status in {
+                "preparing",
+                "checking",
+                "downloading",
+                "extracting",
+                "installing",
+                "cleaning",
+            }:
                 self._render_tts_download(snapshot)
             elif snapshot.status == "completed":
                 self.tts_download_button.setEnabled(False)
                 self.tts_model_dir.setText(snapshot.destination)
                 self._render_progress(self.tts_progress, snapshot)
+                self.tts_extract_progress.hide()
                 self._set_tts_status(
                     "tts_downloaded",
                     path=snapshot.destination,
@@ -1282,6 +1620,7 @@ class SettingsDialog(QDialog):
                     and is_loopback_url(self.tts_url.text().strip())
                 )
                 self._render_progress(self.tts_progress, snapshot)
+                self.tts_extract_progress.hide()
                 self._set_tts_status(
                     "tts_download_failed",
                     message=snapshot.message,
@@ -1294,7 +1633,11 @@ class SettingsDialog(QDialog):
         expected = whisper_job_id(model_repository(model_name))
         if job_id != expected:
             return
-        if snapshot.status in {"preparing", "downloading"}:
+        if snapshot.status in {
+            "preparing",
+            "checking",
+            "downloading",
+        }:
             self._render_whisper_download(model_name, snapshot)
         elif snapshot.status == "completed":
             self.stt_model.setEnabled(self.stt_enabled.isChecked())
@@ -1319,7 +1662,14 @@ class SettingsDialog(QDialog):
         progress: QProgressBar,
         snapshot: DownloadSnapshot,
     ) -> None:
-        active = snapshot.status in {"preparing", "downloading"}
+        active = snapshot.status in {
+            "preparing",
+            "checking",
+            "downloading",
+            "extracting",
+            "installing",
+            "cleaning",
+        }
         should_show = active or snapshot.status == "failed"
         progress.setVisible(should_show)
         if not should_show:
@@ -1338,6 +1688,34 @@ class SettingsDialog(QDialog):
         detail = (
             f"{percent:.1f}% · {self._format_bytes(snapshot.received)} / "
             f"{self._format_bytes(snapshot.total)}"
+        )
+        if snapshot.current_file:
+            detail += f" · {Path(snapshot.current_file).name}"
+        return detail
+
+    def _extraction_detail(self, snapshot: DownloadSnapshot) -> str:
+        if snapshot.total <= 0:
+            return "preparing"
+        percent = snapshot.received / snapshot.total * 100
+        detail = (
+            f"{percent:.1f}% · {snapshot.received} / "
+            f"{snapshot.total} {self._text('download_files')}"
+        )
+        if snapshot.current_file:
+            detail += f" · {Path(snapshot.current_file).name}"
+        return detail
+
+    def _installation_detail(self, snapshot: DownloadSnapshot) -> str:
+        if snapshot.total <= 0:
+            return (
+                Path(snapshot.current_file).name
+                if snapshot.current_file
+                else self._text("download_preparing")
+            )
+        percent = snapshot.received / snapshot.total * 100
+        detail = (
+            f"{percent:.1f}% · {snapshot.received} / "
+            f"{snapshot.total} {self._text('download_steps')}"
         )
         if snapshot.current_file:
             detail += f" · {Path(snapshot.current_file).name}"
@@ -1621,6 +1999,10 @@ class SettingsDialog(QDialog):
             or (
                 self._tts_check_worker is not None
                 and self._tts_check_worker.isRunning()
+            )
+            or (
+                self._tts_service_worker is not None
+                and self._tts_service_worker.isRunning()
             )
         )
 

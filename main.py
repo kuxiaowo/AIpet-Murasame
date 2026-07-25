@@ -23,6 +23,7 @@ from tool.config import (
     settings_file_exists,
 )
 from ui.settings_dialog import SettingsDialog
+from tool.tts_service import shutdown_tts_service
 
 
 UI_TEXT = {
@@ -326,6 +327,7 @@ def main() -> int:
             voice_trigger.stop()
         persist_pet_settings()
         pet.shutdown()
+        shutdown_tts_service()
         download_manager.shutdown()
         tray_icon.hide()
 

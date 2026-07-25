@@ -4,22 +4,42 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
+import shutil
+import subprocess
 import threading
+import uuid
+from collections import deque
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Callable
 from urllib.parse import quote
 
 import requests
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
-from tool.tts_assets import managed_tts_model_dir
+from tool.tts_assets import managed_gpt_sovits_dir, managed_tts_model_dir
 from tool.whisper_models import managed_whisper_dir, model_repository
 
 
 TTS_JOB_ID = "tts:murasame"
 TTS_MODEL_NAME = "Murasame_SoVITS"
-TTS_MODEL_PAGE = "https://www.modelscope.cn/models/LemonQu/Murasame_SoVITS"
 TTS_REFERENCE_MODEL = "kuxiaowo/Murasame-tts-reference-voice"
+TTS_ENGINE_MODEL = "FlowerCry/gpt-sovits-7z-pacakges"
+TTS_ENGINE_ARCHIVE = "GPT-SoVITS-v2pro-20250604.7z"
+TTS_ENGINE_ARCHIVE_NVIDIA50 = (
+    "GPT-SoVITS-v2pro-20250604-nvidia50.7z"
+)
+TTS_ENGINE_ARCHIVES = {
+    TTS_ENGINE_ARCHIVE: (
+        8_185_086_602,
+        "bd60d0796553ff05d8568136e199c13e0dc22ebe2ed24273134e34ed6f215cd6",
+    ),
+    TTS_ENGINE_ARCHIVE_NVIDIA50: (
+        8_835_144_925,
+        "97b4edcd451c42357db7e26e6c1c877ca5d85144fe97beaff6d7005d35bee008",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -41,8 +61,11 @@ class DownloadSnapshot:
 
 
 class AssetDownloadWorker(QThread):
-    prepared = pyqtSignal(str, int)
-    progress = pyqtSignal(str, int, int, str)
+    prepared = pyqtSignal(str, object)
+    checking = pyqtSignal(str, object, object, str)
+    progress = pyqtSignal(str, object, object, str)
+    extracting = pyqtSignal(str, object, object, str)
+    installing = pyqtSignal(str, str, object, object, str)
     completed = pyqtSignal(str, str)
     failed = pyqtSignal(str, str)
 
@@ -52,6 +75,7 @@ class AssetDownloadWorker(QThread):
         kind: str,
         identifier: str,
         destination: Path,
+        include_tts_engine: bool = False,
         parent=None,
     ):
         super().__init__(parent)
@@ -59,6 +83,7 @@ class AssetDownloadWorker(QThread):
         self.kind = kind
         self.identifier = identifier
         self.destination = destination
+        self.include_tts_engine = include_tts_engine
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
@@ -71,19 +96,51 @@ class AssetDownloadWorker(QThread):
             total = sum(item.size for item in files)
             self.prepared.emit(self.job_id, total)
             self.destination.mkdir(parents=True, exist_ok=True)
+            hash_candidates = [
+                item
+                for item in files
+                if self._target_needs_hash(item)
+            ]
+            check_total = sum(item.size for item in hash_candidates)
+            checked_before = 0
+            complete_paths: set[str] = set()
+            self.checking.emit(self.job_id, 0, check_total, "")
+            for item in files:
+                if self._cancelled.is_set():
+                    return
+                is_hash_candidate = item in hash_candidates
+                if self._target_is_complete(
+                    item,
+                    (
+                        lambda completed, current=item: self.checking.emit(
+                            self.job_id,
+                            checked_before + completed,
+                            check_total,
+                            current.relative_path,
+                        )
+                    )
+                    if is_hash_candidate
+                    else None,
+                ):
+                    complete_paths.add(item.relative_path)
+                if is_hash_candidate:
+                    checked_before += item.size
             received = sum(
                 item.size
                 for item in files
-                if self._target_is_complete(item)
+                if item.relative_path in complete_paths
             )
             self.progress.emit(self.job_id, received, total, "")
 
             for item in files:
                 if self._cancelled.is_set():
                     return
-                if self._target_is_complete(item):
+                if item.relative_path in complete_paths:
                     continue
                 received = self._download_file(item, received, total)
+
+            if self.kind == "tts" and self.include_tts_engine:
+                self._install_tts_engine(files, total)
 
             marker = self.destination / ".aipet-download.json"
             marker.write_text(
@@ -113,17 +170,35 @@ class AssetDownloadWorker(QThread):
 
     def _prepare_files(self) -> list[RemoteFile]:
         if self.kind == "tts":
-            return _tts_files()
+            return _tts_files(include_engine=self.include_tts_engine)
         if self.kind == "whisper":
             return _whisper_files(self.identifier)
         raise ValueError(f"Unsupported download kind: {self.kind}")
 
-    def _target_is_complete(self, item: RemoteFile) -> bool:
+    def _target_needs_hash(self, item: RemoteFile) -> bool:
+        target = self.destination / item.relative_path
+        try:
+            return (
+                bool(item.sha256)
+                and target.is_file()
+                and target.stat().st_size == item.size
+            )
+        except OSError:
+            return False
+
+    def _target_is_complete(
+        self,
+        item: RemoteFile,
+        hash_progress: Callable[[int], None] | None = None,
+    ) -> bool:
         target = self.destination / item.relative_path
         try:
             if not target.is_file() or target.stat().st_size != item.size:
                 return False
-            return not item.sha256 or _sha256(target) == item.sha256.lower()
+            return (
+                not item.sha256
+                or _sha256(target, hash_progress) == item.sha256.lower()
+            )
         except OSError:
             return False
 
@@ -141,7 +216,10 @@ class AssetDownloadWorker(QThread):
             partial.unlink()
             partial_size = 0
         if partial_size == item.size:
-            if item.sha256 and _sha256(partial) != item.sha256.lower():
+            if item.sha256 and self._verified_sha256(
+                partial,
+                item,
+            ) != item.sha256.lower():
                 partial.unlink()
                 partial_size = 0
             else:
@@ -155,7 +233,7 @@ class AssetDownloadWorker(QThread):
             item.url,
             headers=headers,
             stream=True,
-            timeout=(15, 15),
+            timeout=(15, 60 if item.size > 1_000_000_000 else 15),
         ) as response:
             if partial_size and response.status_code != 206:
                 partial_size = 0
@@ -182,13 +260,71 @@ class AssetDownloadWorker(QThread):
                 f"{item.relative_path}: expected {item.size} bytes, "
                 f"received {downloaded}"
             )
-        if item.sha256 and _sha256(partial) != item.sha256.lower():
+        if item.sha256 and self._verified_sha256(
+            partial,
+            item,
+        ) != item.sha256.lower():
             partial.unlink(missing_ok=True)
             raise RuntimeError(
                 f"{item.relative_path}: SHA-256 verification failed"
             )
         os.replace(partial, target)
         return completed_before + item.size
+
+    def _verified_sha256(
+        self,
+        path: Path,
+        item: RemoteFile,
+    ) -> str:
+        return _sha256(
+            path,
+            lambda completed: self.checking.emit(
+                self.job_id,
+                completed,
+                item.size,
+                item.relative_path,
+            ),
+        )
+
+    def _install_tts_engine(
+        self,
+        files: list[RemoteFile],
+        total: int,
+    ) -> None:
+        archive_item = next(
+            (
+                item
+                for item in files
+                if item.relative_path.startswith(".downloads/")
+                and item.relative_path.endswith(".7z")
+            ),
+            None,
+        )
+        if archive_item is None:
+            raise RuntimeError("GPT-SoVITS engine archive was not prepared")
+        archive = self.destination / archive_item.relative_path
+        _extract_gpt_sovits_archive(
+            archive,
+            managed_gpt_sovits_dir(),
+            progress_callback=lambda completed, count, current: (
+                self.extracting.emit(
+                    self.job_id,
+                    completed,
+                    count,
+                    current,
+                )
+            ),
+            install_callback=lambda stage, completed, count, current: (
+                self.installing.emit(
+                    self.job_id,
+                    stage,
+                    completed,
+                    count,
+                    current,
+                )
+            ),
+        )
+        archive.unlink(missing_ok=True)
 
 
 class DownloadManager(QObject):
@@ -209,12 +345,13 @@ class DownloadManager(QObject):
         self._start(job_id, "whisper", repository, destination)
         return job_id
 
-    def start_tts(self) -> str:
+    def start_tts(self, *, include_engine: bool = False) -> str:
         self._start(
             TTS_JOB_ID,
             "tts",
             TTS_MODEL_NAME,
             managed_tts_model_dir(),
+            include_tts_engine=include_engine,
         )
         return TTS_JOB_ID
 
@@ -224,6 +361,7 @@ class DownloadManager(QObject):
         kind: str,
         identifier: str,
         destination: Path,
+        include_tts_engine: bool = False,
     ) -> None:
         existing = self._workers.get(job_id)
         if existing is not None and existing.isRunning():
@@ -234,6 +372,7 @@ class DownloadManager(QObject):
             kind,
             identifier,
             destination,
+            include_tts_engine,
             self,
         )
         self._workers[job_id] = worker
@@ -245,7 +384,10 @@ class DownloadManager(QObject):
             ),
         )
         worker.prepared.connect(self._on_prepared)
+        worker.checking.connect(self._on_checking)
         worker.progress.connect(self._on_progress)
+        worker.extracting.connect(self._on_extracting)
+        worker.installing.connect(self._on_installing)
         worker.completed.connect(self._on_completed)
         worker.failed.connect(self._on_failed)
         worker.finished.connect(lambda: self._finish_worker(job_id, worker))
@@ -256,8 +398,27 @@ class DownloadManager(QObject):
         self._publish(
             job_id,
             DownloadSnapshot(
-                status="downloading",
+                status="checking",
                 total=total,
+                destination=current.destination,
+            ),
+        )
+
+    def _on_checking(
+        self,
+        job_id: str,
+        completed: int,
+        total: int,
+        current_file: str,
+    ) -> None:
+        current = self.snapshot(job_id)
+        self._publish(
+            job_id,
+            DownloadSnapshot(
+                status="checking",
+                received=completed,
+                total=total,
+                current_file=current_file,
                 destination=current.destination,
             ),
         )
@@ -275,6 +436,45 @@ class DownloadManager(QObject):
             DownloadSnapshot(
                 status="downloading",
                 received=received,
+                total=total,
+                current_file=current_file,
+                destination=current.destination,
+            ),
+        )
+
+    def _on_extracting(
+        self,
+        job_id: str,
+        completed: int,
+        total: int,
+        current_file: str,
+    ) -> None:
+        current = self.snapshot(job_id)
+        self._publish(
+            job_id,
+            DownloadSnapshot(
+                status="extracting",
+                received=completed,
+                total=total,
+                current_file=current_file,
+                destination=current.destination,
+            ),
+        )
+
+    def _on_installing(
+        self,
+        job_id: str,
+        stage: str,
+        completed: int,
+        total: int,
+        current_file: str,
+    ) -> None:
+        current = self.snapshot(job_id)
+        self._publish(
+            job_id,
+            DownloadSnapshot(
+                status=stage,
+                received=completed,
                 total=total,
                 current_file=current_file,
                 destination=current.destination,
@@ -334,7 +534,7 @@ def whisper_job_id(repository: str) -> str:
     return f"whisper:{repository}"
 
 
-def _tts_files() -> list[RemoteFile]:
+def _tts_files(*, include_engine: bool = False) -> list[RemoteFile]:
     weights_base = (
         "https://www.modelscope.cn/models/"
         "LemonQu/Murasame_SoVITS/resolve/master"
@@ -434,7 +634,395 @@ def _tts_files() -> list[RemoteFile]:
         )
         for relative_path, size, sha256 in reference_files
     )
+    if include_engine:
+        archive_name = select_tts_engine_archive()
+        size, sha256 = TTS_ENGINE_ARCHIVES[archive_name]
+        engine_base = (
+            "https://www.modelscope.cn/models/"
+            f"{TTS_ENGINE_MODEL}/resolve/master"
+        )
+        files.append(
+            RemoteFile(
+                url=f"{engine_base}/{archive_name}",
+                relative_path=f".downloads/{archive_name}",
+                size=size,
+                sha256=sha256,
+            )
+        )
     return files
+
+
+def select_tts_engine_archive(gpu_names: list[str] | None = None) -> str:
+    names = gpu_names if gpu_names is not None else detect_nvidia_gpu_names()
+    if any(
+        re.search(
+            r"\bGeForce\s+RTX\s*50\d{2}\b",
+            name,
+            flags=re.IGNORECASE,
+        )
+        for name in names
+    ):
+        return TTS_ENGINE_ARCHIVE_NVIDIA50
+    return TTS_ENGINE_ARCHIVE
+
+
+def detect_nvidia_gpu_names() -> list[str]:
+    command = shutil.which("nvidia-smi")
+    if command is None:
+        return []
+    startupinfo = None
+    creationflags = 0
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW
+    try:
+        result = subprocess.run(
+            [
+                command,
+                "--query-gpu=name",
+                "--format=csv,noheader",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+
+
+def _extract_gpt_sovits_archive(
+    archive: Path,
+    destination: Path,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+    install_callback: (
+        Callable[[str, int, int, str], None] | None
+    ) = None,
+) -> None:
+    staging = destination.parent / (
+        f".{destination.name}-extract-{uuid.uuid4().hex}"
+    )
+    staging.mkdir(parents=True, exist_ok=False)
+    try:
+        seven_zip = _find_7zip()
+        if seven_zip is not None:
+            _extract_with_7zip(
+                seven_zip,
+                archive,
+                staging,
+                progress_callback,
+            )
+        elif not _extract_with_bsdtar(
+            archive,
+            staging,
+            progress_callback,
+        ):
+            raise RuntimeError(
+                "7-Zip or Windows tar/bsdtar is required to extract "
+                "this BCJ2-compressed GPT-SoVITS package"
+            )
+
+        if install_callback is not None:
+            install_callback("installing", 0, 3, "locating api_v2.py")
+        api_candidates = sorted(
+            staging.rglob("api_v2.py"),
+            key=lambda item: len(item.parts),
+        )
+        if not api_candidates:
+            raise RuntimeError(
+                "Extracted package does not contain api_v2.py"
+            )
+        source = api_candidates[0].parent
+        _activate_extracted_engine(
+            source,
+            destination,
+            install_callback,
+        )
+    finally:
+        if install_callback is not None and staging.exists():
+            install_callback(
+                "cleaning",
+                0,
+                0,
+                "temporary extraction directory",
+            )
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _find_7zip() -> Path | None:
+    candidates = [
+        shutil.which(name)
+        for name in ("7z", "7zz", "7za")
+    ]
+    if os.name == "nt":
+        for variable in ("ProgramFiles", "ProgramFiles(x86)"):
+            root = os.getenv(variable, "").strip()
+            if root:
+                candidates.append(str(Path(root) / "7-Zip" / "7z.exe"))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return Path(candidate).resolve()
+    return None
+
+
+def _extract_with_7zip(
+    command: Path,
+    archive: Path,
+    destination: Path,
+    progress_callback: Callable[[int, int, str], None] | None,
+) -> None:
+    startupinfo, creationflags = _hidden_process_options()
+    listing = subprocess.run(
+        [str(command), "l", "-slt", str(archive)],
+        check=True,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=120,
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+    after_separator = False
+    names: list[str] = []
+    for line in listing.stdout.splitlines():
+        if line.startswith("----------"):
+            after_separator = True
+            continue
+        if after_separator and line.startswith("Path = "):
+            names.append(line[7:].strip())
+    _validate_archive_names(names)
+    if progress_callback is not None:
+        progress_callback(0, 100, archive.name)
+
+    process = subprocess.Popen(
+        [
+            str(command),
+            "x",
+            "-y",
+            "-mmt=on",
+            "-bsp1",
+            "-bb0",
+            f"-o{destination}",
+            str(archive),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+    recent_output: deque[str] = deque(maxlen=20)
+    buffer = ""
+    last_percent = -1
+    assert process.stdout is not None
+    while True:
+        character = process.stdout.read(1)
+        if not character:
+            break
+        if character not in {"\r", "\n"}:
+            buffer += character
+            continue
+        current = buffer.strip()
+        buffer = ""
+        if not current:
+            continue
+        recent_output.append(current)
+        match = re.search(r"(\d+)%", current)
+        if match:
+            percent = min(100, int(match.group(1)))
+            if percent != last_percent and progress_callback is not None:
+                progress_callback(percent, 100, archive.name)
+            last_percent = percent
+    process.stdout.close()
+    return_code = process.wait()
+    if return_code != 0:
+        detail = "\n".join(recent_output)
+        raise RuntimeError(
+            f"7-Zip extraction failed ({return_code}): {detail}"
+        )
+    if progress_callback is not None:
+        progress_callback(100, 100, archive.name)
+
+
+def _activate_extracted_engine(
+    source: Path,
+    destination: Path,
+    install_callback: (
+        Callable[[str, int, int, str], None] | None
+    ),
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    backup: Path | None = None
+    if destination.exists():
+        backup = destination.parent / (
+            f".{destination.name}-backup-{uuid.uuid4().hex}"
+        )
+        if install_callback is not None:
+            install_callback(
+                "installing",
+                1,
+                3,
+                "preserving previous installation",
+            )
+        os.replace(destination, backup)
+    try:
+        if install_callback is not None:
+            install_callback(
+                "installing",
+                2,
+                3,
+                "activating GPT-SoVITS",
+            )
+        os.replace(source, destination)
+        if not (destination / "api_v2.py").is_file():
+            raise RuntimeError("GPT-SoVITS engine installation failed")
+        if install_callback is not None:
+            install_callback(
+                "installing",
+                3,
+                3,
+                "GPT-SoVITS installed",
+            )
+    except Exception:
+        if destination.exists():
+            failed = destination.parent / (
+                f".{destination.name}-failed-{uuid.uuid4().hex}"
+            )
+            os.replace(destination, failed)
+            shutil.rmtree(failed, ignore_errors=True)
+        if backup is not None and backup.exists():
+            os.replace(backup, destination)
+        raise
+    if backup is not None and backup.exists():
+        if install_callback is not None:
+            install_callback(
+                "cleaning",
+                0,
+                0,
+                "previous installation",
+            )
+        shutil.rmtree(backup, ignore_errors=True)
+
+
+def _extract_with_bsdtar(
+    archive: Path,
+    destination: Path,
+    progress_callback: Callable[[int, int, str], None] | None,
+) -> bool:
+    command = shutil.which("tar")
+    if command is None:
+        return False
+    startupinfo, creationflags = _hidden_process_options()
+    try:
+        listing = subprocess.run(
+            [command, "-tf", str(archive)],
+            check=True,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=120,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "Timed out while reading the GPT-SoVITS archive"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        raise RuntimeError(
+            f"bsdtar cannot read the GPT-SoVITS archive: {detail}"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"Failed to start Windows tar/bsdtar: {exc}"
+        ) from exc
+
+    names = [
+        line.strip()
+        for line in listing.stdout.splitlines()
+        if line.strip()
+    ]
+    _validate_archive_names(names)
+    total = max(1, len(names))
+    if progress_callback is not None:
+        progress_callback(0, total, archive.name)
+
+    process = subprocess.Popen(
+        [
+            command,
+            "-xvf",
+            str(archive),
+            "-C",
+            str(destination),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+    recent_output: deque[str] = deque(maxlen=20)
+    completed = 0
+    assert process.stdout is not None
+    for line in process.stdout:
+        current = line.strip()
+        if not current:
+            continue
+        recent_output.append(current)
+        completed += 1
+        if progress_callback is not None:
+            progress_callback(
+                min(completed, total),
+                total,
+                current,
+            )
+    process.stdout.close()
+    return_code = process.wait()
+    if return_code != 0:
+        detail = "\n".join(recent_output)
+        raise RuntimeError(
+            f"bsdtar extraction failed ({return_code}): {detail}"
+        )
+    if progress_callback is not None:
+        progress_callback(total, total, archive.name)
+    return True
+
+
+def _validate_archive_names(names: list[str]) -> None:
+    if not names:
+        raise RuntimeError("GPT-SoVITS archive is empty")
+    for name in names:
+        normalized = PurePosixPath(name.replace("\\", "/"))
+        if (
+            normalized.is_absolute()
+            or ".." in normalized.parts
+            or (
+                normalized.parts
+                and ":" in normalized.parts[0]
+            )
+        ):
+            raise RuntimeError(
+                f"Unsafe path in GPT-SoVITS archive: {name}"
+            )
+
+
+def _hidden_process_options() -> tuple[object | None, int]:
+    if os.name != "nt":
+        return None, 0
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    return startupinfo, subprocess.CREATE_NO_WINDOW
 
 
 def _whisper_files(repository: str) -> list[RemoteFile]:
@@ -477,9 +1065,16 @@ def _whisper_files(repository: str) -> list[RemoteFile]:
     return files
 
 
-def _sha256(path: Path) -> str:
+def _sha256(
+    path: Path,
+    progress_callback: Callable[[int], None] | None = None,
+) -> str:
     digest = hashlib.sha256()
+    completed = 0
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
             digest.update(chunk)
+            completed += len(chunk)
+            if progress_callback is not None:
+                progress_callback(completed)
     return digest.hexdigest()

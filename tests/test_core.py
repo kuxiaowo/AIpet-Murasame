@@ -251,11 +251,16 @@ class CoreTests(unittest.TestCase):
             with patch(
                 "tool.tts.get_cache_dir",
                 return_value=Path(directory),
+            ), patch(
+                "tool.tts.get_tts_service_manager",
+            ) as service_manager, patch(
+                "tool.tts.configure_local_tts_weights",
             ):
                 settings = AppSettings()
                 settings.tts.enabled = True
                 path = TTSClient(settings).synthesize("こんにちは", "平静")
                 self.assertEqual(path.read_bytes(), b"RIFF-test")
+                service_manager.return_value.ensure_running.assert_called_once()
         self.assertFalse(
             TTSClient(AppSettings()).session.trust_env,
             "localhost TTS must bypass ambient proxy settings",

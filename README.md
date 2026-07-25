@@ -92,7 +92,7 @@ The language model never controls files, Qt widgets, portrait layer IDs, or shel
   - [Ollama](https://ollama.com/) with a chat model
   - a DeepSeek API key
   - an Alibaba Cloud Model Studio API key
-- Optional: a running GPT-SoVITS-compatible `/tts` endpoint
+- Optional: GPT-SoVITS for speech output; AIpet can manage the local service
 - Optional: microphone dependencies from `requirements-voice.txt`
 
 A local NVIDIA GPU is not required by AIpet itself. Hardware needs depend on the Ollama and TTS models you choose.
@@ -149,7 +149,7 @@ $env:DASHSCOPE_API_KEY = "your-key"
 python run.py
 ```
 
-Settings opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages, start hidden servers, or modify CUDA. Model downloads start only after an explicit Whisper download action or approval of the TTS model prompt.
+Settings opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages or modify CUDA. Model downloads start only after an explicit Whisper download action or approval of the TTS model prompt. A downloaded local GPT-SoVITS service starts on demand before the first TTS request, or from the manual control in Settings.
 
 ## Settings
 
@@ -214,7 +214,9 @@ http://127.0.0.1:9880/tts
 
 The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. If GPT-SoVITS runs on another machine, set **Remote reference root** to the path that server uses for this repository's `reference_voices` directory.
 
-For a loopback endpoint, AIpet checks the configured engine directory, `GPT_SOVITS_HOME`, and a small set of nearby installation locations. If the Murasame assets are missing, AIpet offers to download and verify the GPT/SoVITS weights from `LemonQu/Murasame_SoVITS` and the reference voices from `kuxiaowo/Murasame-tts-reference-voice`. A remote endpoint is health-checked only because AIpet cannot inspect or modify the remote server's filesystem.
+For a loopback endpoint, AIpet checks the configured engine directory, `GPT_SOVITS_HOME`, and a small set of nearby installation locations. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice`.
+
+When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. Remote endpoints are health-checked but never launched or stopped locally.
 
 TTS failures do not discard a model response: AIpet still displays the text and shows the speech error through the tray.
 
@@ -251,7 +253,8 @@ tool/
 ├── config.py           # Validated user settings
 ├── portraits.py        # Emotion-to-layer mapping
 ├── storage.py          # Conversation persistence
-└── tts.py              # GPT-SoVITS client
+├── tts.py              # GPT-SoVITS client
+└── tts_service.py      # Managed local GPT-SoVITS process
 ui/
 └── settings_dialog.py  # Visual configuration and prompt editor
 ```

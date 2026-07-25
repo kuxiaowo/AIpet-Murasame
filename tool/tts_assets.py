@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -23,6 +23,10 @@ def managed_tts_model_dir() -> Path:
         / "tts"
         / "Murasame_SoVITS"
     )
+
+
+def managed_gpt_sovits_dir() -> Path:
+    return get_model_dir() / "tts" / "GPT-SoVITS"
 
 
 @dataclass(frozen=True)
@@ -77,6 +81,7 @@ def locate_gpt_sovits_root(configured: str = "") -> Path | None:
         candidates.append(Path(environment_path).expanduser())
     candidates.extend(
         [
+            managed_gpt_sovits_dir(),
             PROJECT_ROOT / "GPT-SoVITS",
             PROJECT_ROOT.parent / "GPT-SoVITS",
         ]
@@ -146,11 +151,28 @@ def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
     session = requests.Session()
     if is_loopback_url(base_url):
         session.trust_env = False
+    schema_url = urlunsplit(
+        (parsed.scheme, parsed.netloc, "/openapi.json", "", "")
+    )
+    try:
+        response = session.get(
+            schema_url,
+            timeout=(timeout, timeout),
+        )
+        if response.status_code == 200:
+            paths = response.json().get("paths", {})
+            if isinstance(paths, dict) and "/tts" in paths:
+                return True
+    except (requests.RequestException, ValueError, AttributeError):
+        pass
+
     try:
         response = session.get(base_url, timeout=(timeout, timeout))
-        return response.status_code in {200, 400, 405, 422}
+        if response.status_code in {200, 400, 405, 422}:
+            return True
     except requests.RequestException:
-        return False
+        pass
+    return False
 
 
 def configure_local_tts_weights(

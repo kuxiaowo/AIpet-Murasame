@@ -89,7 +89,7 @@ $env:DASHSCOPE_API_KEY = "your-key"
 
 托盘菜单中的 **Settings… / 设置…** 可以随时打开设置。
 
-启用语音输入后，设置页会检查所选 faster-whisper 模型是否已经缓存。模型列表内置了 faster-whisper 当前支持的官方名称，也允许输入自定义 Hugging Face 模型 ID 或本地目录。模型缺失时，点击 **打开模型页面并下载** 会打开对应页面，并把模型下载到 AIpet 用户数据目录。下载进度、大小和当前文件直接显示在语音设置卡片中，关闭设置后下载仍会继续。
+启用语音输入后，设置页会检查所选 faster-whisper 模型是否已经缓存。模型列表内置了 faster-whisper 当前支持的官方名称，也允许输入自定义 Hugging Face 模型 ID 或本地目录。模型缺失时，点击下载按钮会直接把模型下载到 AIpet 用户数据目录，不会打开浏览器。下载进度、大小和当前文件直接显示在语音设置卡片中，关闭设置后下载仍会继续。
 
 - **Models / 模型**：界面语言、后端模式、服务商、URL、对话模型、视觉模型、DeepSeek 思考模式、Ollama 上下文长度、超时和连接测试。
 - **Character**：用户名、立绘组和人格提示词编辑器。
@@ -126,7 +126,9 @@ http://127.0.0.1:9880/tts
 
 远程部署时，把 **Remote reference root** 设置成 GPT-SoVITS 服务端看到的 `reference_voices` 路径。
 
-本地地址启用 TTS 后，AIpet 会依次检查 GPT-SoVITS 引擎目录、丛雨 GPT/SoVITS 权重、六组参考音频和服务状态。缺少角色权重或参考音频时，在确认模型用途提示后从 ModelScope 自动下载；角色权重来自 `LemonQu/Murasame_SoVITS`，参考音频来自 `kuxiaowo/Murasame-tts-reference-voice`。设置卡片会显示可断点续传的字节进度。远程 TTS 只检查接口状态，不会尝试修改远程服务器文件。
+本地地址启用 TTS 后，AIpet 会依次检查 GPT-SoVITS 引擎目录、丛雨 GPT/SoVITS 权重、六组参考音频和服务状态。未检测到 GPT-SoVITS 时，程序会读取 NVIDIA 显卡名称：GeForce RTX 50 系列下载专用整合包，其他显卡或无法识别时下载通用整合包。设置卡片会分别显示准备、校验、下载、解压、安装和清理阶段；解压优先使用开启多线程的原生 7-Zip，找不到时使用 Windows bsdtar，安装时通过同盘原子移动避免再次复制整个目录。所有自动下载均不会打开网页。角色权重来自 `LemonQu/Murasame_SoVITS`，参考音频来自 `kuxiaowo/Murasame-tts-reference-voice`。
+
+首次发起本地 TTS 请求时，如果服务尚未运行，AIpet 会使用引擎自带的 Python 启动 `api_v2.py`，等待 OpenAPI 接口就绪，加载角色权重，再继续合成。设置页也可以手动启动或停止服务，并逐步显示定位环境、启动进程、等待接口和加载权重等状态。并发请求不会重复启动服务；退出程序时只关闭由本次 AIpet 进程启动的服务。远程 TTS 只检查接口状态，不会在本机启动、停止或修改远程服务。
 
 Caps Lock 语音输入是可选功能，需要额外安装：
 

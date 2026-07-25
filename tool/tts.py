@@ -9,6 +9,7 @@ from tool.backends import Emotion
 from tool.config import AppSettings, get_cache_dir
 from tool.network import is_loopback_url
 from tool.tts_assets import configure_local_tts_weights, locate_tts_assets
+from tool.tts_service import TTSServiceError, get_tts_service_manager
 
 
 class TTSError(RuntimeError):
@@ -25,17 +26,22 @@ class TTSClient:
 
     def synthesize(self, text: str, emotion: Emotion) -> Path:
         config = self.settings.tts
-        if (
-            not self._weights_configured
-            and is_loopback_url(config.base_url)
-            and config.model_dir.strip()
-        ):
-            state = locate_tts_assets(
-                configured_engine_root=config.engine_root,
-                configured_model_dir=config.model_dir,
-            )
+        state = locate_tts_assets(
+            configured_engine_root=config.engine_root,
+            configured_model_dir=config.model_dir,
+        )
+        if is_loopback_url(config.base_url):
             if not state.model_ready:
                 raise TTSError("丛雨 TTS 模型尚未下载完成")
+            try:
+                get_tts_service_manager().ensure_running(
+                    config,
+                    state=state,
+                )
+            except TTSServiceError as exc:
+                raise TTSError(f"TTS 服务启动失败: {exc}") from exc
+
+        if not self._weights_configured and is_loopback_url(config.base_url):
             try:
                 configure_local_tts_weights(
                     config.base_url,
@@ -46,10 +52,6 @@ class TTSClient:
                 raise TTSError(f"TTS 模型加载失败: {exc}") from exc
             self._weights_configured = True
 
-        state = locate_tts_assets(
-            configured_engine_root=config.engine_root,
-            configured_model_dir=config.model_dir,
-        )
         if state.reference_root is None:
             raise TTSError("丛雨 TTS 参考音频尚未下载完成")
         reference_dir = state.reference_root / emotion
