@@ -1,294 +1,218 @@
-# AIpet - 丛雨AI桌宠
+<p align="center">
+  <img src="icon.png" width="112" alt="AIpet icon">
+</p>
 
-# 本项目仅供学习交流使用，所使用的所有数据均归YuzuSoft所有
-# 本项目严格禁止用于任何商业用途
+<h1 align="center">AIpet · Murasame</h1>
 
-[**English**](docs/en/README.md)
+<p align="center">
+  <strong>An AI-powered desktop companion that can talk, listen, react, and keep you company.</strong>
+</p>
 
-## 📖 项目简介
+<p align="center">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
+  <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
+</p>
 
-一个基于AI的桌面宠物应用，灵感来自丛雨角色。本项目参考了原项目[LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet?tab=readme-ov-file)，进行部分重写和新加功能，并根据GPL-3.0许可证要求进行开源。
-语音合成：[GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
-语音识别：[faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+<p align="center">
+  <a href="https://github.com/kuxiaowo/AIpet-Murasame/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/kuxiaowo/AIpet-Murasame?style=flat-square&logo=github"></a>
+  <a href="https://github.com/kuxiaowo/AIpet-Murasame/tags"><img alt="Latest tag" src="https://img.shields.io/github/v/tag/kuxiaowo/AIpet-Murasame?style=flat-square&label=version&sort=semver"></a>
+  <a href="https://github.com/kuxiaowo/AIpet-Murasame/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/kuxiaowo/AIpet-Murasame?style=flat-square"></a>
+  <a href="https://github.com/kuxiaowo/AIpet-Murasame/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/kuxiaowo/AIpet-Murasame?style=flat-square"></a>
+</p>
 
-## 最新版本资讯
+<p align="center">
+  <strong>English</strong> | <a href="docs/zh-CN/README.md">简体中文</a>
+</p>
 
-#### 1.3.0 语音对话及闲置语音。
+<p align="center">
+  <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/Docs-Quick_Start-0969DA?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
+  <a href="#configuration"><img alt="Configuration" src="https://img.shields.io/badge/Setup-Configuration-00897B?style=for-the-badge&logo=json&logoColor=white"></a>
+  <a href="https://www.bilibili.com/video/BV1oi4wzSEJJ"><img alt="Watch the demo" src="https://img.shields.io/badge/Demo-Watch_Now-FB7299?style=for-the-badge&logo=bilibili&logoColor=white"></a>
+  <a href="#troubleshooting"><img alt="Troubleshooting" src="https://img.shields.io/badge/Help-Troubleshooting-E67E22?style=for-the-badge&logo=bookstack&logoColor=white"></a>
+</p>
 
-## 项目指路
+---
 
-- **演示视频**: [【丛雨AI桌宠】让丛雨陪在你身边](https://www.bilibili.com/video/BV1oi4wzSEJJ)
-- **教程视频**: [丛雨AI桌宠V1.2.0部署教程](https://www.bilibili.com/video/BV1F6ykBwEDu)
-- **教程视频**: [丛雨AI桌宠V1.2.2部署教程](https://www.bilibili.com/video/BV1ghCMBjEKK)
-- **教程视频**: [丛雨AI桌宠V1.3.0部署教程](https://www.bilibili.com/video/BV1iw2XBREpd)
+## Overview
 
+AIpet is a Windows desktop companion inspired by Murasame. It combines an always-on-top PyQt5 character window with cloud or local language models, expressive speech, optional voice input, screen awareness, and persistent conversation history.
 
-## 🚀 快速开始
-### V1.2.2以上版本支持一键部署与运行
-### 教程视频[丛雨AI桌宠V1.3.0部署教程](https://www.bilibili.com/video/BV1iw2XBREpd)
+This project is based in part on [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet) and adds rewritten components and new interaction features.
 
+## Highlights
 
-### 环境准备
+- **Cloud or local conversations** — use DeepSeek, Qwen, or a local Qwen model through Ollama.
+- **Expressive speech** — synthesize emotion-aware voice output with [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS).
+- **Voice input** — hold Caps Lock to talk when [faster-whisper](https://github.com/SYSTRAN/faster-whisper) input is enabled.
+- **Screen awareness** — optionally let a Qwen vision model respond to what is happening on a selected display.
+- **A companion that remembers** — conversation history, idle reactions, welcome-back messages, and two portrait sets.
+- **Native desktop interaction** — a transparent, frameless PyQt5 window with tray controls and Do Not Disturb mode.
 
-### 1. 下载项目文件
-Code > Download ZIP
-解压后放到你需要的路径，路径里不要有特殊符号。
+## Demo and tutorials
 
-### 2. 安装Ollama（可选）
-##### 如果你需要本地对话才需要安装
+| Type | Video |
+|---|---|
+| Demo | [Let Murasame stay by your side](https://www.bilibili.com/video/BV1oi4wzSEJJ) |
+| Latest tutorial | [V1.3.0 deployment tutorial](https://www.bilibili.com/video/BV1iw2XBREpd) |
+| Earlier tutorials | [V1.2.2](https://www.bilibili.com/video/BV1ghCMBjEKK) · [V1.2.0](https://www.bilibili.com/video/BV1F6ykBwEDu) |
 
-项目里支持deepseek与qwen的API调用，需要自己获取并填入APIkey.json
+## Tech stack
 
-在 https://ollama.com/download 下载 Ollama 并安装
+| Area | Technology |
+|---|---|
+| Desktop UI | Python, PyQt5 |
+| Language models | Qwen, DeepSeek, Ollama |
+| Speech synthesis | GPT-SoVITS |
+| Speech recognition | faster-whisper |
+| Screen understanding | Qwen VL |
+| Local service | FastAPI, Uvicorn |
+
+## Requirements
+
+- Windows
+- Python 3.10 or newer; Python 3.10 is recommended if compatibility issues occur
+- [Conda](https://docs.conda.io/) or another Python environment manager
+- A DeepSeek/Qwen API key **or** a local Ollama model
+- GPT-SoVITS locally, or access to a configured remote TTS service
+- An NVIDIA GPU is recommended for local model and TTS workloads; cloud mode can avoid most local GPU requirements
+
+> [!IMPORTANT]
+> Extract or clone the project into a path without spaces, non-ASCII characters, parentheses, or other special symbols. Some bundled Windows tools are sensitive to such paths.
+
+## Quick start
+
+### 1. Download the project
+
+Download a ZIP from GitHub, or clone the repository:
+
+```bash
+git clone https://github.com/kuxiaowo/AIpet-Murasame.git
+cd AIpet-Murasame
+```
+
+### 2. Create a Conda environment
+
+```bash
+conda create -n aipet python=3.10 -y
+conda activate aipet
+```
+
+### 3. Choose a conversation backend
+
+For a cloud backend, add your own key to the matching empty field in `config.json`, then set `model_type` to `deepseek` or `qwen`.
+
+For local conversations, install [Ollama](https://ollama.com/download), set `model_type` to `local`, and download the required models:
+
 ```bash
 ollama pull qwen3:14b
-ollama pull qwen2.5vl:7b #如果需要本地屏幕识别
+ollama pull qwen2.5vl:7b
 ```
 
+The vision model is only needed for local screen awareness.
 
-### 3. 部署 GPT-SoVITS
+### 4. Configure speech synthesis
 
-##### 1 本地部署
-  https://github.com/RVC-Boss/GPT-SoVITS
+For local TTS, place a compatible [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) package in `GPT-SoVITS/` next to `main.py`, and set `tts_type` to `local`.
 
-  下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
-  (我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容)
+An integrated-package guide is available [here](https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4). Choose a package compatible with your GPU.
 
-##### 2 云端部署
-  [AutoDL云算力](https://www.autodl.com/home)
+For remote TTS, set `tts_type` to `cloud` and configure the SSH host and API endpoints for your deployment. The [AutoDL guide](https://www.autodl.com/docs/ssh/) and the latest [deployment tutorial](https://www.bilibili.com/video/BV1iw2XBREpd) show the expected setup.
 
-  我用的这个，认证学生优惠还挺大的。
-  
-  算力市场，选择显卡与地区，镜像选择社区镜像，选择“kuxiaowo/AIpet-Murasame/AIpet-Murasame_GPT-SoVITs”，创建实例。
+### 5. Launch
 
-  可以参考教程设置免密登录[AutoDL帮助文档](https://www.autodl.com/docs/ssh/)
-  控制台，容器实例，右上角选择设置密钥登陆。打开cmd：
-  ```bash
-  ssh-keygen -t rsa
-  ```
-  在user/.ssh/id_rsa.pub中复制全部公钥(一定是.pub!!! 私钥不能泄露!!!)到SSH公钥中。
-  开机实例，复制ssh登录指令。(ssh -p 12345 root@connect.cqa1.seetacloud.com)
-  将本项目中.ssh/config文件放入你的user/.ssh/目录下，用记事本打开
-  ```
-  Host aipet
-    HostName 这里填入root@后面的网址
-    Port 这里填-p后面的端口
-    User root 
-    IdentityFile ~/.ssh/id_rsa
-    LocalForward 9880 localhost:9880
-  ```
-  保存
-
-
-### 4. 获取APIkey
-
-##### 1 Deepseek
-   https://platform.deepseek.com/usage
-   注册或登录账号，充值然后新建APIkey
-   (想要云端屏幕识别功能，必须有qwen APIkey，只有qwen有图像识别模型)
-
-##### 2 Qwen系列模型(有免费额度)
-   [阿里模型](https://bailian.console.aliyun.com/?spm=5176.29597918.J_SEsSjsNv72yRuRFS2VknO.2.49d77b08RWidjt&tab=model#/efm/model_experience_center/text)
-   注册或登陆账号，左下角密钥管理，创建APIkey(新用户初始每个模型有100万tokens免费额度)
-
-### 5. 一键启动
-运行 run.py (使用默认python环境)(python>=3.10, 如果出错尽量使用3.10)
 ```bash
 python run.py
 ```
 
-如果你需要虚拟环境，可以创建一个python >= 3.10 的环境
-激活环境之后
-```bash
-conda activate AIpet_env  #例子，可以用其他的
-python run.py
-```
+`run.py` checks Python and hardware compatibility, installs the required Python packages, downloads local models when needed, starts the TTS service, and launches the desktop pet.
 
---------------------------------------------------------------------------------------------------
+## Configuration
+
+The main options live in `config.json`.
+
+| Key | Values | Purpose |
+|---|---|---|
+| `APIKEY.deepseek` | API key | DeepSeek cloud access |
+| `APIKEY.qwen` | API key | Qwen cloud and cloud vision access |
+| `model_type` | `deepseek`, `qwen`, `local` | Conversation backend |
+| `tts_type` | `local`, `cloud` | Speech synthesis backend |
+| `portrait` | `a`, `b` | Character outfit / portrait set |
+| `user_name` | text | Name used to address the user |
+| `screen_type` | `true`, `false` | Enable periodic screen awareness |
+| `voice_trigger` | `true`, `false` | Enable Caps Lock voice input |
+| `stt_model` | model name | faster-whisper model, such as `large-v3` |
+| `screen_interval` | seconds | Delay between screen captures |
+| `screen_index` | integer | Display used for the pet and screenshots |
+| `DEFAULT_PORTRAIT_SCREEN_RATIO` | decimal | Maximum pet height relative to the display |
+| `idle_thinking_minutes` | minutes | Short idle-reaction threshold |
+| `idle_away_minutes` | minutes | Away / welcome-back threshold |
+
+Keep API keys private. Do not commit real credentials to a public repository.
+
+## Controls
+
+| Action | Control |
+|---|---|
+| Type a message | Left-click the lower part of Murasame, type, then press Enter |
+| Pat her head | Hold the left mouse button over her head and move horizontally |
+| Move the pet | Drag with the middle mouse button |
+| Talk | Hold Caps Lock for two seconds when voice input is enabled |
+| Do Not Disturb, screenshots, history, exit | Use the system tray menu |
+
+## Troubleshooting
 
 <details>
-  
-<summary> ⚠️ V1.2.0说明（点击展开）</summary>
+<summary><strong>CUDA is unavailable</strong></summary>
 
-  ### V1.2.0版本支持一键部署与运行
-  ### [教程视频](https://www.bilibili.com/video/BV1vjeGzfE1w)
-  ### 环境准备
-  
-  #### 1. 创建虚拟环境
-  安装anaconda配置环境[anaconda官网](https://www.anaconda.com/download)（如果你用其他的虚拟环境也可以）
-  
-  
-  #### 2. 安装Ollama（可选）
-  项目里支持deepseek的API调用，需要自己获取并填入APIkey.json
-  在 https://ollama.com/download 下载 Ollama 并安装
-  ```bash
-  ollama pull qwen3:14b
-  ollama pull qwen2.5vl:7b #如果需要屏幕识别
-  ```
-  ~~（注意：本地必须跑一个微调的qwen3-14b模型作为对话模型，其他辅助模型可由deepseek担任）~~
-  
-  V1.0.1版本支持除了语音合成，全部AI跑在云端deepseek，相应的download.py也会检查配置文件，若是"deepseek"则不会下载对话模型，想要后面跑在本地的需要修改配置后再下载一次
-  
-  V1.1.0版本支持屏幕识别，只支持跑在本地qwen2.5vl模型上，可以在配置文件设置此选项的开关
-  
-  
-  #### 3. 部署 GPT-SoVITS
-  https://github.com/RVC-Boss/GPT-SoVITS
-  
-  下载整合包，更方便：https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4
-  （我用的GPT-SoVITS-v2pro-20250604-nvidia50，你们看显卡兼容）
-  ##### 配置模型文件
-  将刚刚下好的项目解压，将其中整个GPT-SoVITS文件夹放入AIpet-Murasame目录下（与tool和classes这些文件并列）
-  将"GPT-SoVITS-...-......-......"重命名为"GPT-SoVITS"
-  
-  #### 4. 一键安装环境
-  
-  直接执行env.bat即可
-  ##### 手动安装
-  1. 创建conda环境
-  ```bash
-  conda create -n AIpet_env python=3.10
-  ```
-  2. 安装依赖
-  ```bash
-  conda activate AIpet_env  #激活环境
-  pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   #Pytorch 其实不在本地跑模型不用装
-  cd /d 你的项目地址
-  pip -r requirements.txt   #安装依赖
-  python download.py   #下模型
-  ```
-  ### 开始运行
-  
-  #### 直接执行start_ai_pet.bat
-  
-  #### 手动启动
-  1. 启动桌宠本体(在项目目录启动)
-  ```bash
-  conda activate AIpet_env
-  python main.py
-  ```
-  2. 启动TTS
-  ```bash
-  cd /d 项目地址/GPT-SoVITS
-  "项目地址/GPT-SoVITS/runtime/python.exe" api_v2.py
-  ```
-  
-  3. 开始互动
-
-  ### 配置文件
-  ``` json
-  {
-    "local_api": {              #本地api端口，如果远程部署自己改地址
-      "ollama": "http://localhost:28565/ollama",
-      "qwen3_lora": "http://localhost:28565/qwen3-lora",
-      "gpt_sovits_tts": "http://localhost:28565/tts",
-      "deepseek_api": "http://localhost:28565/deepseekAPI"
-    },
-    "portrait": "a",            #立绘模式，可以改为b
-    "user_name": "Kuxw",        #用户名字
-    "model_type": "deepseek",   #模型类型，local为本地模型
-    "screen_type": "false",     #屏幕识别开关
-  }
-  ```
+Update the NVIDIA driver and make sure the installed PyTorch build is compatible with the detected CUDA version. Cloud mode can be used without a local NVIDIA workload.
 
 </details>
 
---------------------------------------------------------------------------------------------------
+<details>
+<summary><strong>GPT-SoVITS is very slow</strong></summary>
 
-### 过程中
-点击丛雨下半部分可以输入内容，鼠标中建按住可以调整位置，长按鼠标按住丛雨的头部并左右移动可以摸头……
+Use an integrated package that matches your GPU generation. The package used for newer NVIDIA cards may differ from the general build.
 
-### 配置文件
-``` json
-{
-  "local_api": {              #本地api端口，如果api转发远程部署自己改地址
-    "ollama": "http://localhost:28565/ollama",
-    "qwen3_lora": "http://localhost:28565/qwen3-lora",
-    "gpt_sovits_tts": "http://localhost:28565/tts",
-    "deepseek_api": "http://localhost:28565/deepseekAPI"
-  },
-  "portrait": "a",            #立绘模式，可以改为b
-  "user_name": "Kuxw",        #用户名字
-  "model_type": "deepseek",   #模型类型，local为本地模型，qwen为qwen系列模型，deepseek为deepseek模型(屏幕识别默认qwen模型，所以建议直接走qwen)
-  "tts_type": "local",        #语音合成，local为本地模型，cloud为云端模型
-  "screen_type": "false",     #屏幕识别开关，false关闭， true开启
-  "voice_trigger": "false",   #语音识别开关
-  "stt_model": "large-v3",    #选择语音识别模型，具体可见原项目
-  "screen_interval": 300,     #屏幕截图间隔(s)
-  "DEFAULT_PORTRAIT_SCREEN_RATIO": 0.8,    #桌宠高度最多占屏幕高度的比例
-  "screen_index": 0,          #桌宠运行在哪个屏幕，并在那个屏幕截图
-  "idle_thinking_minutes": 1, #短时间离开的判断阈值
-  "idle_away_minutes": 2      #长时间离开的判断阈值
-}
-```
+</details>
 
-### ⭐ 如果觉得有用，那请点个 Star 吧！
+<details>
+<summary><strong>Conda says it must be initialized</strong></summary>
 
+Run `conda init`, restart the terminal, and activate the environment again.
 
-## 💬 常见问题（Q&A）
+</details>
 
-### 1️⃣ GPU不可用  
-> **问题：** 有显卡但 TTS 运行时提示  
-> `Warning: CUDA is not available, set device to CPU.`  
-> **解决：** 尝试更新显卡驱动，确保 CUDA 与 PyTorch 匹配。  
+<details>
+<summary><strong>An API key is rejected</strong></summary>
 
----
+Check that the key belongs to the selected `model_type`, is still valid, and has available quota. Save `config.json` as valid UTF-8 JSON.
 
-### 2️⃣ SoVITS 响应慢  
-> **问题：** SoVITS 有反应但速度极慢。  
-> **解决：** 请下载与你显卡对应的版本：  
-> -  50 系列：使用 **专用版本**  
-> -  40 系及以下：使用 **通用版本**
+</details>
 
----
+<details>
+<summary><strong>The launcher closes immediately</strong></summary>
 
-### 3️⃣ Conda 激活错误  
-> **问题：** `CondaError: Run 'conda init' before 'conda activate'`  
-> **解决：**  
-> - 建议使用 **Miniconda** 而非完整版；  
-> - 或在命令行中手动执行：  
->   ```bash
->   conda init
->   ```
+Move the project to a simple path without spaces or special characters, open a terminal in that directory, activate the environment, and run `python run.py` so the error remains visible.
 
----
+</details>
 
-### 4️⃣ API Key 报错  
-![Q&A4](https://github.com/kuxiaowo/AIpet-Murasame/blob/resource/readme_resource/qa4.png) 
-> **问题：** 启动时如图，API 无法使用。  
-> **解决：**  
-> - 检查 **API Key 是否有效、账户余额是否充足**；  
-> - 若文件编码问题，重新保存为 **ANSI 编码**。
+## Roadmap
 
----
+- [x] Persistent conversation history
+- [x] Configurable pet size and display
+- [x] One-command Python launcher
+- [x] Alternate portrait / outfit
+- [x] Cloud TTS experiment
+- [x] Qwen model support
+- [ ] More complete application logging
+- [ ] More reliable always-on-top behavior in games
 
-### 5️⃣ `start_ai_pet.bat` 闪退  （V1.2.0）
-> **问题：** 双击启动脚本后直接关闭窗口。  
-> **解决：**  
-> - 确保路径中 **没有特殊符号或空格**。  
->   （如中文名、括号、感叹号等）
+## License and asset notice
 
----
+The source code is distributed under the [GNU Affero General Public License v3.0](LICENSE).
 
-### 6️⃣ 脚本乱码或闪退  （V1.2.0）
-> **问题：** `env.bat` 或 `start_ai_pet.bat` 乱码、无法运行。  
-> **解决：**  
-> - 重新保存为 **ANSI 编码格式**。  
+This is an unofficial fan project intended for study and technical exchange. Murasame and the included third-party character artwork, voice data, and related assets belong to their respective rights holders, including YUZUSOFT, and are not relicensed by the AGPL. Do not use this project or those assets commercially.
 
----
-
-## 开发任务
-
-| 状态 | 任务 |
-|:--:|:--|
-| ✅ | 长期记忆功能 |
-| ✅ | 桌宠显示大小写入配置文件 |
-| ✅ | 添加 Q&A 支持，解决部分常见问题 |
-| ✅ | python脚本一键启动，兼容性更高，优化依赖（避免强制下载 PyTorch） |
-| ✅ | 更换衣服 |
-|  | 完成完善的日志记录 |
-|  | 检查“置顶逻辑”，确保游戏中始终保持窗口置顶 |
-| ✅ | tts尝试部署到阿里云 |
-| ✅ | 全部模型改用 Qwen 系列 |
-
-
+If AIpet made your desktop a little less lonely, consider leaving a ⭐.
