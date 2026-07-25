@@ -1,32 +1,43 @@
-import json
-import os
-import time
-import textwrap
-import wave
+from __future__ import annotations
+
 import ctypes
-from concurrent.futures import ThreadPoolExecutor
+import textwrap
+import time
+import uuid
+import wave
 from pathlib import Path
 
 import cv2
-from PyQt5.QtCore import QTimer
-from PyQt5.QtCore import Qt, QRect
-from PyQt5.QtGui import QGuiApplication, QImage
-from PyQt5.QtGui import QPainter, QColor, QFont, QPixmap, QFontMetrics
+from PyQt5.QtCore import QRect, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QFontMetrics,
+    QGuiApplication,
+    QImage,
+    QPainter,
+    QPixmap,
+)
 from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
 
-from classes.Worker_class import ScreenWorker
-from classes.Worker_class import qwen3_lora_Worker, cloud_API_Worker
-from tool.config import get_config
-from tool.chat import ollama_qwen25vl
-from tool.cloud_API_chat import cloud_vl
+from classes.workers import (
+    ConversationResult,
+    ConversationWorker,
+    VisionWorker,
+)
+from tool.config import AppSettings, PROJECT_ROOT, get_cache_dir
 from tool.generate import generate_fgimage
+from tool.portraits import default_layers, layers_for
+from tool.storage import HistoryStore
+from tool.time_utils import build_time_context
 
 
-def wrap_text(s, width=10):
+def wrap_text(text: str, width: int = 10) -> str:
     return "\n".join(
         textwrap.wrap(
-            s,
+            text,
             width=width,
             break_long_words=True,
             break_on_hyphens=False,
@@ -34,16 +45,7 @@ def wrap_text(s, width=10):
     )
 
 
-CONFIG = get_config("./config.json")
-portrait_type = CONFIG["portrait"]
-model_type = CONFIG["model_type"]
-screen_type = CONFIG.get("screen_type", "true")
-DEFAULT_PORTRAIT_SCREEN_RATIO = CONFIG["DEFAULT_PORTRAIT_SCREEN_RATIO"]
-IDLE_THINKING_MINUTES = CONFIG.get("idle_thinking_minutes")
-IDLE_AWAY_MINUTES = CONFIG.get("idle_away_minutes")
-
-
-class LASTINPUTINFO(ctypes.Structure):
+class LastInputInfo(ctypes.Structure):
     _fields_ = [
         ("cbSize", ctypes.c_uint),
         ("dwTime", ctypes.c_uint),
@@ -51,732 +53,629 @@ class LASTINPUTINFO(ctypes.Structure):
 
 
 def get_idle_seconds() -> float:
-    """基于 Windows GetLastInputInfo 计算全局空闲时间（秒）"""
+    """Return global input idle time on Windows; return zero elsewhere."""
+
     try:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
     except AttributeError:
-        # 非 Windows 平台直接认为无空闲
         return 0.0
 
-    last_input_info = LASTINPUTINFO()
-    last_input_info.cbSize = ctypes.sizeof(LASTINPUTINFO)
-    if not user32.GetLastInputInfo(ctypes.byref(last_input_info)):
+    info = LastInputInfo()
+    info.cbSize = ctypes.sizeof(LastInputInfo)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
         return 0.0
 
-    tick_count = kernel32.GetTickCount()
-    idle_ms = tick_count - last_input_info.dwTime
-    if idle_ms < 0:
-        idle_ms = 0
-    return idle_ms / 1000.0
+    idle_milliseconds = (kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF
+    return idle_milliseconds / 1000.0
 
 
 class Murasame(QLabel):
-    # 初始
-    def __init__(self):
+    notification = pyqtSignal(str, str)
+
+    def __init__(self, settings: AppSettings):
         super().__init__()
-        # 文字
-        self.full_text = ""  # 打字机效果用到的整体字符串
-        self.pet_name = "丛雨"  # 宠物名称
-        self.user_name = CONFIG["user_name"]  # 用户名字
-        self.display_text = ""  # 将要展示的文字
-        self._font_family = "思源黑体Bold.otf"
+        self.settings = settings.model_copy(deep=True)
+        self.pet_name = "丛雨"
+
+        self.full_text = ""
+        self.display_text = ""
+        self.typing_prefix = ""
+        self.typing_index = 0
+        self.typing_timer = QTimer(self)
+        self.typing_timer.setInterval(40)
+        self.typing_timer.timeout.connect(self._typing_step)
+
+        self.input_mode = False
+        self.input_buffer = ""
+        self.preedit_text = ""
+        self.touch_head = False
+        self.head_press_x: int | None = None
+        self.drag_offset = None
+
         self._base_font_size = 40
-        self._base_text_x_offset = 140  # 文本框左右偏移量
-        self._base_text_y_offset = -100  # 文本框上下偏移量
+        self._base_text_x_offset = 140
+        self._base_text_y_offset = -100
         self._base_border_size = 2
         self._current_scale = 1.0
-        self.border_size = self._base_border_size
+        self._font_family = self._load_font()
         self._update_text_scaling()
 
-        # 创建打字机效果的计时器
-        self.typing_timer = QTimer(self)
-        self.typing_speed = 40
-        self.typing_timer.setInterval(self.typing_speed)  # 每 40 毫秒触发一次（打字机速度）
+        self.history_store = HistoryStore(limit=self.settings.history_limit)
+        self.history = self.history_store.load()
+        self._generation = 0
+        self._workers: dict[int, ConversationWorker] = {}
+        self._vision_worker: VisionWorker | None = None
+        self._playback_result: ConversationResult | None = None
+        self._playback_index = 0
+        self._sound: QSound | None = None
+        self.playback_timer = QTimer(self)
+        self.playback_timer.setSingleShot(True)
+        self.playback_timer.timeout.connect(self._play_next_sentence)
 
-        # 输入
-        self.input_mode = False  # 是否处于输入模式
-        self.input_buffer = ""  # 输入模式下已确认的文字
-        self.preedit_text = ""  # 输入模式下的拼音/候选
-        self.setFocusPolicy(Qt.StrongFocus)  # 接收键盘焦点
-        self.setAttribute(Qt.WA_InputMethodEnabled, True)  # 开启输入法支持
-        self.setFocus()
-        # 鼠标事件
-        self.touch_head = False  # 是否正在摸头（左键点头部后进入判定）
-        self.head_press_x = None  # 按下头部时的横坐标，用来判断是否“晃动”
-        self.offset = None  # 中键拖动时记录的偏移量
-
-        # AI 对话
-        self.history = []
-        self.portrait_history = []
-        self.screen_history = ["", ""]
-        self.history_file = Path("./data/history.json")
-        self._load_history()
-
-        # 初始立绘
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )  # 去掉标题栏和边框，窗口总在最前面，任务栏不单独显示图标
-        self.setAttribute(Qt.WA_TranslucentBackground, True)  # 让整个窗口支持透明区域
-        if portrait_type == "a":
-            self.first_portrait = [1950, 1368, 1958]
-        elif portrait_type == "b":
-            self.first_portrait = [1715, 1306, 1719]
-        else:
-            self.first_portrait = [1715, 1306, 1719]
-        self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)
-        if not self.portrait_history:
-            self.portrait_history.append(("", str(self.first_portrait)))
-            self._save_history()
-
-        # 线程
-        self.worker = None
-        self.interval = CONFIG["screen_interval"]
-        self._screenshot_worker = None
-        self._screenshot_executor = ThreadPoolExecutor(
-            max_workers=1
-        )  # 处理屏幕截图网络调用
-        self.force_stop = False  # 是否处于强制中断状态
-        if screen_type == "true":
-            QTimer.singleShot(
-                1000, lambda: self.start_screenshot_worker(interval=self.interval)
-            )
-
-        # 空闲检测相关
+        self._dnd_enabled = False
         self.idle_thinking_triggered = False
         self.idle_away_triggered = False
-        self.idle_thinking_seconds = max(0, IDLE_THINKING_MINUTES) * 60
-        self.idle_away_seconds = max(
-            self.idle_thinking_seconds + 60,
-            max(0, IDLE_AWAY_MINUTES) * 60,
-        )
-
-        # 记录离开屏幕的时间，用于回来后问候
-        self.away_trigger_time = None
-
+        self.away_trigger_time: float | None = None
         self.idle_timer = QTimer(self)
         self.idle_timer.setInterval(1000)
         self.idle_timer.timeout.connect(self.check_idle_state)
         self.idle_timer.start()
 
-        # 勿扰模式：开启后关闭截图与空闲检测，并禁止主动搭话
-        self._dnd_enabled = False
+        self.screenshot_timer = QTimer(self)
+        self.screenshot_timer.timeout.connect(self._capture_screen)
 
-    def focusInEvent(self, event):
-        """当桌宠获得焦点时（用户点中、开始输入）"""
-        # 输入时暂停自动行为，但勿扰模式下保持静默
-        if not self.is_dnd_enabled():
-            self.pause_all_ai()
-        super().focusInEvent(event)
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAttribute(Qt.WA_InputMethodEnabled, True)
+        self.setMouseTracking(True)
 
-    def focusOutEvent(self, event):
-        """当桌宠失去焦点时（用户点击别处、输入结束）"""
-        # 仅在未开启勿扰模式时恢复自动行为
-        if not self.is_dnd_enabled():
-            self.resume_all_ai()
-        super().focusOutEvent(event)
+        self.update_portrait(default_layers(self.settings.character.portrait))
+        self._apply_automatic_behavior_settings()
 
-    def start_screenshot_worker(self, interval):
-        # 勿扰模式下不启动截图线程
-        if getattr(self, "_dnd_enabled", False):
-            return
-        if self._screenshot_worker and self._screenshot_worker.isRunning():
-            return
-        self._screenshot_worker = ScreenWorker(interval)
-        self._screenshot_worker.screenshot_captured.connect(self.on_screenshot_captured)
-        self._screenshot_worker.start()
+    def _load_font(self) -> str:
+        font_path = PROJECT_ROOT / "思源黑体Bold.otf"
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        return families[0] if families else QFont().family()
 
-    def stop_screenshot_worker(self):
-        if self._screenshot_worker and self._screenshot_worker.isRunning():
-            self._screenshot_worker.requestInterruption()
-            self._screenshot_worker.quit()
-            self._screenshot_worker.wait()
-            self._screenshot_worker = None
+    def apply_settings(self, settings: AppSettings) -> None:
+        old_portrait = self.settings.character.portrait
+        current_layers = getattr(
+            self,
+            "_current_layers",
+            default_layers(old_portrait),
+        )
+        self.settings = settings.model_copy(deep=True)
+        self.history_store.limit = self.settings.history_limit
+        self.history = self.history[-self.settings.history_limit :]
+        self.history_store.save(self.history)
 
-    def set_screenshot_enabled(self, enabled: bool):
-        global screen_type
-        screen_type = "true" if enabled else "false"
-        # 持久化当前开关状态，保证即使直接关闭命令行也能保留设置
-        try:
-            config = get_config("./config.json")
-            config["screen_type"] = screen_type
-            with open("./config.json", "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"[AIpet] 保存 screen_type 失败: {e}")
-
-        if enabled:
-            # 勿扰模式下只记录开关状态，不真正启动截图线程
-            if self.is_dnd_enabled():
-                print("[AIpet] 勿扰模式开启中：暂不启动截图线程")
-                return
-            if not (self._screenshot_worker and self._screenshot_worker.isRunning()):
-                print("[AIpet] 启用截图线程")
-                self.start_screenshot_worker(interval=self.interval)
+        if old_portrait != self.settings.character.portrait:
+            self.update_portrait(default_layers(self.settings.character.portrait))
         else:
-            print("[AIpet] 停用截图线程")
-            self.stop_screenshot_worker()
+            self.update_portrait(current_layers)
+        self._reset_idle_state()
+        self._apply_automatic_behavior_settings()
+
+    def _apply_automatic_behavior_settings(self) -> None:
+        self.screenshot_timer.stop()
+        if (
+            self.settings.vision.enabled
+            and self.settings.supports_vision()
+            and not self._dnd_enabled
+        ):
+            self.screenshot_timer.start(
+                self.settings.vision.interval_seconds * 1000
+            )
+        if self._dnd_enabled:
+            self.idle_timer.stop()
+        elif not self.idle_timer.isActive():
+            self.idle_timer.start()
+
+    def set_screenshot_enabled(self, enabled: bool) -> None:
+        if enabled and not self.settings.supports_vision():
+            self.settings.vision.enabled = False
+            self.notification.emit(
+                "Screen vision unavailable",
+                "DeepSeek mode is chat-only. Choose Alibaba Cloud or Ollama.",
+            )
+            return
+        self.settings.vision.enabled = bool(enabled)
+        self._apply_automatic_behavior_settings()
 
     def is_screenshot_enabled(self) -> bool:
-        return screen_type == "true"
+        return self.settings.vision.enabled
 
-    def set_dnd_enabled(self, enabled: bool):
-        """设置勿扰模式。
-
-        勿扰模式开启后：
-        - 停止截图线程
-        - 停止空闲检测计时器
-        - 不再触发基于空闲或截图的主动对话
-        """
+    def set_dnd_enabled(self, enabled: bool) -> None:
         self._dnd_enabled = bool(enabled)
         if self._dnd_enabled:
-            print("[AIpet] 启用勿扰模式")
-            # 停止一切自动行为
-            self.pause_all_ai()
-            if self.idle_timer.isActive():
-                self.idle_timer.stop()
-            # 重置空闲状态，避免退出勿扰后立刻触发
-            self.idle_thinking_triggered = False
-            self.idle_away_triggered = False
-            self.away_trigger_time = None
-        else:
-            print("[AIpet] 关闭勿扰模式")
-            # 恢复空闲检测
-            if not self.idle_timer.isActive():
-                self.idle_timer.start()
-            # 仅当截图功能处于开启状态时恢复截图线程
-            if self.is_screenshot_enabled():
-                self.resume_all_ai()
+            self._cancel_active_jobs()
+            self._reset_idle_state()
+        self._apply_automatic_behavior_settings()
 
     def is_dnd_enabled(self) -> bool:
-        return getattr(self, "_dnd_enabled", False)
+        return self._dnd_enabled
 
-    def on_screenshot_captured(self, image_path):
-        # 勿扰模式下完全忽略截图结果
-        if self.is_dnd_enabled():
-            try:
-                os.remove(image_path)
-            except Exception:
-                pass
+    def _reset_idle_state(self) -> None:
+        self.idle_thinking_triggered = False
+        self.idle_away_triggered = False
+        self.away_trigger_time = None
+
+    def check_idle_state(self) -> None:
+        if self._dnd_enabled:
             return
-        model_type = get_config("./config.json")["model_type"]
 
-        def task(path):
-            try:
-                try:
-                    if model_type == "deepseek" or model_type == "qwen":
-                        if self.force_stop:
-                            print("[cloud-vl] 已中断生成")
-                            return
-                        desc = cloud_vl(path)
-                    elif model_type == "local":
-                        if self.force_stop:
-                            print("[ollama-qwen2.5vl] 已中断生成")
-                            return
-                        desc = ollama_qwen25vl(path)
-                    propmt = (
-                        "系统提示：下面是一段对用户当前屏幕内容和正在做的事的描述。"
-                        "屏幕描述"
-                        f"{desc}"
-                    )
-                    if self.force_stop:
-                        print("屏幕回复 已中断生成")
-                        return
-                    self.start_thread(propmt, role="system", t=True)
-                except Exception as e:
-                    print(f"[AIpet] 截图分析失败: {e}")
-            finally:
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-
-        self._screenshot_executor.submit(task, image_path)
-
-    def pause_all_ai(self):
-        """用户输入时：停止截图线程、中断 AI 显示与语音"""
-        self.force_stop = True  # 启用软中断标记
-
-        if self._screenshot_worker and self._screenshot_worker.isRunning():
-            print("[AIpet] 暂停截图线程")
-            self.stop_screenshot_worker()
-        if self.worker and self.worker.isRunning():
-            self.worker.stop_screen()
-        try:
-            QSound.stop()
-        except Exception:
-            pass
-
-    def resume_all_ai(self):
-        """用户输入结束后：恢复截图线程与 AI 响应"""
-        self.force_stop = False  # 解除软中断标记
-        if not (self._screenshot_worker and self._screenshot_worker.isRunning()) and (
-            screen_type == "true"
-        ):
-            print("[AIpet] 恢复截图线程")
-            self.start_screenshot_worker(interval=self.interval)
-
-    def check_idle_state(self):
-        """检查系统空闲时间并在阈值上触发对话"""
+        thinking_seconds = self.settings.idle.thinking_minutes * 60
+        away_seconds = self.settings.idle.away_minutes * 60
         idle_seconds = get_idle_seconds()
 
-        # 如果已经从离开状态回来，并且离开超过 60 秒，则问候一次“欢迎回来”
         if (
-                idle_seconds <= self.idle_thinking_seconds
-                and self.idle_away_triggered
-                and self.away_trigger_time is not None
+            idle_seconds <= thinking_seconds
+            and self.idle_away_triggered
+            and self.away_trigger_time is not None
         ):
-            elapsed = time.time() - self.away_trigger_time
-            if elapsed >= 30:
-                print("[AIpet] 触发回归")
-                greeting_prompt = (
-                    "系统提示：用户刚刚从离开状态回到电脑前。"
-                    "你以“丛雨”的身份，简单打个招呼"
-                    "可以说“欢迎回来”、问问主人要不要继续刚才的事情之类，"
-                    "回答简短。不要与之前重复。"
+            if time.time() - self.away_trigger_time >= 30:
+                self.start_thread(
+                    "用户刚刚回到电脑前。简短欢迎主人回来，并自然地问是否要继续刚才的事情。",
+                    role="system",
                 )
-                self.start_thread(greeting_prompt, role="system", t=True)
-                # 防止重复问候
-                self.away_trigger_time = None
+            self._reset_idle_state()
+            return
 
-        # 有操作时重置状态
-        if idle_seconds <= self.idle_thinking_seconds:
-            if self.idle_thinking_triggered or self.idle_away_triggered:
-                print("[AIpet] 检测到用户活动，重置空闲状态")
+        if idle_seconds <= thinking_seconds:
             self.idle_thinking_triggered = False
             self.idle_away_triggered = False
             return
 
-        # 超过离屏阈值
-        if idle_seconds >= self.idle_away_seconds and not self.idle_away_triggered:
+        if idle_seconds >= away_seconds and not self.idle_away_triggered:
             self.idle_away_triggered = True
             self.away_trigger_time = time.time()
-            print(f"[AIpet] 空闲超过 {self.idle_away_seconds} 秒，判定为离开屏幕")
-            prompt = (
-                "系统提示：用户已经离开屏幕更长时间，没有对电脑进行任何输入。忽视最近的对话。"
-                "你需要以“丛雨”的身份，问问主人还在不在，提醒适当休息。"
-                "不要和之前问主人走神或是思考的提示重复。"
+            self.start_thread(
+                "用户已经离开电脑一段时间。轻声问主人是否还在，并提醒适当休息。",
+                role="system",
             )
-            # 使用 system 角色注入上下文，对话可以被用户输入打断
-            self.start_thread(prompt, role="system", t=True)
             return
 
-        # 超过发呆阈值
-        if idle_seconds >= self.idle_thinking_seconds and not self.idle_thinking_triggered:
+        if not self.idle_thinking_triggered:
             self.idle_thinking_triggered = True
-            print(f"[AIpet] 空闲超过 {self.idle_thinking_seconds} 秒")
-            prompt = (
-                "系统提示：用户已经有一段时间没有对电脑进行输入操作。忽视最近的对话。"
-                "可能是在发呆、走神或者安静地思考。请你以“丛雨”的身份，"
-                "用温柔、贴心但不过分打扰的方式主动搭话，可以简单关心一下主人在想什么，或者是不是走神，在摸鱼，"
-                "或者轻轻提醒他注意放松，回答不超过三句话。"
-            )
-            self.start_thread(prompt, role="system", t=True)
-
-    # qwen3 线程的槽函数
-    def on_reply(self, reply, portrait_list, history, portrait_history, voices):
-        self.portrait_history = portrait_history
-        self.history = history
-        self._save_history()
-
-        def show_next_sentence(index=0):
-            def get_audio_length_wave(audio_file_path):
-                try:
-                    with wave.open(audio_file_path, "rb") as wave_file:
-                        frames = wave_file.getnframes()  # 获取音频的帧数
-                        rate = wave_file.getframerate()  # 获取音频的帧速率
-                        duration = frames / float(rate)  # 计算时长（秒）
-                        return duration * 1000  # 转换为毫秒
-                except Exception:
-                    return 0
-
-            if index >= len(reply):
-                return
-            sentence = reply[index]
-            portrait = portrait_list[index]
-            self.update_portrait(f"ムラサメ{portrait_type}", portrait)
-            voice_id = voices[index]
-            voice_path = f"./voices/{voice_id}.wav" if voice_id else None
-            voice_length = 0
-            if voice_path and os.path.exists(voice_path):
-                voice_length = get_audio_length_wave(os.path.abspath(voice_path))
-                if voice_length > 0:
-                    QSound.play(voice_path)
-            self.show_text(sentence, typing=True)
-            # 计算打字机需要的时间（40ms * 每个字）
-            delay = max(40 * len(sentence) + 800, voice_length + 400)  # 额外停顿
-            if voice_path and os.path.exists(voice_path) and voice_length > 0:
-                QTimer.singleShot(
-                    int(delay),
-                    lambda: [os.remove(voice_path), show_next_sentence(index + 1)],
-                )
-            else:
-                QTimer.singleShot(int(delay), lambda: show_next_sentence(index + 1))
-
-        show_next_sentence(index=0)
-        self.worker = None  # 线程结束后清空引用
-
-    # 启动一个新线程（安全版，打断旧线程）
-    def start_thread(self, text, role, t=False):
-        # 结束旧线程
-        if self.worker and self.worker.isRunning():
-            self.worker.stop_all()  # 通知线程中断
-            self.worker.wait(1000)
-
-        # 启动新线程
-        if model_type == "local":
-            self.worker = qwen3_lora_Worker(
-                self.history, self.portrait_history, text, role, t=t
-            )
-        else:
-            self.worker = cloud_API_Worker(
-                self.history, self.portrait_history, text, role, t=t
+            self.start_thread(
+                "用户一段时间没有输入，可能正在思考、发呆或休息。"
+                "温柔地关心一下，避免过分打扰。",
+                role="system",
             )
 
-        self.worker.finished.connect(self.on_reply)
-        self.worker.start()
-
-    # 鼠标按下事件
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            # 判断点在哪里
-            if event.y() < 150:  # 头部区域
-                self.touch_head = True
-                self.head_press_x = event.x()
-                self.setCursor(Qt.OpenHandCursor)
-            elif event.y() > 280:  # 下半身区域 -> 输入模式
-                self.input_mode = True
-                self.input_buffer = ""
-                self.preedit_text = ""
-                self.display_text = f"【{self.user_name}】\n  ..."
-                self.update()
-            else:
-                # 其他地方，什么也不做
-                self.touch_head = False
-                self.head_press_x = None
-                self.setCursor(Qt.ArrowCursor)
-
-        elif event.button() == Qt.MiddleButton:
-            # 中键拖动
-            self.offset = event.pos()
-            self.setCursor(Qt.SizeAllCursor)
-
-    # 鼠标移动事件
-    def mouseMoveEvent(self, event):
-        # 判断是不是在“摸头”
-        if self.touch_head and self.head_press_x is not None:
-            if abs(event.x() - self.head_press_x) > 50:
-                self.start_thread("主人摸了摸你的头", role="system")
-                self.touch_head = False
-
-        # 中键拖动窗口
-        if self.offset is not None and event.buttons() == Qt.MiddleButton:
-            self.move(self.pos() + event.pos() - self.offset)
-
-    # 鼠标释放事件
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.touch_head = False
-            self.head_press_x = None
-            self.setCursor(Qt.ArrowCursor)  # 恢复箭头
-
-        elif event.button() == Qt.MiddleButton:
-            self.offset = None
-            self.setCursor(Qt.ArrowCursor)  # 拖动结束也要恢复箭头
-
-    # 绘制事件
-    def paintEvent(self, event):
-        # 1. 先调用 QLabel 默认的绘制（画立绘 / 背景）
-        super().paintEvent(event)
-
-        # 2. 再叠加绘制文字
-        if self.display_text:  # 过滤掉空字符串和 None
-            # 设置绘图环境
-            painter = QPainter(self)  # 在这个控件上绘制
-            painter.setRenderHint(QPainter.Antialiasing, True)  # 抗锯齿
-            painter.setRenderHint(QPainter.TextAntialiasing, True)  # 文字抗锯齿
-            painter.setFont(self.text_font)
-
-            rect = self.rect()
-            # 调整文字区域（放在立绘上半部分）
-            text_rect = rect.adjusted(
-                self.text_x_offset,  # 左
-                self.text_y_offset,  # 上
-                -self.text_x_offset,  # 右
-                -rect.height() // 2 + self.text_y_offset,  # 下
+    def _capture_screen(self) -> None:
+        if (
+            self._dnd_enabled
+            or not self.settings.vision.enabled
+            or (
+                self._vision_worker is not None
+                and self._vision_worker.isRunning()
             )
+        ):
+            return
 
-            # 如果有换行就靠左对齐，否则居中
-            if "\n" in self.display_text:
-                align_flag = Qt.AlignLeft | Qt.AlignBottom
-            else:
-                align_flag = Qt.AlignHCenter | Qt.AlignBottom
+        screens = QGuiApplication.screens()
+        screen_index = self.settings.display.screen_index
+        screen = (
+            screens[screen_index]
+            if 0 <= screen_index < len(screens)
+            else QGuiApplication.primaryScreen()
+        )
+        if screen is None:
+            self.notification.emit("屏幕分析", "没有找到可用显示器")
+            return
 
-            # 文字描边（黑色）
-            border_size = self.border_size
-            painter.setPen(QColor(44, 22, 28))
-            for dx, dy in [
-                (-border_size, 0),
-                (border_size, 0),
-                (0, -border_size),
-                (0, border_size),
-                (border_size, -border_size),
-                (border_size, border_size),
-                (-border_size, -border_size),
-                (-border_size, border_size),
-            ]:
-                painter.drawText(text_rect.translated(dx, dy), align_flag, self.display_text)
+        screenshot_dir = get_cache_dir() / "screens"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        image_path = screenshot_dir / f"{uuid.uuid4().hex}.png"
+        pixmap = screen.grabWindow(0)
+        if pixmap.isNull() or not pixmap.save(str(image_path), "PNG"):
+            self.notification.emit("屏幕分析", "屏幕截图失败")
+            return
 
-            # 文字正体（白色）
-            painter.setPen(Qt.white)
-            painter.drawText(text_rect, align_flag, self.display_text)
+        worker = VisionWorker(
+            self.settings.model_copy(deep=True),
+            image_path,
+            self,
+        )
+        self._vision_worker = worker
+        worker.description_ready.connect(self._on_screen_description)
+        worker.error.connect(
+            lambda message: self.notification.emit("屏幕分析失败", message)
+        )
+        worker.finished.connect(lambda: self._finish_vision_worker(worker))
+        worker.start()
 
-            painter.end()
+    def _finish_vision_worker(self, worker: VisionWorker) -> None:
+        if self._vision_worker is worker:
+            self._vision_worker = None
+        worker.deleteLater()
 
-    # 更新立绘
-    def update_portrait(self, target, layers):
-
-        # 1. Generate the RGBA numpy image
-        cv_img = generate_fgimage(target, layers)
-
-        # 2. Convert RGBA to BGRA to keep colors correct in Qt
-        if cv_img.shape[2] == 4:
-            cv_img_bgra = cv2.cvtColor(cv_img, cv2.COLOR_RGBA2BGRA)
-        else:
-            cv_img_bgra = cv_img
-
-        # 3. Build a QImage from the numpy buffer
-        h, w, ch = cv_img_bgra.shape
-        bytes_per_line = ch * w
-        qimg = QImage(
-            cv_img_bgra.data,
-            w,
-            h,
-            bytes_per_line,
-            QImage.Format_RGBA8888,
+    def _on_screen_description(self, description: str) -> None:
+        if self._dnd_enabled:
+            return
+        self.start_thread(
+            f"当前时间：{build_time_context()}\n屏幕内容：{description}",
+            role="system",
         )
 
-        # 4. Convert to QPixmap and apply adaptive scaling
-        pixmap = QPixmap.fromImage(qimg)
-        pixmap = self._scale_portrait_pixmap(pixmap)
+    def start_thread(self, text: str, role: str = "user", t: bool = False) -> None:
+        del t  # Kept for compatibility with previous call sites.
+        clean_text = text.strip()
+        if not clean_text:
+            return
 
-        # 5. Attach to the QLabel and request a repaint
+        self._cancel_active_jobs(include_vision=(role == "user"))
+        self._generation += 1
+        generation = self._generation
+        event_context = clean_text if role == "system" else None
+        worker = ConversationWorker(
+            self.settings.model_copy(deep=True),
+            list(self.history),
+            clean_text if role == "user" else "",
+            event_context=event_context,
+            parent=self,
+        )
+        self._workers[generation] = worker
+        worker.result_ready.connect(
+            lambda result, current=generation: self._on_reply(current, result)
+        )
+        worker.error.connect(
+            lambda message, current=generation: self._on_worker_error(
+                current,
+                message,
+            )
+        )
+        worker.warning.connect(
+            lambda message: self.notification.emit("语音合成", message)
+        )
+        worker.finished.connect(
+            lambda current=generation, current_worker=worker: (
+                self._finish_worker(current, current_worker)
+            )
+        )
+        self.show_text("正在思考……", typing=False)
+        worker.start()
+
+    def _finish_worker(
+        self,
+        generation: int,
+        worker: ConversationWorker,
+    ) -> None:
+        self._workers.pop(generation, None)
+        worker.deleteLater()
+
+    def _on_worker_error(self, generation: int, message: str) -> None:
+        if generation != self._generation:
+            return
+        self.show_text("连接失败，请检查模型设置。", typing=False)
+        self.notification.emit("模型请求失败", message)
+
+    def _on_reply(
+        self,
+        generation: int,
+        result: ConversationResult,
+    ) -> None:
+        if generation != self._generation:
+            self._remove_audio_files(result)
+            return
+
+        if result.is_user_message:
+            self.history.append({"role": "user", "content": result.user_text})
+        self.history.append(
+            {"role": "assistant", "content": result.reply.chinese_text()}
+        )
+        self.history = self.history[-self.settings.history_limit :]
+        self.history_store.save(self.history)
+
+        self._playback_result = result
+        self._playback_index = 0
+        self._play_next_sentence()
+
+    def _play_next_sentence(self) -> None:
+        result = self._playback_result
+        if result is None or self._playback_index >= len(result.reply.sentences):
+            if result is not None:
+                self._remove_audio_files(result)
+            self._playback_result = None
+            self._sound = None
+            return
+
+        index = self._playback_index
+        self._playback_index += 1
+        sentence = result.reply.sentences[index]
+        self.update_portrait(
+            layers_for(self.settings.character.portrait, sentence.emotion)
+        )
+        self.show_text(sentence.zh, typing=True)
+
+        audio_path = result.audio_paths[index]
+        audio_duration = self._audio_duration_milliseconds(audio_path)
+        if audio_path is not None and audio_path.exists() and audio_duration > 0:
+            self._sound = QSound(str(audio_path), self)
+            self._sound.play()
+        delay = max(40 * len(sentence.zh) + 800, audio_duration + 400)
+        self.playback_timer.start(int(delay))
+
+    @staticmethod
+    def _audio_duration_milliseconds(path: Path | None) -> int:
+        if path is None or not path.exists():
+            return 0
+        try:
+            with wave.open(str(path), "rb") as audio:
+                return int(audio.getnframes() / audio.getframerate() * 1000)
+        except (OSError, wave.Error, ZeroDivisionError):
+            return 0
+
+    def _cancel_active_jobs(self, *, include_vision: bool = False) -> None:
+        self._generation += 1
+        for worker in self._workers.values():
+            worker.cancel()
+        if include_vision and self._vision_worker is not None:
+            self._vision_worker.cancel()
+        self._stop_playback()
+
+    def _stop_playback(self) -> None:
+        self.playback_timer.stop()
+        self.typing_timer.stop()
+        if self._sound is not None:
+            self._sound.stop()
+            self._sound = None
+        if self._playback_result is not None:
+            self._remove_audio_files(self._playback_result)
+            self._playback_result = None
+
+    @staticmethod
+    def _remove_audio_files(result: ConversationResult) -> None:
+        for path in result.audio_paths:
+            if path is None:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def update_portrait(self, layers: list[int]) -> None:
+        self._current_layers = list(layers)
+        target = f"ムラサメ{self.settings.character.portrait}"
+        bgra_image = generate_fgimage(target, layers)
+        rgba_image = cv2.cvtColor(bgra_image, cv2.COLOR_BGRA2RGBA)
+        height, width, channels = rgba_image.shape
+        image = QImage(
+            rgba_image.data,
+            width,
+            height,
+            channels * width,
+            QImage.Format_RGBA8888,
+        ).copy()
+        pixmap = self._scale_portrait_pixmap(QPixmap.fromImage(image))
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
         self.update()
 
     def _scale_portrait_pixmap(self, pixmap: QPixmap) -> QPixmap:
-        """
-        根据指定屏幕编号（portrait_screen）来计算立绘高度，
-        若编号无效则回退为 primaryScreen。
-        """
-
-        # 读取配置中的屏幕编号（默认 0 = 主屏）
-        screen_index = get_config("./config.json")["screen_index"]
-
-        # 获取所有屏幕
         screens = QGuiApplication.screens()
-
-        # 根据编号选择屏幕（越界自动回退到主屏）
-        if 0 <= screen_index < len(screens):
-            screen = screens[screen_index]
-        else:
-            screen = QGuiApplication.primaryScreen()
-
-        # 获取目标屏幕可用高度
-        available_height = screen.availableGeometry().height() if screen else None
-
-        # 按屏幕高度缩放
-        if available_height:
-            target_height = int(available_height * DEFAULT_PORTRAIT_SCREEN_RATIO)
-        else:
-            target_height = pixmap.height()
-
-        target_height = max(1, target_height)
-        target_height = min(target_height, pixmap.height())
-
-        if pixmap.height() >= 240:
-            target_height = max(240, target_height)
-
-        # 计算文本缩放
-        scale_factor = target_height / max(1, pixmap.height())
-        self._current_scale = max(scale_factor, 0.1)
+        index = self.settings.display.screen_index
+        screen = (
+            screens[index]
+            if 0 <= index < len(screens)
+            else QGuiApplication.primaryScreen()
+        )
+        available_height = (
+            screen.availableGeometry().height() if screen is not None else 0
+        )
+        target_height = (
+            int(
+                available_height
+                * self.settings.display.portrait_screen_ratio
+            )
+            if available_height
+            else pixmap.height()
+        )
+        target_height = min(max(1, target_height), pixmap.height())
+        self._current_scale = target_height / max(1, pixmap.height())
         self._update_text_scaling()
-
         return pixmap.scaledToHeight(target_height, Qt.SmoothTransformation)
 
-    def _update_text_scaling(self):
-
+    def _update_text_scaling(self) -> None:
         scale = max(self._current_scale, 0.1)
-        scaled_font_size = max(10, int(round(self._base_font_size * scale)))
-        self.text_font = QFont(self._font_family, scaled_font_size)
+        font_size = max(10, round(self._base_font_size * scale))
+        self.text_font = QFont(self._font_family, font_size)
+        self.text_x_offset = max(
+            10,
+            round(self._base_text_x_offset * scale),
+        )
+        self.text_y_offset = min(
+            -10,
+            round(self._base_text_y_offset * scale),
+        )
+        self.border_size = max(1, round(self._base_border_size * scale))
 
-        self.text_x_offset = max(10, int(round(self._base_text_x_offset * scale)))
-        scaled_y = int(round(self._base_text_y_offset * scale))
-        self.text_y_offset = scaled_y if scaled_y < -10 else -10
-
-        self.border_size = max(1, int(round(self._base_border_size * scale)))
-
-    # 显示文本及打字机效果
-    def show_text(self, text, typing=True):
-        wrapped_text = wrap_text(text)
-        self.full_text = wrapped_text  # 设置全部字符
-        self.typing_prefix = f"【{self.pet_name}】\n"  # 设置名字格式
-        self.index = 0
-
-        def _typing_step():  # 打字机效果
-            if self.index < len(self.full_text):
-                self.display_text = (
-                    self.typing_prefix + self.full_text[: self.index + 1]
-                )
-                self.index += 1
-                self.update()
-            else:
-                self.typing_timer.stop()
-
-        try:
-            self.typing_timer.timeout.disconnect()
-        except TypeError:
-            pass
-        self.typing_timer.timeout.connect(_typing_step)
-
+    def show_text(self, text: str, typing: bool = True) -> None:
+        self.full_text = wrap_text(text)
+        self.typing_prefix = f"【{self.pet_name}】\n"
+        self.typing_index = 0
+        self.typing_timer.stop()
         if typing:
             self.display_text = self.typing_prefix
-            self.typing_timer.start(40)
+            self.typing_timer.start()
         else:
-            self.display_text = self.typing_prefix + text
+            self.display_text = self.typing_prefix + self.full_text
             self.update()
 
-    # 输入法候选框定位
+    def _typing_step(self) -> None:
+        if self.typing_index >= len(self.full_text):
+            self.typing_timer.stop()
+            return
+        self.typing_index += 1
+        self.display_text = (
+            self.typing_prefix + self.full_text[: self.typing_index]
+        )
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self.display_text:
+            return
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setFont(self.text_font)
+        rect = self.rect()
+        text_rect = rect.adjusted(
+            self.text_x_offset,
+            self.text_y_offset,
+            -self.text_x_offset,
+            -rect.height() // 2 + self.text_y_offset,
+        )
+        alignment = (
+            Qt.AlignLeft | Qt.AlignBottom
+            if "\n" in self.display_text
+            else Qt.AlignHCenter | Qt.AlignBottom
+        )
+        painter.setPen(QColor(44, 22, 28))
+        for dx, dy in [
+            (-self.border_size, 0),
+            (self.border_size, 0),
+            (0, -self.border_size),
+            (0, self.border_size),
+            (self.border_size, -self.border_size),
+            (self.border_size, self.border_size),
+            (-self.border_size, -self.border_size),
+            (-self.border_size, self.border_size),
+        ]:
+            painter.drawText(
+                text_rect.translated(dx, dy),
+                alignment,
+                self.display_text,
+            )
+        painter.setPen(Qt.white)
+        painter.drawText(text_rect, alignment, self.display_text)
+        painter.end()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            if event.y() < 150:
+                self.touch_head = True
+                self.head_press_x = event.x()
+                self.setCursor(Qt.OpenHandCursor)
+            elif event.y() > 280:
+                self._cancel_active_jobs(include_vision=True)
+                self.input_mode = True
+                self.input_buffer = ""
+                self.preedit_text = ""
+                self.display_text = (
+                    f"【{self.settings.character.user_name}】\n  「...」"
+                )
+                self.setFocus()
+                self.update()
+            else:
+                self.touch_head = False
+                self.head_press_x = None
+        elif event.button() == Qt.MiddleButton:
+            self.drag_offset = event.pos()
+            self.setCursor(Qt.SizeAllCursor)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self.touch_head and self.head_press_x is not None:
+            if abs(event.x() - self.head_press_x) > 50:
+                self.start_thread("主人摸了摸你的头。", role="system")
+                self.touch_head = False
+        if self.drag_offset is not None and event.buttons() & Qt.MiddleButton:
+            self.move(self.pos() + event.pos() - self.drag_offset)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.touch_head = False
+            self.head_press_x = None
+            self.setCursor(Qt.ArrowCursor)
+        elif event.button() == Qt.MiddleButton:
+            self.drag_offset = None
+            self.setCursor(Qt.ArrowCursor)
+
     def inputMethodQuery(self, query):
         if query in (Qt.ImMicroFocus, Qt.ImCursorRectangle):
-            r = self.rect()
-
-            # 计算出文字显示的区域（和 paintEvent 里绘制对白的位置保持一致）
+            rect = self.rect()
             text_rect = QRect(
-                r.x() + self.text_x_offset,
-                r.y() + self.text_y_offset,
-                max(1, r.width() - 2 * self.text_x_offset),
-                max(1, r.height() // 2 - self.text_y_offset),
+                rect.x() + self.text_x_offset,
+                rect.y() + self.text_y_offset,
+                max(1, rect.width() - 2 * self.text_x_offset),
+                max(1, rect.height() // 2 - self.text_y_offset),
             )
-
-            fm = QFontMetrics(self.text_font)
-            text = self.display_text or ""
-
-            # 取“最后一行”来估算插入点
-            last_line = text.split("\n")[-1]
-            w_last = fm.horizontalAdvance(last_line)
-
-            # 光标 x 放在最后一行末尾，但不要超出文字区域
-            x = text_rect.x() + min(max(0, w_last), max(1, text_rect.width() - 1))
-            # 光标 y 放在文字区域底部一行的基线位置
-            y = text_rect.bottom() - fm.height()
-
-            caret = QRect(int(x), int(y), 1, fm.height())
-
-            # 夹在控件内部，避免非法矩形导致 IME 崩溃
-            caret = caret.intersected(self.rect().adjusted(0, 0, -1, -1))
-            if not caret.isValid():
-                # 兜底：放在文字区域左下角
-                caret = QRect(
-                    text_rect.x(),
-                    text_rect.bottom() - fm.height(),
-                    1,
-                    fm.height(),
-                )
-
-            return caret
-
+            font_metrics = QFontMetrics(self.text_font)
+            last_line = (self.display_text or "").split("\n")[-1]
+            x = text_rect.x() + min(
+                max(0, font_metrics.horizontalAdvance(last_line)),
+                max(1, text_rect.width() - 1),
+            )
+            caret = QRect(
+                int(x),
+                text_rect.bottom() - font_metrics.height(),
+                1,
+                font_metrics.height(),
+            )
+            return caret.intersected(self.rect().adjusted(0, 0, -1, -1))
         return super().inputMethodQuery(query)
 
-    # 输入法事件（中文拼音输入）
-    def inputMethodEvent(self, event):
-        if self.input_mode:  # 只在输入模式下处理
-            commit = event.commitString()  # 确认输入
-            preedit = event.preeditString()  # 预编辑（拼音/候选未确认）
-            if commit:
-                self.input_buffer += commit
-            self.preedit_text = preedit
-            wrapped = wrap_text(self.input_buffer + self.preedit_text)
-            self.display_text = f"【{self.user_name}】\n  「{wrapped or '...'}」"
-            self.update()
-        else:
-            super().inputMethodEvent(event)
-
-    # 键盘事件
-    def keyPressEvent(self, event):
+    def inputMethodEvent(self, event) -> None:
         if not self.input_mode:
-            # 如果没进入输入模式，交给父类 QLabel 处理
-            return super().keyPressEvent(event)
+            super().inputMethodEvent(event)
+            return
+        self.input_buffer += event.commitString()
+        self.preedit_text = event.preeditString()
+        self._show_input_buffer()
 
-        # ================== 输入模式下 ==================
+    def keyPressEvent(self, event) -> None:
+        if not self.input_mode:
+            super().keyPressEvent(event)
+            return
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
             text = self.input_buffer.strip()
             self.input_mode = False
+            self.preedit_text = ""
             if text:
-                self.display_text = f"【{self.pet_name}】\n"
-                self.update()
-                # 启动 AI 线程
                 self.start_thread(text, role="user")
             else:
-                self.show_text("主人，你说什么？", typing=True)
-
-        elif event.key() == Qt.Key_Backspace:
-            # 如果有拼音候选框，不删（交给输入法处理）
-            if self.preedit_text:
-                pass
-            else:
-                # 删除最后一个字符
-                self.input_buffer = self.input_buffer[:-1]
-                wrapped = wrap_text(self.input_buffer)
-                self.display_text = f"【{self.pet_name}】\n  「{wrapped or '...'}」"
-                self.update()
-
-        else:
-            # 处理英文/数字直接输入
-            ch = event.text()
-            if ch and not self.preedit_text:
-                self.input_buffer += ch
-                wrapped = wrap_text(self.input_buffer)
-                self.display_text = f"【{self.pet_name}】\n  「{wrapped or '...'}」"
-                self.update()
-
-    def cleer_history(self):
-        self.history = []
-        self.portrait_history = []
-        self.portrait_history.append(("", str(self.first_portrait)))
-        self.update_portrait(f"ムラサメ{portrait_type}", self.first_portrait)
-        self._save_history()
-
-    def _load_history(self):
-        try:
-            self.history_file.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:
-            print(f"[AIpet] 创建记忆目录失败: {exc}")
+                self.show_text("主人，你说什么？")
             return
-        if not self.history_file.exists():
+        if event.key() == Qt.Key_Escape:
+            self.input_mode = False
+            self.show_text("……？", typing=False)
             return
-        try:
-            with self.history_file.open("r", encoding="utf-8") as file:
-                data = json.load(file)
-        except Exception as exc:
-            print(f"[AIpet] 读取记忆失败: {exc}")
+        if event.key() == Qt.Key_Backspace and not self.preedit_text:
+            self.input_buffer = self.input_buffer[:-1]
+            self._show_input_buffer()
             return
-        history = data.get("history")
-        portrait_history = data.get("portrait_history")
-        if isinstance(history, list):
-            self.history = history
-        if isinstance(portrait_history, list):
-            self.portrait_history = portrait_history
+        text = event.text()
+        if text and not self.preedit_text:
+            self.input_buffer += text
+            self._show_input_buffer()
 
-    def _save_history(self):
-        try:
-            self.history_file.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "history": self.history,
-                "portrait_history": self.portrait_history,
-            }
-            with self.history_file.open("w", encoding="utf-8") as file:
-                json.dump(payload, file, ensure_ascii=False, indent=2)
-        except Exception as exc:
-            print(f"[AIpet] 保存记忆失败: {exc}")
+    def _show_input_buffer(self) -> None:
+        content = wrap_text(self.input_buffer + self.preedit_text) or "..."
+        self.display_text = (
+            f"【{self.settings.character.user_name}】\n  「{content}」"
+        )
+        self.update()
+
+    def clear_history(self) -> None:
+        self.history.clear()
+        self.history_store.clear()
+        self.update_portrait(default_layers(self.settings.character.portrait))
+        self.show_text("已经忘掉之前的对话了。", typing=False)
+
+    def shutdown(self) -> None:
+        self.screenshot_timer.stop()
+        self.idle_timer.stop()
+        self._cancel_active_jobs(include_vision=True)
+        self.history_store.save(self.history)
+        for worker in list(self._workers.values()):
+            worker.wait(250)
+        if self._vision_worker is not None:
+            self._vision_worker.wait(250)

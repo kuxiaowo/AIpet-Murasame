@@ -1,0 +1,51 @@
+{
+  "mode": "ollama",
+  "ollama": {
+    "base_url": "http://127.0.0.1:11434",
+    "chat_model": "qwen3:14b",
+    "vision_model": "qwen2.5vl:7b",
+    "context_window": 8192,
+    "timeout_seconds": 180,
+    "keep_alive": "10m"
+  },
+  "api": {
+    "provider": "deepseek",
+    "deepseek_api_key": "",
+    "aliyun_api_key": "",
+    "deepseek_base_url": "https://api.deepseek.com",
+    "aliyun_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "deepseek_chat_model": "deepseek-chat",
+    "aliyun_chat_model": "qwen-plus",
+    "aliyun_vision_model": "qwen3-vl-plus",
+    "timeout_seconds": 180
+  },
+  "vision": {
+    "enabled": false,
+    "interval_seconds": 300
+  },
+  "tts": {
+    "enabled": false,
+    "base_url": "http://127.0.0.1:9880/tts",
+    "remote_reference_root": "",
+    "timeout_seconds": 300
+  },
+  "stt": {
+    "enabled": false,
+    "model": "large-v3",
+    "device": "auto"
+  },
+  "character": {
+    "user_name": "主人",
+    "portrait": "b",
+    "personality_file": "prompt.txt"
+  },
+  "display": {
+    "screen_index": 0,
+    "portrait_screen_ratio": 0.8
+  },
+  "idle": {
+    "thinking_minutes": 6,
+    "away_minutes": 10
+  },
+  "history_limit": 30
+}

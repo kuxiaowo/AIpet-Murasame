@@ -1,19 +1,35 @@
-from faster_whisper import WhisperModel
-from tool.config import get_config
-stt_model = get_config("./config.json")["stt_model"]
+from __future__ import annotations
 
-def transcribe_full(audio_path: str, model_size="large-v3",device="cuda") -> str:
 
-    # 尝试 GPU，失败自动切 CPU
+def transcribe_full(
+    audio_path: str,
+    *,
+    model_size: str = "large-v3",
+    device: str = "auto",
+) -> str:
+    """Transcribe a WAV file with the optional faster-whisper dependency."""
+
+    from faster_whisper import WhisperModel
+
+    selected_device = device
+    if selected_device == "auto":
+        selected_device = "cuda"
+
+    compute_type = "float16" if selected_device == "cuda" else "int8"
     try:
-        model = WhisperModel(model_size, device=device, compute_type="float16")
+        model = WhisperModel(
+            model_size,
+            device=selected_device,
+            compute_type=compute_type,
+        )
     except Exception:
-        print("⚠ GPU 初始化失败，使用 CPU")
+        if device != "auto":
+            raise
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
-    # 识别
-    segments, info = model.transcribe(audio_path,language="zh",beam_size=5)
-
-    # 合并成一句完整话
-    full_text = "".join(seg.text for seg in segments).strip()
-    return full_text
+    segments, _ = model.transcribe(
+        audio_path,
+        language="zh",
+        beam_size=5,
+    )
+    return "".join(segment.text for segment in segments).strip()

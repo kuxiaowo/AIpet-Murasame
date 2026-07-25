@@ -1,130 +1,240 @@
-import sys
-import threading
-import json
+from __future__ import annotations
 
-from PyQt5.QtCore import QTimer, QObject, pyqtSignal
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QAction, QMenu
+import sys
+
+from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QDialog,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+)
 
 from classes.murasame_class import Murasame
-from api import app as api_app
-import uvicorn
-
-from tool.config import get_config
-
-
-CONFIG = get_config("./config.json")
-screen_index = CONFIG["screen_index"]
-VOICE_TRIGGER_ENABLED = CONFIG.get("voice_trigger")
+from tool.config import (
+    AppSettings,
+    PROJECT_ROOT,
+    load_settings,
+    save_settings,
+    settings_file_exists,
+)
+from ui.settings_dialog import SettingsDialog
 
 
 class VoiceBridge(QObject):
     text_ready = pyqtSignal(str)
     record_start = pyqtSignal()
     record_end = pyqtSignal()
+    error = pyqtSignal(str)
 
 
-def save_screen_type(pet: Murasame) -> None:
-    """在程序退出时保存当前截图开关状态到配置文件"""
+def load_settings_safely() -> tuple[AppSettings, str | None]:
     try:
-        config_path = "./config.json"
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        config["screen_type"] = "true" if pet.is_screenshot_enabled() else "false"
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"[AIpet] 保存 screen_type 失败: {e}")
+        return load_settings(), None
+    except Exception as exc:
+        return AppSettings(), str(exc)
 
 
-if __name__ == "__main__":
-
-    # 后台启动本地 API 服务（FastAPI + Uvicorn）
-    def _run_api_server():
-        config = uvicorn.Config(api_app, host="0.0.0.0", port=28565, log_level="info")
-        server = uvicorn.Server(config)
-        server.run()
-
-    api_thread = threading.Thread(
-        target=_run_api_server,
-        name="uvicorn-thread",
-        daemon=True,
+def move_pet_to_configured_screen(
+    app: QApplication,
+    pet: Murasame,
+    settings: AppSettings,
+) -> None:
+    screens = app.screens()
+    index = settings.display.screen_index
+    screen = (
+        screens[index]
+        if 0 <= index < len(screens)
+        else app.primaryScreen()
     )
-    api_thread.start()
+    if screen is not None:
+        geometry = screen.availableGeometry()
+        pet.move(geometry.x(), geometry.y())
 
-    app = QApplication(sys.argv)  # 创建应用对象
-    pet = Murasame()  # 创建桌宠实例
-    app.aboutToQuit.connect(lambda: save_screen_type(pet))
-    pet.show()  # 显示窗口
 
-    screens = QApplication.screens()
-    target_screen = screens[screen_index]
-    geometry = target_screen.availableGeometry()
-    pet.move(geometry.x(), geometry.y())
+def configure_voice_trigger(
+    pet: Murasame,
+    settings: AppSettings,
+    tray_icon: QSystemTrayIcon,
+):
+    if not settings.stt.enabled:
+        return None
 
-    tray_icon = QSystemTrayIcon(QIcon("icon.png"), parent=app)
+    try:
+        from tool.voice_trigger import CapslockVoiceTrigger
+    except ImportError as exc:
+        tray_icon.showMessage(
+            "Speech input unavailable",
+            f"Install requirements-voice.txt to enable it: {exc}",
+            QSystemTrayIcon.Warning,
+        )
+        return None
+
+    bridge = VoiceBridge(pet)
+    bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
+    bridge.record_start.connect(
+        lambda: pet.show_text("正在录音……", typing=False)
+    )
+    bridge.record_end.connect(
+        lambda: pet.show_text("正在识别……", typing=False)
+    )
+    bridge.error.connect(
+        lambda message: tray_icon.showMessage(
+            "Speech input failed",
+            message,
+            QSystemTrayIcon.Warning,
+        )
+    )
+
+    trigger = CapslockVoiceTrigger(
+        on_text_ready=bridge.text_ready.emit,
+        hold_seconds=2.0,
+        on_record_start=bridge.record_start.emit,
+        on_record_end=bridge.record_end.emit,
+        model_name=settings.stt.model,
+        device=settings.stt.device,
+        on_error=bridge.error.emit,
+    )
+    try:
+        trigger.start()
+    except Exception as exc:
+        tray_icon.showMessage(
+            "Speech input failed",
+            str(exc),
+            QSystemTrayIcon.Warning,
+        )
+        return None
+    trigger._qt_bridge = bridge
+    return trigger
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setApplicationName("AIpet Murasame")
+    app.setFont(QFont("Segoe UI", 10))
+    app.setQuitOnLastWindowClosed(False)
+    icon = QIcon(str(PROJECT_ROOT / "icon.png"))
+    app.setWindowIcon(icon)
+
+    settings, load_error = load_settings_safely()
+    first_run = not settings_file_exists()
+    if load_error:
+        QMessageBox.warning(
+            None,
+            "Invalid configuration",
+            "The saved configuration could not be read. "
+            f"Defaults will be shown instead.\n\n{load_error}",
+        )
+        first_run = True
+
+    if first_run:
+        setup = SettingsDialog(settings, first_run=True)
+        if setup.exec_() != QDialog.Accepted:
+            return 0
+        settings = setup.result_settings()
+        save_settings(settings)
+
+    try:
+        pet = Murasame(settings)
+    except Exception as exc:
+        QMessageBox.critical(
+            None,
+            "AIpet startup failed",
+            str(exc),
+        )
+        return 1
+    pet.show()
+    move_pet_to_configured_screen(app, pet, settings)
+
+    tray_icon = QSystemTrayIcon(icon, app)
     tray_menu = QMenu()
-
-    # 勿扰模式（勾选 = 开启勿扰，不再主动打扰）
-    dnd_action = QAction("Do Not Disturb")
+    settings_action = QAction("Settings Studio…", tray_menu)
+    dnd_action = QAction("Do Not Disturb", tray_menu)
     dnd_action.setCheckable(True)
-    dnd_action.setChecked(pet.is_dnd_enabled())
-    dnd_action.toggled.connect(pet.set_dnd_enabled)
-
-    # 屏幕截图开关（勾选 = 开启截图）
-    screenshot_action = QAction("Screenshot")
+    screenshot_action = QAction("Screen Vision", tray_menu)
     screenshot_action.setCheckable(True)
     screenshot_action.setChecked(pet.is_screenshot_enabled())
-    screenshot_action.toggled.connect(pet.set_screenshot_enabled)
+    clear_action = QAction("Clear Conversation Memory", tray_menu)
+    exit_action = QAction("Exit", tray_menu)
 
-    clear_action = QAction("Clear History")
-    clear_action.triggered.connect(pet.cleer_history)
-
-    # 退出
-    exit_action = QAction("Exit")
-    exit_action.triggered.connect(app.quit)
-
-    # 菜单绑定
+    tray_menu.addAction(settings_action)
+    tray_menu.addSeparator()
     tray_menu.addAction(dnd_action)
     tray_menu.addAction(screenshot_action)
     tray_menu.addAction(clear_action)
+    tray_menu.addSeparator()
     tray_menu.addAction(exit_action)
     tray_icon.setContextMenu(tray_menu)
     tray_icon.show()
 
-    # ===== CapsLock 语音触发 =====
-    if VOICE_TRIGGER_ENABLED == "true":
-        from tool.voice_trigger import CapslockVoiceTrigger
-        bridge = VoiceBridge()
-
-        bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
-        bridge.record_start.connect(
-            lambda: pet.show_text("正在录音......", typing=False)
+    pet.notification.connect(
+        lambda title, message: tray_icon.showMessage(
+            title,
+            message,
+            QSystemTrayIcon.Warning,
         )
-        bridge.record_end.connect(
-            lambda: pet.show_text("录音结束，正在识别......", typing=False)
-        )
+    )
 
-        def _on_voice_text_ready(text: str) -> None:
-            bridge.text_ready.emit(text)
+    voice_trigger = configure_voice_trigger(pet, settings, tray_icon)
 
-        def _on_record_start() -> None:
-            bridge.record_start.emit()
-
-        def _on_record_end() -> None:
-            bridge.record_end.emit()
-
+    def persist_pet_settings() -> None:
         try:
-            voice_trigger = CapslockVoiceTrigger(
-                on_text_ready=_on_voice_text_ready,
-                hold_seconds=2.0,
-                on_record_start=_on_record_start,
-                on_record_end=_on_record_end,
+            save_settings(pet.settings)
+        except OSError as exc:
+            tray_icon.showMessage(
+                "Settings save failed",
+                str(exc),
+                QSystemTrayIcon.Warning,
             )
-            voice_trigger.start()
-        except Exception as e:
-            print(f"[AIpet] 启用 CapsLock 语音触发失败: {e}")
-    else:
-        print("[AIpet] 已在配置中关闭 CapsLock 语音触发")
 
-    sys.exit(app.exec_())  # 进入事件循环
+    def set_screen_vision(enabled: bool) -> None:
+        pet.set_screenshot_enabled(enabled)
+        screenshot_action.blockSignals(True)
+        screenshot_action.setChecked(pet.is_screenshot_enabled())
+        screenshot_action.blockSignals(False)
+        persist_pet_settings()
+
+    screenshot_action.toggled.connect(set_screen_vision)
+    dnd_action.toggled.connect(pet.set_dnd_enabled)
+    clear_action.triggered.connect(pet.clear_history)
+
+    def open_settings() -> None:
+        nonlocal settings, voice_trigger
+        dialog = SettingsDialog(pet.settings, parent=None)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        settings = dialog.result_settings()
+        try:
+            save_settings(settings)
+        except OSError as exc:
+            QMessageBox.warning(None, "Settings save failed", str(exc))
+            return
+
+        if voice_trigger is not None:
+            voice_trigger.stop()
+        voice_trigger = configure_voice_trigger(pet, settings, tray_icon)
+        pet.apply_settings(settings)
+        screenshot_action.blockSignals(True)
+        screenshot_action.setChecked(settings.vision.enabled)
+        screenshot_action.blockSignals(False)
+        move_pet_to_configured_screen(app, pet, settings)
+
+    settings_action.triggered.connect(open_settings)
+
+    def shutdown() -> None:
+        if voice_trigger is not None:
+            voice_trigger.stop()
+        persist_pet_settings()
+        pet.shutdown()
+        tray_icon.hide()
+
+    app.aboutToQuit.connect(shutdown)
+    exit_action.triggered.connect(app.quit)
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

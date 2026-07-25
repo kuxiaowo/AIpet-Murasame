@@ -1,15 +1,15 @@
-import os
 import threading
 import time
 import wave
-from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
+from uuid import uuid4
 
 import numpy as np
 import sounddevice as sd
 from pynput import keyboard
 
+from tool.config import get_cache_dir
 from tool.stt import transcribe_full
 
 
@@ -55,7 +55,7 @@ class AudioRecorder:
                 return None
             data = np.concatenate(self._frames, axis=0)
         try:
-            os.makedirs(os.path.dirname(wav_path), exist_ok=True)
+            Path(wav_path).parent.mkdir(parents=True, exist_ok=True)
             with wave.open(wav_path, "wb") as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(2)  # int16
@@ -82,11 +82,17 @@ class CapslockVoiceTrigger:
         hold_seconds: float = 2.0,
         on_record_start: Optional[Callable[[], None]] = None,
         on_record_end: Optional[Callable[[], None]] = None,
+        model_name: str = "large-v3",
+        device: str = "auto",
+        on_error: Optional[Callable[[str], None]] = None,
     ):
         self.on_text_ready = on_text_ready
         self.hold_seconds = hold_seconds
         self.on_record_start = on_record_start
         self.on_record_end = on_record_end
+        self.model_name = model_name
+        self.device = device
+        self.on_error = on_error
 
         self._caps_pressed = False
         self._press_time: Optional[float] = None
@@ -164,9 +170,8 @@ class CapslockVoiceTrigger:
 
     # 录音结束 -> 保存 WAV -> STT -> 回调
     def _handle_record_done(self) -> None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        tmp_dir = Path("./tmp")
-        wav_path = str(tmp_dir / f"capslock_{timestamp}.wav")
+        recording_dir = get_cache_dir() / "recordings"
+        wav_path = str(recording_dir / f"{uuid4().hex}.wav")
 
         saved = self._recorder.stop_and_save(wav_path)
         if self.on_record_end:
@@ -179,7 +184,11 @@ class CapslockVoiceTrigger:
 
         def _stt_and_callback():
             try:
-                text = transcribe_full(saved)
+                text = transcribe_full(
+                    saved,
+                    model_size=self.model_name,
+                    device=self.device,
+                )
                 text = (text or "").strip()
                 if not text:
                     print("[AIpet][voice] 语音识别结果为空")
@@ -191,11 +200,12 @@ class CapslockVoiceTrigger:
                     print(f"[AIpet][voice] 回调处理失败: {exc}")
             except Exception as exc:
                 print(f"[AIpet][voice] 语音识别失败: {exc}")
+                if self.on_error:
+                    self.on_error(str(exc))
             finally:
                 try:
-                    if os.path.exists(saved):
-                        os.remove(saved)
-                        print(f"[AIpet][voice] 删除临时录音: {saved}")
+                    Path(saved).unlink(missing_ok=True)
+                    print(f"[AIpet][voice] 删除临时录音: {saved}")
                 except Exception as exc:
                     print(f"[AIpet][voice] 删除临时录音失败: {exc}")
 
