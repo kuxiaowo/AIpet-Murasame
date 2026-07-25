@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import requests
+
+from tool.config import PROJECT_ROOT, get_model_dir
+from tool.network import is_loopback_url
+
+
+GPT_WEIGHT_NAME = "murasame-gpt.ckpt"
+SOVITS_WEIGHT_NAME = "murasame-sovits.pth"
+MIN_GPT_WEIGHT_SIZE = 100_000_000
+MIN_SOVITS_WEIGHT_SIZE = 50_000_000
+
+
+def managed_tts_model_dir() -> Path:
+    return (
+        get_model_dir()
+        / "tts"
+        / "Murasame_SoVITS"
+    )
+
+
+@dataclass(frozen=True)
+class TTSAssetState:
+    engine_root: Path | None
+    engine_ready: bool
+    gpt_weight: Path | None
+    sovits_weight: Path | None
+    reference_root: Path | None
+    reference_voices_ready: bool
+
+    @property
+    def model_ready(self) -> bool:
+        return self.gpt_weight is not None and self.sovits_weight is not None
+
+    @property
+    def model_directory(self) -> Path | None:
+        if not self.model_ready:
+            return None
+        if self.gpt_weight.parent == self.sovits_weight.parent:
+            return self.gpt_weight.parent
+        return None
+
+
+def locate_tts_assets(
+    *,
+    configured_engine_root: str = "",
+    configured_model_dir: str = "",
+) -> TTSAssetState:
+    engine_root = locate_gpt_sovits_root(configured_engine_root)
+    gpt_weight, sovits_weight = locate_murasame_weights(
+        configured_model_dir=configured_model_dir,
+        engine_root=engine_root,
+    )
+    reference_root = locate_reference_voices()
+    return TTSAssetState(
+        engine_root=engine_root,
+        engine_ready=_engine_assets_are_ready(engine_root),
+        gpt_weight=gpt_weight,
+        sovits_weight=sovits_weight,
+        reference_root=reference_root,
+        reference_voices_ready=reference_root is not None,
+    )
+
+
+def locate_gpt_sovits_root(configured: str = "") -> Path | None:
+    candidates: list[Path] = []
+    if configured.strip():
+        candidates.append(Path(configured).expanduser())
+    environment_path = os.getenv("GPT_SOVITS_HOME", "").strip()
+    if environment_path:
+        candidates.append(Path(environment_path).expanduser())
+    candidates.extend(
+        [
+            PROJECT_ROOT / "GPT-SoVITS",
+            PROJECT_ROOT.parent / "GPT-SoVITS",
+        ]
+    )
+
+    ancestors = [PROJECT_ROOT, *list(PROJECT_ROOT.parents)[:3]]
+    for ancestor in ancestors:
+        try:
+            candidates.extend(ancestor.glob("*/GPT-SoVITS"))
+        except OSError:
+            continue
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        key = os.path.normcase(str(resolved))
+        if key in seen:
+            continue
+        seen.add(key)
+        if (resolved / "api_v2.py").is_file():
+            return resolved
+    return None
+
+
+def locate_murasame_weights(
+    *,
+    configured_model_dir: str = "",
+    engine_root: Path | None = None,
+) -> tuple[Path | None, Path | None]:
+    paired_directories: list[Path] = []
+    if configured_model_dir.strip():
+        paired_directories.append(Path(configured_model_dir).expanduser())
+    paired_directories.append(managed_tts_model_dir())
+    if engine_root is not None:
+        paired_directories.append(engine_root.parent / "models" / "Murasame_SoVITS")
+
+    for directory in paired_directories:
+        gpt = _valid_weight(directory / GPT_WEIGHT_NAME, MIN_GPT_WEIGHT_SIZE)
+        sovits = _valid_weight(
+            directory / SOVITS_WEIGHT_NAME,
+            MIN_SOVITS_WEIGHT_SIZE,
+        )
+        if gpt is not None and sovits is not None:
+            return gpt, sovits
+
+    if engine_root is not None:
+        gpt = _valid_weight(
+            engine_root / "GPT_weights" / GPT_WEIGHT_NAME,
+            MIN_GPT_WEIGHT_SIZE,
+        )
+        sovits = _valid_weight(
+            engine_root / "SoVITS_weights" / SOVITS_WEIGHT_NAME,
+            MIN_SOVITS_WEIGHT_SIZE,
+        )
+        if gpt is not None and sovits is not None:
+            return gpt, sovits
+    return None, None
+
+
+def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
+    parsed = urlsplit(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    session = requests.Session()
+    if is_loopback_url(base_url):
+        session.trust_env = False
+    try:
+        response = session.get(base_url, timeout=(timeout, timeout))
+        return response.status_code in {200, 400, 405, 422}
+    except requests.RequestException:
+        return False
+
+
+def configure_local_tts_weights(
+    base_url: str,
+    state: TTSAssetState,
+    timeout_seconds: int,
+) -> None:
+    if not is_loopback_url(base_url) or not state.model_ready:
+        return
+    root = base_url.rstrip("/")
+    if root.endswith("/tts"):
+        root = root[:-4]
+    session = requests.Session()
+    session.trust_env = False
+    for endpoint, path in (
+        ("set_gpt_weights", state.gpt_weight),
+        ("set_sovits_weights", state.sovits_weight),
+    ):
+        response = session.get(
+            f"{root}/{endpoint}",
+            params={"weights_path": str(path.resolve())},
+            timeout=(5, timeout_seconds),
+        )
+        response.raise_for_status()
+
+
+def _valid_weight(path: Path, minimum_size: int) -> Path | None:
+    try:
+        if path.is_file() and path.stat().st_size >= minimum_size:
+            return path.resolve()
+    except OSError:
+        pass
+    return None
+
+
+def locate_reference_voices() -> Path | None:
+    candidates = (
+        managed_tts_model_dir() / "reference_voices",
+        PROJECT_ROOT / "reference_voices",
+    )
+    for root in candidates:
+        if _reference_voices_are_ready(root):
+            return root.resolve()
+    return None
+
+
+def _reference_voices_are_ready(root: Path) -> bool:
+    for emotion in ("平静", "高兴", "害羞", "生气", "惊讶", "着急"):
+        directory = root / emotion
+        if not (directory / "asr.txt").is_file():
+            return False
+        try:
+            if not any(
+                item.suffix.lower() in {".wav", ".mp3", ".flac"}
+                for item in directory.iterdir()
+            ):
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _engine_assets_are_ready(engine_root: Path | None) -> bool:
+    if engine_root is None:
+        return False
+    required = (
+        "api_v2.py",
+        "GPT_SoVITS/configs/tts_infer.yaml",
+        (
+            "GPT_SoVITS/pretrained_models/"
+            "chinese-roberta-wwm-ext-large/pytorch_model.bin"
+        ),
+        (
+            "GPT_SoVITS/pretrained_models/"
+            "chinese-hubert-base/pytorch_model.bin"
+        ),
+        (
+            "GPT_SoVITS/pretrained_models/"
+            "gsv-v4-pretrained/vocoder.pth"
+        ),
+    )
+    return all((engine_root / relative).is_file() for relative in required)

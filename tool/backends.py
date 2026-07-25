@@ -277,6 +277,12 @@ class APIBackend(ChatBackend):
             "temperature": 0.7,
             "max_tokens": 1200,
         }
+        if config.provider == "deepseek":
+            payload["thinking"] = {
+                "type": (
+                    "enabled" if config.deepseek_thinking else "disabled"
+                )
+            }
         data = self._json_response(
             "POST",
             _endpoint(config.selected_base_url(), "/chat/completions"),
@@ -344,13 +350,17 @@ class APIBackend(ChatBackend):
             headers=self._headers(),
         )
         models = data.get("data", [])
-        return sorted(
-            {
-                str(model.get("id", "")).strip()
-                for model in models
-                if model.get("id")
-            }
-        )
+        model_ids: set[str] = set()
+        for model in models:
+            if isinstance(model, str):
+                model_id = model.strip()
+            elif isinstance(model, dict):
+                model_id = str(model.get("id", "")).strip()
+            else:
+                continue
+            if model_id:
+                model_ids.add(model_id)
+        return sorted(model_ids)
 
 
 def create_backend(settings: AppSettings) -> ChatBackend:

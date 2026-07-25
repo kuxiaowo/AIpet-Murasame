@@ -85,6 +85,10 @@ class Murasame(QLabel):
         self.typing_timer = QTimer(self)
         self.typing_timer.setInterval(40)
         self.typing_timer.timeout.connect(self._typing_step)
+        self.thinking_timer = QTimer(self)
+        self.thinking_timer.setInterval(350)
+        self.thinking_timer.timeout.connect(self._thinking_step)
+        self._thinking_dot_count = 0
 
         self.input_mode = False
         self.input_buffer = ""
@@ -339,7 +343,7 @@ class Murasame(QLabel):
                 self._finish_worker(current, current_worker)
             )
         )
-        self.show_text("正在思考……", typing=False)
+        self._start_thinking_animation()
         worker.start()
 
     def _finish_worker(
@@ -353,6 +357,7 @@ class Murasame(QLabel):
     def _on_worker_error(self, generation: int, message: str) -> None:
         if generation != self._generation:
             return
+        self._stop_thinking_animation()
         self.show_text("连接失败，请检查模型设置。", typing=False)
         self.notification.emit("模型请求失败", message)
 
@@ -365,6 +370,7 @@ class Murasame(QLabel):
             self._remove_audio_files(result)
             return
 
+        self._stop_thinking_animation()
         if result.is_user_message:
             self.history.append({"role": "user", "content": result.user_text})
         self.history.append(
@@ -423,6 +429,7 @@ class Murasame(QLabel):
     def _stop_playback(self) -> None:
         self.playback_timer.stop()
         self.typing_timer.stop()
+        self._stop_thinking_animation()
         if self._sound is not None:
             self._sound.stop()
             self._sound = None
@@ -497,6 +504,7 @@ class Murasame(QLabel):
         self.border_size = max(1, round(self._base_border_size * scale))
 
     def show_text(self, text: str, typing: bool = True) -> None:
+        self._stop_thinking_animation()
         self.full_text = wrap_text(text)
         self.typing_prefix = f"【{self.pet_name}】\n"
         self.typing_index = 0
@@ -507,6 +515,22 @@ class Murasame(QLabel):
         else:
             self.display_text = self.typing_prefix + self.full_text
             self.update()
+
+    def _start_thinking_animation(self) -> None:
+        self.typing_timer.stop()
+        self._thinking_dot_count = 0
+        self._thinking_step()
+        self.thinking_timer.start()
+
+    def _stop_thinking_animation(self) -> None:
+        self.thinking_timer.stop()
+
+    def _thinking_step(self) -> None:
+        self._thinking_dot_count = self._thinking_dot_count % 6 + 1
+        self.full_text = "." * self._thinking_dot_count
+        self.typing_prefix = f"【{self.pet_name}】\n"
+        self.display_text = self.typing_prefix + self.full_text
+        self.update()
 
     def _typing_step(self) -> None:
         if self.typing_index >= len(self.full_text):

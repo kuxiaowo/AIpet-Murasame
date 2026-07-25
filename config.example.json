@@ -1,4 +1,5 @@
 {
+  "ui_language": "en",
   "mode": "ollama",
   "ollama": {
     "base_url": "http://127.0.0.1:11434",
@@ -14,7 +15,8 @@
     "aliyun_api_key": "",
     "deepseek_base_url": "https://api.deepseek.com",
     "aliyun_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "deepseek_chat_model": "deepseek-chat",
+    "deepseek_chat_model": "deepseek-v4-flash",
+    "deepseek_thinking": false,
     "aliyun_chat_model": "qwen-plus",
     "aliyun_vision_model": "qwen3-vl-plus",
     "timeout_seconds": 180
@@ -27,6 +29,8 @@
     "enabled": false,
     "base_url": "http://127.0.0.1:9880/tts",
     "remote_reference_root": "",
+    "engine_root": "",
+    "model_dir": "",
     "timeout_seconds": 300
   },
   "stt": {

@@ -31,7 +31,7 @@ AIpet 是一个面向 Windows 的丛雨桌宠。人格完全由提示词模拟�
 | 模式 | 服务商 | 对话 | 视觉 | 默认对话模型 | 默认视觉模型 |
 |---|---|:---:|:---:|---|---|
 | Ollama | 任意兼容的本地模型 | ✓ | ✓ | `qwen3:14b` | `qwen2.5vl:7b` |
-| API | DeepSeek | ✓ | — | `deepseek-chat` | — |
+| API | DeepSeek | ✓ | — | `deepseek-v4-flash` | — |
 | API | 阿里云百炼 | ✓ | ✓ | `qwen-plus` | `qwen3-vl-plus` |
 
 模型名都可以在设置窗口中修改。DeepSeek 当前只接入对话；需要屏幕视觉时请选择 Ollama 或阿里云。
@@ -41,7 +41,8 @@ AIpet 是一个面向 Windows 的丛雨桌宠。人格完全由提示词模拟�
 - Ollama / API 双模式，模型后端相互独立。
 - 内置 DeepSeek 与阿里云 OpenAI 兼容接口。
 - 对话模型和视觉模型可以分别选择。
-- 首次启动显示可视化设置工作室，可测试连接并读取模型列表。
+- 首次启动显示中英双语设置，语言可即时切换。
+- 可通过接口测试连接并读取模型列表，也始终允许手动输入模型 ID。
 - 在界面中直接创建、导入或修改人格提示词。
 - 模型只返回经过验证的中文、日语和情绪，不再生成立绘图层编号。
 - 情绪由程序映射为固定立绘图层，更换模型也不会随机“拆脸”。
@@ -68,7 +69,7 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-首次运行会打开 **AIpet Setup Studio**。这里可以选择 Ollama / API、填写服务地址或 Key、选择模型、编辑人格并设置屏幕感知和语音。
+首次运行会打开 **AIpet 初始设置**。这里可以选择 Ollama / API、填写服务地址或 Key、选择模型、编辑人格并设置屏幕感知和语音。
 
 如果使用 Ollama，可以先准备示例模型：
 
@@ -84,15 +85,21 @@ $env:DEEPSEEK_API_KEY = "your-key"
 $env:DASHSCOPE_API_KEY = "your-key"
 ```
 
-## 可视化设置工作室
+## 可视化设置
 
-托盘菜单中的 **Settings Studio…** 可以随时打开设置。
+托盘菜单中的 **Settings… / 设置…** 可以随时打开设置。
 
-- **Models**：后端模式、服务商、URL、对话模型、视觉模型、Ollama 上下文长度、超时和连接测试。
+启用语音输入后，设置页会检查所选 faster-whisper 模型是否已经缓存。模型列表内置了 faster-whisper 当前支持的官方名称，也允许输入自定义 Hugging Face 模型 ID 或本地目录。模型缺失时，点击 **打开模型页面并下载** 会打开对应页面，并把模型下载到 AIpet 用户数据目录。下载进度、大小和当前文件直接显示在语音设置卡片中，关闭设置后下载仍会继续。
+
+- **Models / 模型**：界面语言、后端模式、服务商、URL、对话模型、视觉模型、DeepSeek 思考模式、Ollama 上下文长度、超时和连接测试。
 - **Character**：用户名、立绘组和人格提示词编辑器。
-- **Automation**：屏幕感知、GPT-SoVITS、可选语音输入、显示器、立绘比例、空闲提醒和历史长度。
+- **Automation**：屏幕感知、GPT-SoVITS 引擎和角色权重检查、可选语音输入、显示器、立绘比例、空闲提醒和历史长度。
 
 程序会自动添加结构化输出规则，所以人格提示词只需要描述身份、说话风格、关系和边界。
+
+加载模型时，Ollama 调用 `GET /api/tags`，DeepSeek 和阿里云调用 OpenAI 兼容的 `GET /models`。所有模型下拉框都可以直接编辑，因此模型列表接口失败、漏掉自定义模型或服务商未返回完整列表时，仍可手动填写。
+
+DeepSeek 已更新为 V4 接口模型名：`deepseek-v4-flash` 和 `deepseek-v4-pro`。旧配置中的 `deepseek-chat`、`deepseek-reasoner` 会自动迁移，并可以在界面中切换思考模式。
 
 ## 数据与隐私
 
@@ -105,7 +112,7 @@ Windows 下的用户数据位于：
 └── personality.txt
 ```
 
-临时语音和截图位于 `%LOCALAPPDATA%\AIpet-Murasame\cache`。屏幕感知默认关闭；启用后，截图只会发送给当前配置的视觉模型。
+临时语音和截图位于 `%LOCALAPPDATA%\AIpet-Murasame\cache`，由 AIpet 管理的 Whisper 和 TTS 模型位于 `%LOCALAPPDATA%\AIpet-Murasame\models`。屏幕感知默认关闭；启用后，截图只会发送给当前配置的视觉模型。
 
 通过设置窗口填写的 Key 会保存在用户配置中。如果希望进一步分离凭据，可以把 Key 字段留空并使用 `DEEPSEEK_API_KEY` 或 `DASHSCOPE_API_KEY` 环境变量。
 
@@ -118,6 +125,8 @@ http://127.0.0.1:9880/tts
 ```
 
 远程部署时，把 **Remote reference root** 设置成 GPT-SoVITS 服务端看到的 `reference_voices` 路径。
+
+本地地址启用 TTS 后，AIpet 会依次检查 GPT-SoVITS 引擎目录、丛雨 GPT/SoVITS 权重、六组参考音频和服务状态。缺少角色权重或参考音频时，在确认模型用途提示后从 ModelScope 自动下载；角色权重来自 `LemonQu/Murasame_SoVITS`，参考音频来自 `kuxiaowo/Murasame-tts-reference-voice`。设置卡片会显示可断点续传的字节进度。远程 TTS 只检查接口状态，不会尝试修改远程服务器文件。
 
 Caps Lock 语音输入是可选功能，需要额外安装：
 

@@ -29,7 +29,7 @@
 
 <p align="center">
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/Docs-Quick_Start-0969DA?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
-  <a href="#settings-studio"><img alt="Settings Studio" src="https://img.shields.io/badge/Setup-Settings_Studio-00897B?style=for-the-badge&logo=qt&logoColor=white"></a>
+  <a href="#settings"><img alt="Settings" src="https://img.shields.io/badge/Setup-Settings-00897B?style=for-the-badge&logo=qt&logoColor=white"></a>
   <a href="#architecture"><img alt="Architecture" src="https://img.shields.io/badge/Guide-Architecture-E67E22?style=for-the-badge&logo=diagramsdotnet&logoColor=white"></a>
 </p>
 
@@ -46,7 +46,7 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 - **Two backend modes** — local Ollama or a cloud API.
 - **Selectable models** — configure chat and vision models independently.
 - **Built-in providers** — DeepSeek for chat and Alibaba Cloud for chat plus vision.
-- **Visual Settings Studio** — choose backends, test connectivity, list models, edit the personality prompt, and configure behavior without hand-editing JSON.
+- **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
 - **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, and one of six emotions.
 - **Deterministic portraits** — emotions map to known portrait layers in code; model changes cannot invent broken layer IDs.
 - **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, then analyzed in the background.
@@ -58,7 +58,7 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 | Mode | Provider | Chat | Vision | Default chat model | Default vision model |
 |---|---|:---:|:---:|---|---|
 | Ollama | Any compatible local model | ✓ | ✓ | `qwen3:14b` | `qwen2.5vl:7b` |
-| API | DeepSeek | ✓ | — | `deepseek-chat` | — |
+| API | DeepSeek | ✓ | — | `deepseek-v4-flash` | — |
 | API | Alibaba Cloud Model Studio | ✓ | ✓ | `qwen-plus` | `qwen3-vl-plus` |
 
 Model fields are editable. The defaults are starting points, not hard-coded requirements.
@@ -67,7 +67,7 @@ Model fields are editable. The defaults are starting points, not hard-coded requ
 
 ```mermaid
 flowchart LR
-    UI["PyQt5 desktop pet<br>Settings Studio"] --> C["Conversation worker"]
+    UI["PyQt5 desktop pet<br>Settings"] --> C["Conversation worker"]
     UI --> V["Vision worker"]
     C --> B{"Backend"}
     V --> B
@@ -149,11 +149,11 @@ $env:DASHSCOPE_API_KEY = "your-key"
 python run.py
 ```
 
-The Settings Studio opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages, download weights, start hidden servers, or modify CUDA.
+Settings opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages, start hidden servers, or modify CUDA. Model downloads start only after an explicit Whisper download action or approval of the TTS model prompt.
 
-## Settings Studio
+## Settings
 
-Open **Settings Studio…** from the tray menu at any time.
+Open **Settings…** from the tray menu at any time.
 
 ### Models
 
@@ -161,10 +161,15 @@ Open **Settings Studio…** from the tray menu at any time.
 - Select DeepSeek or Alibaba Cloud.
 - Edit server URLs and timeout values.
 - Select separate chat and vision models.
+- Enable or disable DeepSeek V4 thinking mode.
+- Select a built-in faster-whisper model, check its local status, and download it with in-card byte progress.
+- Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
 - Test the connection and populate model lists from the selected service.
 
-DeepSeek is intentionally chat-only in the current integration. Screen vision is available with Ollama or Alibaba Cloud.
+The model loader calls Ollama's `GET /api/tags` or the cloud provider's `GET /models`. Every model selector remains editable, so custom IDs still work when an endpoint omits a model or model listing is unavailable.
+
+DeepSeek V4 uses the current `deepseek-v4-flash` and `deepseek-v4-pro` IDs. Retired `deepseek-chat` and `deepseek-reasoner` settings are migrated automatically. DeepSeek is intentionally chat-only in the current integration; screen vision is available with Ollama or Alibaba Cloud.
 
 ### Character
 
@@ -177,7 +182,8 @@ AIpet adds the structured response contract automatically. The personality file 
 ### Automation
 
 - Enable periodic screen vision and choose its interval.
-- Configure the GPT-SoVITS endpoint and optional remote reference path.
+- Locate a local GPT-SoVITS installation, validate the Murasame voice weights and references, and check whether the service is online.
+- Download missing Murasame GPT/SoVITS weights with resumable in-card progress after accepting the model notice.
 - Configure optional faster-whisper input.
 - Select a display, portrait scale, idle thresholds, and history size.
 
@@ -192,11 +198,11 @@ On Windows, user data is stored under:
 └── personality.txt
 ```
 
-Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`.
+Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`; managed Whisper and TTS models use `%LOCALAPPDATA%\AIpet-Murasame\models`.
 
-API keys entered in Settings Studio are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY` or `DASHSCOPE_API_KEY`. Runtime files and secrets are ignored by Git.
+API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY` or `DASHSCOPE_API_KEY`. Runtime files and secrets are ignored by Git.
 
-Screen vision is disabled by default. When enabled, screenshots are sent only to the vision backend selected in Settings Studio.
+Screen vision is disabled by default. When enabled, screenshots are sent only to the vision backend selected in Settings.
 
 ## GPT-SoVITS
 
@@ -206,7 +212,9 @@ AIpet calls a GPT-SoVITS-compatible endpoint directly; the default is:
 http://127.0.0.1:9880/tts
 ```
 
-The six bundled reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. If GPT-SoVITS runs on another machine, set **Remote reference root** to the path that server uses for this repository's `reference_voices` directory.
+The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. If GPT-SoVITS runs on another machine, set **Remote reference root** to the path that server uses for this repository's `reference_voices` directory.
+
+For a loopback endpoint, AIpet checks the configured engine directory, `GPT_SOVITS_HOME`, and a small set of nearby installation locations. If the Murasame assets are missing, AIpet offers to download and verify the GPT/SoVITS weights from `LemonQu/Murasame_SoVITS` and the reference voices from `kuxiaowo/Murasame-tts-reference-voice`. A remote endpoint is health-checked only because AIpet cannot inspect or modify the remote server's filesystem.
 
 TTS failures do not discard a model response: AIpet still displays the text and shows the speech error through the tray.
 

@@ -19,6 +19,7 @@ from tool.config import (
     AppSettings,
     CharacterSettings,
     IdleSettings,
+    TTSSettings,
     load_settings,
     save_settings,
 )
@@ -45,12 +46,25 @@ class CoreTests(unittest.TestCase):
     def test_settings_round_trip_and_idle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"
-            settings = AppSettings(mode="api")
+            settings = AppSettings(
+                mode="api",
+                tts=TTSSettings(
+                    engine_root="C:/GPT-SoVITS",
+                    model_dir="C:/AIpet/models/tts",
+                ),
+            )
             save_settings(settings, path)
             self.assertEqual(load_settings(path), settings)
 
         with self.assertRaises(ValidationError):
             IdleSettings(thinking_minutes=10, away_minutes=10)
+
+        migrated = APISettings(deepseek_chat_model="deepseek-reasoner")
+        self.assertEqual(
+            migrated.deepseek_chat_model,
+            "deepseek-v4-flash",
+        )
+        self.assertTrue(migrated.deepseek_thinking)
 
     def test_history_store_filters_and_caps_messages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -161,6 +175,10 @@ class CoreTests(unittest.TestCase):
             {"type": "json_object"},
         )
         self.assertEqual(
+            call.kwargs["json"]["thinking"],
+            {"type": "disabled"},
+        )
+        self.assertEqual(
             call.kwargs["headers"]["Authorization"],
             "Bearer test-key",
         )
@@ -187,6 +205,39 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(payload["model"], "qwen-vl-test")
         image_url = payload["messages"][0]["content"][0]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
+
+    @patch("requests.Session.request")
+    def test_api_model_listing_supports_standard_shapes(
+        self,
+        request: Mock,
+    ) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "data": [
+                {"id": "deepseek-v4-pro"},
+                {"id": "deepseek-v4-flash"},
+                "custom-compatible-model",
+            ]
+        }
+        request.return_value = response
+        settings = AppSettings(
+            mode="api",
+            api=APISettings(
+                provider="deepseek",
+                deepseek_api_key="test-key",
+            ),
+        )
+        models = APIBackend(settings).list_models()
+        self.assertEqual(
+            models,
+            [
+                "custom-compatible-model",
+                "deepseek-v4-flash",
+                "deepseek-v4-pro",
+            ],
+        )
+        self.assertTrue(request.call_args.args[1].endswith("/models"))
 
     @patch("requests.Session.post")
     def test_tts_client_writes_audio_response(self, post: Mock) -> None:

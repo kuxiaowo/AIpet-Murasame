@@ -38,6 +38,18 @@ def get_cache_dir() -> Path:
     return get_user_data_dir() / "cache"
 
 
+def get_model_dir() -> Path:
+    override = os.getenv("AIPET_MODEL_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.getenv("AIPET_DATA_DIR"):
+        return get_user_data_dir() / "models"
+    if os.name == "nt":
+        base = Path(os.getenv("LOCALAPPDATA", get_user_data_dir()))
+        return base / APP_DIRECTORY_NAME / "models"
+    return get_user_data_dir() / "models"
+
+
 class OllamaSettings(BaseModel):
     base_url: str = Field(
         default="http://127.0.0.1:11434",
@@ -62,13 +74,26 @@ class APISettings(BaseModel):
         default="https://dashscope.aliyuncs.com/compatible-mode/v1",
         min_length=1,
     )
-    deepseek_chat_model: str = Field(default="deepseek-chat", min_length=1)
+    deepseek_chat_model: str = Field(
+        default="deepseek-v4-flash",
+        min_length=1,
+    )
+    deepseek_thinking: bool = False
     aliyun_chat_model: str = Field(default="qwen-plus", min_length=1)
     aliyun_vision_model: str = Field(
         default="qwen3-vl-plus",
         min_length=1,
     )
     timeout_seconds: int = Field(default=180, ge=10, le=600)
+
+    @model_validator(mode="after")
+    def migrate_retired_deepseek_aliases(self) -> "APISettings":
+        if self.deepseek_chat_model == "deepseek-chat":
+            self.deepseek_chat_model = "deepseek-v4-flash"
+        elif self.deepseek_chat_model == "deepseek-reasoner":
+            self.deepseek_chat_model = "deepseek-v4-flash"
+            self.deepseek_thinking = True
+        return self
 
     def selected_api_key(self) -> str:
         if self.provider == "deepseek":
@@ -102,6 +127,8 @@ class TTSSettings(BaseModel):
         min_length=1,
     )
     remote_reference_root: str = ""
+    engine_root: str = ""
+    model_dir: str = ""
     timeout_seconds: int = Field(default=300, ge=10, le=900)
 
 
@@ -134,6 +161,7 @@ class IdleSettings(BaseModel):
 
 
 class AppSettings(BaseModel):
+    ui_language: Literal["en", "zh-CN"] = "en"
     mode: Literal["ollama", "api"] = "ollama"
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     api: APISettings = Field(default_factory=APISettings)
