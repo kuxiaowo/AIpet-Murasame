@@ -255,18 +255,18 @@ class CoreTests(unittest.TestCase):
         prompt = build_screen_analysis_prompt(previous)
         self.assertIn("Visual Studio Code", prompt)
         self.assertIn("首次建立基线", prompt)
-        self.assertIn("浅薄荷绿色超长发", prompt)
-        self.assertIn("recognized_characters", prompt)
-        self.assertIn("这是你自己在屏幕中的形象", prompt)
+        self.assertIn("自己在屏幕上的形象", prompt)
+        self.assertIn("不要猜测画面中人物的姓名", prompt)
         self.assertIn("游戏中切换地点", prompt)
         self.assertNotIn("纯黑色矩形", prompt)
         self.assertNotIn("change_type", prompt)
+        properties = ScreenAnalysis.model_json_schema()["properties"]
+        self.assertNotIn("recognized_characters", properties)
+        self.assertNotIn("murasame_visible", properties)
 
         analysis = parse_screen_analysis(
             "```json\n"
             '{"software":"浏览器","activity":"查看文档","topic":"API",'
-            '"recognized_characters":["丛雨（《千恋＊万花》）"],'
-            '"murasame_visible":true,'
             '"significant_change":true,'
             '"change_summary":"从编辑器切换到浏览器"}'
             "\n```"
@@ -275,11 +275,6 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(
             analysis.change_summary,
             "从编辑器切换到浏览器",
-        )
-        self.assertTrue(analysis.murasame_visible)
-        self.assertEqual(
-            analysis.recognized_characters,
-            ["丛雨（《千恋＊万花》）"],
         )
         inferred_summary = ScreenAnalysis(
             activity="角色从地图探索进入战斗",
@@ -481,6 +476,8 @@ class CoreTests(unittest.TestCase):
             )
             legacy_event = loaded.entries[-1].model_dump()
             legacy_event["change_type"] = "completion"
+            legacy_event["recognized_characters"] = ["旧角色数据"]
+            legacy_event["murasame_visible"] = True
             path.write_text(
                 json.dumps({"events": [legacy_event]}, ensure_ascii=False),
                 encoding="utf-8",
@@ -493,6 +490,12 @@ class CoreTests(unittest.TestCase):
             )
             self.assertFalse(
                 hasattr(migrated.entries[0], "change_type")
+            )
+            self.assertFalse(
+                hasattr(migrated.entries[0], "recognized_characters")
+            )
+            self.assertFalse(
+                hasattr(migrated.entries[0], "murasame_visible")
             )
             prompt = loaded.prompt_text()
             self.assertIn("打开文档页面", prompt)

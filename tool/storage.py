@@ -14,11 +14,6 @@ class ScreenMemoryEntry(BaseModel):
     software: str = Field(default="", max_length=80)
     activity: str = Field(default="", max_length=240)
     topic: str = Field(default="", max_length=240)
-    recognized_characters: list[str] = Field(
-        default_factory=list,
-        max_length=5,
-    )
-    murasame_visible: bool = False
     change_summary: str = Field(min_length=1, max_length=240)
 
     @classmethod
@@ -35,8 +30,6 @@ class ScreenMemoryEntry(BaseModel):
             self.software.casefold(),
             self.activity.casefold(),
             self.topic.casefold(),
-            tuple(item.casefold() for item in self.recognized_characters),
-            self.murasame_visible,
             self.change_summary.casefold(),
         )
 

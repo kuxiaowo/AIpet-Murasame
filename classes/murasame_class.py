@@ -418,8 +418,6 @@ class Murasame(QLabel):
             analysis.software,
             analysis.activity,
             analysis.topic,
-            ",".join(analysis.recognized_characters),
-            str(analysis.murasame_visible),
             analysis.change_summary,
         )
         return "|".join(" ".join(part.casefold().split()) for part in parts)
@@ -446,8 +444,6 @@ class Murasame(QLabel):
                 software=analysis.software,
                 activity=analysis.activity,
                 topic=analysis.topic,
-                recognized_characters=analysis.recognized_characters,
-                murasame_visible=analysis.murasame_visible,
                 change_summary=analysis.change_summary,
             )
         )
@@ -461,16 +457,6 @@ class Murasame(QLabel):
             details.append(f"当前活动：{analysis.activity}")
         if analysis.topic:
             details.append(f"页面主题：{analysis.topic}")
-        if analysis.recognized_characters:
-            details.append(
-                "识别到的角色："
-                + "、".join(analysis.recognized_characters)
-            )
-        if analysis.murasame_visible:
-            details.append(
-                "画面中出现你的桌宠或角色形象；这是你自己在屏幕中的形象，"
-                "不是另一个角色、用户或对话者。"
-            )
         if analysis.change_summary:
             details.append(f"变化摘要：{analysis.change_summary}")
         details.append(f"当前时间：{build_time_context()}")
