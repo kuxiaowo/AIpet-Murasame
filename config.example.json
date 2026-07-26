@@ -44,7 +44,8 @@
   },
   "display": {
     "screen_index": 0,
-    "portrait_screen_ratio": 0.8
+    "portrait_screen_ratio": 0.8,
+    "show_log_console": false
   },
   "idle": {
     "thinking_minutes": 6,

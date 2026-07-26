@@ -13,6 +13,7 @@
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
   <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
+  <img alt="云端 API" src="https://img.shields.io/badge/API-DeepSeek%20%7C%20Alibaba%20%7C%20OpenAI-6246EA?style=flat-square">
   <a href="../../LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
 </p>
 
@@ -26,27 +27,32 @@
 
 AIpet 是一个面向 Windows 的丛雨桌宠。人格完全由提示词模拟，项目不再内置聊天 Transformer、LoRA、PyTorch 推理服务或模型下载脚本。
 
-目前有两种后端模式：
+对话和视觉后端现在分别配置：
 
-| 模式 | 服务商 | 对话 | 视觉 | 默认对话模型 | 默认视觉模型 |
-|---|---|:---:|:---:|---|---|
-| Ollama | 任意兼容的本地模型 | ✓ | ✓ | `qwen3:14b` | `qwen2.5vl:7b` |
-| API | DeepSeek | ✓ | — | `deepseek-v4-flash` | — |
-| API | 阿里云百炼 | ✓ | ✓ | `qwen-plus` | `qwen3-vl-plus` |
+| 用途 | 服务商 | 默认模型 |
+|---|---|---|
+| 对话 | Ollama | `qwen3:14b` |
+| 对话 | DeepSeek | `deepseek-v4-flash` |
+| 对话 | 阿里云百炼 | `qwen-plus` |
+| 对话 | OpenAI | `gpt-5.6-luna` |
+| 视觉 | Ollama（本地） | `qwen2.5vl:7b` |
+| 视觉 | 阿里云百炼 | `qwen3-vl-plus` |
+| 视觉 | OpenAI | `gpt-5.6-luna` |
 
-模型名都可以在设置窗口中修改。DeepSeek 当前只接入对话；需要屏幕视觉时请选择 Ollama 或阿里云。
+模型名都可以在设置窗口中修改。语言模型使用云端 API 时，视觉仍可独立选择本地 Ollama。
 
 ## 主要改进
 
 - Ollama / API 双模式，模型后端相互独立。
-- 内置 DeepSeek 与阿里云 OpenAI 兼容接口。
+- 内置 DeepSeek、阿里云和 OpenAI 接口。
 - 对话模型和视觉模型可以分别选择。
 - 首次启动显示中英双语设置，语言可即时切换。
-- 可通过接口测试连接并读取模型列表，也始终允许手动输入模型 ID。
+- 打开设置时会自动读取语言与视觉模型列表；修改地址、服务商或密钥后也可手动刷新，并始终允许直接输入模型 ID。
 - 在界面中直接创建、导入或修改人格提示词。
 - 模型只返回经过验证的中文、日语和情绪，不再生成立绘图层编号。
 - 情绪由程序映射为固定立绘图层，更换模型也不会随机“拆脸”。
 - 中键拖到另一块显示器后，立绘会按新屏幕的可用高度自动缩放。
+- 可在“显示”中打开实时诊断命令行，查看模型请求、后台任务、警告和异常信息；日志按天保存在项目的 `logs/YYYY-MM-DD.log`。
 - 截图只在 Qt 主线程产生，网络分析放到后台。
 - 配置、API Key 和历史记录移出仓库目录。
 - GPT-SoVITS 失败时仍然显示文本，不会吞掉整次回答。
@@ -84,6 +90,7 @@ ollama pull qwen2.5vl:7b
 ```powershell
 $env:DEEPSEEK_API_KEY = "your-key"
 $env:DASHSCOPE_API_KEY = "your-key"
+$env:OPENAI_API_KEY = "your-key"
 ```
 
 ## 可视化设置
@@ -92,13 +99,14 @@ $env:DASHSCOPE_API_KEY = "your-key"
 
 启用语音输入后，设置页只检查用户填写的 faster-whisper 本地目录；填写内置名称或 Hugging Face 模型 ID 时，只检查 AIpet 管理的对应默认目录，不再搜索 Hugging Face 或其他缓存。模型缺失时，点击下载按钮会直接把所选模型下载到 AIpet 默认模型目录，不会打开浏览器。下载进度、大小和当前文件直接显示在语音设置卡片中，关闭设置后下载仍会继续。
 
-- **Models / 模型**：界面语言、后端模式、服务商、URL、对话模型、视觉模型、DeepSeek 思考模式、Ollama 上下文长度、超时和连接测试。
+- **语言模型**：界面语言、后端模式、服务商、URL、对话模型、DeepSeek 思考模式、Ollama 上下文长度、超时和连接测试。
+- **拓展功能 / 屏幕视觉**：独立选择本地 Ollama、阿里云或 OpenAI 视觉后端及模型。
 - **Character**：用户名、立绘组和人格提示词编辑器。
 - **Automation**：屏幕感知、GPT-SoVITS 引擎和角色权重检查、可选语音输入、显示器、立绘比例、空闲提醒和历史长度。
 
 程序会自动添加结构化输出规则，所以人格提示词只需要描述身份、说话风格、关系和边界。
 
-加载模型时，Ollama 调用 `GET /api/tags`，DeepSeek 和阿里云调用 OpenAI 兼容的 `GET /models`。所有模型下拉框都可以直接编辑，因此模型列表接口失败、漏掉自定义模型或服务商未返回完整列表时，仍可手动填写。
+打开设置时会分别按语言与视觉配置自动加载模型列表：Ollama 调用 `GET /api/tags`，云端服务调用 OpenAI 兼容的 `GET /models`。修改地址、服务商或 API Key 后，可以点击对应按钮重新测试和刷新。所有模型下拉框都可以直接编辑，因此模型列表接口失败、漏掉自定义模型或服务商未返回完整列表时，仍可手动填写。
 
 DeepSeek 已更新为 V4 接口模型名：`deepseek-v4-flash` 和 `deepseek-v4-pro`。旧配置中的 `deepseek-chat`、`deepseek-reasoner` 会自动迁移，并可以在界面中切换思考模式。
 
@@ -115,7 +123,7 @@ Windows 下的用户数据位于：
 
 临时语音和截图仍位于 `%LOCALAPPDATA%\AIpet-Murasame\cache`；由 AIpet 管理的 Whisper 和 TTS 模型统一放在项目根目录的 `models` 文件夹中，并已被 Git 忽略。如需显式覆盖该位置，可以设置 `AIPET_MODEL_DIR`。屏幕感知默认关闭；启用后，截图只会发送给当前配置的视觉模型。
 
-通过设置窗口填写的 Key 会保存在用户配置中。如果希望进一步分离凭据，可以把 Key 字段留空并使用 `DEEPSEEK_API_KEY` 或 `DASHSCOPE_API_KEY` 环境变量。
+通过设置窗口填写的 Key 会保存在用户配置中。如果希望进一步分离凭据，可以把 Key 字段留空并使用 `DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY` 或 `OPENAI_API_KEY` 环境变量。
 
 ## GPT-SoVITS 与语音输入
 
@@ -160,7 +168,7 @@ python -m unittest discover -s tests -v
 ## 已知限制
 
 - 桌面行为主要面向 Windows 开发和测试。
-- DeepSeek 当前只接入对话，不提供屏幕视觉选项。
+- 对话和视觉凭据分别配置；如果两者使用同一个云服务，可以在两个面板填写同一个 Key，或使用对应环境变量。
 - HTTP 请求采用协作式取消：旧请求可能在后台结束，但结果会被丢弃，不会覆盖新对话。
 - 角色立绘和语音素材的授权范围可能不同于源代码许可证。
 

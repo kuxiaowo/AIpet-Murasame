@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QAction,
@@ -22,8 +22,16 @@ from tool.config import (
     save_settings,
     settings_file_exists,
 )
+from tool.runtime_logging import (
+    configure_console_logging,
+    get_logger,
+    shutdown_console_logging,
+)
 from ui.settings_dialog import SettingsDialog
 from tool.tts_service import shutdown_tts_service
+
+
+logger = get_logger("main")
 
 
 UI_TEXT = {
@@ -166,8 +174,15 @@ def main() -> int:
     app.setWindowIcon(icon)
 
     settings, load_error = load_settings_safely()
+    configure_console_logging(settings.display.show_log_console)
+    logger.info(
+        "配置已加载 | 对话后端=%s | 视觉后端=%s",
+        settings.mode,
+        settings.vision.provider,
+    )
     first_run = not settings_file_exists()
     if load_error:
+        logger.error("读取配置失败：%s", load_error)
         QMessageBox.warning(
             None,
             "Invalid configuration",
@@ -187,10 +202,12 @@ def main() -> int:
             return 0
         settings = setup.result_settings()
         save_settings(settings)
+        configure_console_logging(settings.display.show_log_console)
 
     try:
         pet = Murasame(settings)
     except Exception as exc:
+        logger.exception("AIpet 启动失败")
         QMessageBox.critical(
             None,
             "AIpet startup failed",
@@ -277,6 +294,12 @@ def main() -> int:
             )
             return
 
+        configure_console_logging(settings.display.show_log_console)
+        logger.info(
+            "设置已应用 | 对话后端=%s | 视觉后端=%s",
+            settings.mode,
+            settings.vision.provider,
+        )
         if voice_trigger is not None:
             voice_trigger.stop()
         voice_trigger = configure_voice_trigger(pet, settings, tray_icon)
@@ -296,6 +319,19 @@ def main() -> int:
             apply_settings_dialog(dialog)
         if settings_dialog is dialog:
             settings_dialog = None
+        dispose_settings_dialog_when_idle(dialog)
+
+    def dispose_settings_dialog_when_idle(
+        dialog: SettingsDialog,
+    ) -> None:
+        if dialog._background_check_is_running():
+            QTimer.singleShot(
+                100,
+                lambda current=dialog: (
+                    dispose_settings_dialog_when_idle(current)
+                ),
+            )
+            return
         dialog.deleteLater()
 
     def open_settings() -> None:
@@ -323,6 +359,7 @@ def main() -> int:
     settings_action.triggered.connect(open_settings)
 
     def shutdown() -> None:
+        logger.info("AIpet 正在退出")
         if voice_trigger is not None:
             voice_trigger.stop()
         persist_pet_settings()
@@ -330,6 +367,7 @@ def main() -> int:
         shutdown_tts_service()
         download_manager.shutdown()
         tray_icon.hide()
+        shutdown_console_logging()
 
     app.aboutToQuit.connect(shutdown)
     exit_action.triggered.connect(app.quit)

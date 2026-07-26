@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from tool.config import TTSSettings, get_cache_dir
 from tool.network import is_loopback_url
+from tool.runtime_logging import get_logger
 from tool.tts_assets import (
     TTSAssetState,
     locate_tts_assets,
@@ -19,6 +20,7 @@ from tool.tts_assets import (
 
 
 ProgressCallback = Callable[[str], None]
+logger = get_logger("tts-service")
 
 
 class TTSServiceError(RuntimeError):
@@ -55,6 +57,7 @@ class LocalTTSServiceManager:
 
         address = _local_server_address(settings.base_url)
         if tts_service_is_reachable(settings.base_url):
+            logger.info("TTS 服务已在线 | %s", settings.base_url)
             return False
 
         deadline = time.monotonic() + settings.timeout_seconds
@@ -117,6 +120,11 @@ class LocalTTSServiceManager:
                     timeout=0.75,
                 ):
                     _report(progress, "ready")
+                    logger.info(
+                        "TTS 服务启动完成 | %s | PID %s",
+                        settings.base_url,
+                        getattr(process, "pid", "unknown"),
+                    )
                     return True
                 exit_code = process.poll()
                 if exit_code is not None:
@@ -134,6 +142,7 @@ class LocalTTSServiceManager:
                 + suffix
             )
         except Exception:
+            logger.exception("TTS 服务启动失败")
             if process is not None:
                 self._terminate_process(process)
             with self._condition:
@@ -157,6 +166,10 @@ class LocalTTSServiceManager:
                 return False
 
         self._terminate_process(process)
+        logger.info(
+            "TTS 服务已停止 | PID %s",
+            getattr(process, "pid", "unknown"),
+        )
         with self._condition:
             if self._process is process:
                 self._process = None
@@ -206,6 +219,11 @@ class LocalTTSServiceManager:
             self._process = process
             self._log_file = log_file
             self._server_address = address
+        logger.info(
+            "TTS 子进程已创建 | PID %s | 原始日志=%s",
+            getattr(process, "pid", "unknown"),
+            log_path,
+        )
         return process
 
     def _process_is_running_locked(self) -> bool:

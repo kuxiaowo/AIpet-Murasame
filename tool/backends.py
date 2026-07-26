@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field, ValidationError
 
 from tool.config import AppSettings, load_personality
 from tool.network import is_loopback_url
+from tool.runtime_logging import get_logger, log_request, log_response
+
+
+logger = get_logger("backend")
 
 
 Emotion = Literal["平静", "高兴", "害羞", "生气", "惊讶", "着急"]
@@ -47,7 +51,6 @@ class ScreenAnalysis(BaseModel):
     significant_change: bool = False
     change_type: ScreenChangeType = "none"
     change_summary: str = Field(default="", max_length=160)
-    sensitive: bool = False
 
 
 class BackendError(RuntimeError):
@@ -105,8 +108,7 @@ def build_screen_analysis_prompt(
         "以及同一任务的普通进展都必须为 false。"
         "如果上一轮场景为 null，这是首次建立基线，"
         "significant_change 必须为 false，change_type 必须为 none。"
-        "change_summary 仅在显著变化时简短说明变化，不得包含敏感原文。"
-        "sensitive 表示画面可能含密码、密钥、私人聊天、个人信息或其他隐私。"
+        "change_summary 仅在显著变化时简短说明变化，不得抄录隐私原文。"
         "只返回符合给定 JSON 结构的对象。\n"
         f"上一轮场景 JSON：<previous_scene>{previous_json}</previous_scene>"
     )
@@ -186,7 +188,7 @@ class ChatBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list_models(self) -> list[str]:
+    def list_models(self, *, vision: bool = False) -> list[str]:
         raise NotImplementedError
 
     def _json_response(
@@ -197,6 +199,7 @@ class ChatBackend(ABC):
         timeout: int,
         **kwargs,
     ) -> dict:
+        started_at = log_request(logger, method, url)
         try:
             response = self.session.request(
                 method,
@@ -205,17 +208,38 @@ class ChatBackend(ABC):
                 **kwargs,
             )
             response.raise_for_status()
+            log_response(
+                logger,
+                method,
+                url,
+                response.status_code,
+                started_at,
+            )
             return response.json()
         except requests.RequestException as exc:
+            logger.error(
+                "请求失败 | %s %s | %s",
+                method.upper(),
+                url,
+                exc,
+            )
             raise BackendError(f"请求失败: {exc}") from exc
         except ValueError as exc:
+            logger.error(
+                "响应不是有效 JSON | %s %s",
+                method.upper(),
+                url,
+            )
             raise BackendError("服务返回了无法解析的 JSON") from exc
 
 
 class OllamaBackend(ChatBackend):
     def __init__(self, settings: AppSettings):
         super().__init__(settings)
-        if is_loopback_url(settings.ollama.base_url):
+        if (
+            is_loopback_url(settings.ollama.base_url)
+            or is_loopback_url(settings.vision.ollama_base_url)
+        ):
             self.session.trust_env = False
 
     def chat(
@@ -259,10 +283,10 @@ class OllamaBackend(ChatBackend):
         image_path: Path,
         previous: ScreenAnalysis | None = None,
     ) -> ScreenAnalysis:
-        config = self.settings.ollama
+        config = self.settings.vision
         image = base64.b64encode(image_path.read_bytes()).decode("ascii")
         payload = {
-            "model": config.vision_model,
+            "model": config.ollama_model,
             "messages": [
                 {
                     "role": "user",
@@ -273,12 +297,12 @@ class OllamaBackend(ChatBackend):
             "format": ScreenAnalysis.model_json_schema(),
             "stream": False,
             "think": False,
-            "keep_alive": config.keep_alive,
-            "options": {"num_ctx": config.context_window},
+            "keep_alive": config.ollama_keep_alive,
+            "options": {"num_ctx": config.ollama_context_window},
         }
         data = self._json_response(
             "POST",
-            _endpoint(config.base_url, "/api/chat"),
+            _endpoint(config.ollama_base_url, "/api/chat"),
             timeout=config.timeout_seconds,
             json=payload,
         )
@@ -288,12 +312,17 @@ class OllamaBackend(ChatBackend):
             raise BackendError(f"Ollama 视觉模型返回格式异常: {data}") from exc
         return parse_screen_analysis(content)
 
-    def list_models(self) -> list[str]:
-        config = self.settings.ollama
+    def list_models(self, *, vision: bool = False) -> list[str]:
+        if vision:
+            base_url = self.settings.vision.ollama_base_url
+            timeout_seconds = self.settings.vision.timeout_seconds
+        else:
+            base_url = self.settings.ollama.base_url
+            timeout_seconds = self.settings.ollama.timeout_seconds
         data = self._json_response(
             "GET",
-            _endpoint(config.base_url, "/api/tags"),
-            timeout=min(config.timeout_seconds, 30),
+            _endpoint(base_url, "/api/tags"),
+            timeout=min(timeout_seconds, 30),
         )
         models = data.get("models", [])
         return sorted(
@@ -308,13 +337,25 @@ class OllamaBackend(ChatBackend):
 class APIBackend(ChatBackend):
     def __init__(self, settings: AppSettings):
         super().__init__(settings)
-        if is_loopback_url(settings.api.selected_base_url()):
+        if (
+            is_loopback_url(settings.api.selected_base_url())
+            or is_loopback_url(settings.vision.selected_base_url())
+        ):
             self.session.trust_env = False
 
     def _headers(self) -> dict[str, str]:
         api_key = self.settings.api.selected_api_key()
         if not api_key:
             raise BackendError("尚未配置 API Key")
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _vision_headers(self) -> dict[str, str]:
+        api_key = self.settings.vision.selected_api_key()
+        if not api_key:
+            raise BackendError("尚未配置视觉 API Key")
         return {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -338,8 +379,13 @@ class APIBackend(ChatBackend):
             "response_format": {"type": "json_object"},
             "stream": False,
             "temperature": 0.7,
-            "max_tokens": 1200,
         }
+        token_parameter = (
+            "max_completion_tokens"
+            if config.provider == "openai"
+            else "max_tokens"
+        )
+        payload[token_parameter] = 1200
         if config.provider == "deepseek":
             payload["thinking"] = {
                 "type": (
@@ -366,13 +412,13 @@ class APIBackend(ChatBackend):
         image_path: Path,
         previous: ScreenAnalysis | None = None,
     ) -> ScreenAnalysis:
-        config = self.settings.api
-        if config.provider != "aliyun":
-            raise BackendError("DeepSeek 当前配置不提供视觉模型，请改用阿里云或 Ollama")
+        config = self.settings.vision
+        if config.provider == "ollama":
+            raise BackendError("本地视觉请求应使用 Ollama 后端")
 
         image = base64.b64encode(image_path.read_bytes()).decode("ascii")
         payload = {
-            "model": config.aliyun_vision_model,
+            "model": config.selected_model(),
             "messages": [
                 {
                     "role": "user",
@@ -392,13 +438,18 @@ class APIBackend(ChatBackend):
             ],
             "response_format": {"type": "json_object"},
             "stream": False,
-            "max_tokens": 600,
         }
+        token_parameter = (
+            "max_completion_tokens"
+            if config.provider == "openai"
+            else "max_tokens"
+        )
+        payload[token_parameter] = 600
         data = self._json_response(
             "POST",
             _endpoint(config.selected_base_url(), "/chat/completions"),
             timeout=config.timeout_seconds,
-            headers=self._headers(),
+            headers=self._vision_headers(),
             json=payload,
         )
         try:
@@ -407,13 +458,22 @@ class APIBackend(ChatBackend):
             raise BackendError(f"视觉 API 返回格式异常: {data}") from exc
         return parse_screen_analysis(content)
 
-    def list_models(self) -> list[str]:
-        config = self.settings.api
+    def list_models(self, *, vision: bool = False) -> list[str]:
+        if vision:
+            config = self.settings.vision
+            base_url = config.selected_base_url()
+            timeout_seconds = config.timeout_seconds
+            headers = self._vision_headers()
+        else:
+            config = self.settings.api
+            base_url = config.selected_base_url()
+            timeout_seconds = config.timeout_seconds
+            headers = self._headers()
         data = self._json_response(
             "GET",
-            _endpoint(config.selected_base_url(), "/models"),
-            timeout=min(config.timeout_seconds, 30),
-            headers=self._headers(),
+            _endpoint(base_url, "/models"),
+            timeout=min(timeout_seconds, 30),
+            headers=headers,
         )
         models = data.get("data", [])
         model_ids: set[str] = set()
@@ -431,5 +491,11 @@ class APIBackend(ChatBackend):
 
 def create_backend(settings: AppSettings) -> ChatBackend:
     if settings.mode == "ollama":
+        return OllamaBackend(settings)
+    return APIBackend(settings)
+
+
+def create_vision_backend(settings: AppSettings) -> ChatBackend:
+    if settings.vision.provider == "ollama":
         return OllamaBackend(settings)
     return APIBackend(settings)

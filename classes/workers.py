@@ -6,9 +6,18 @@ from pathlib import Path
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from tool.backends import CharacterReply, ScreenAnalysis, create_backend
+from tool.backends import (
+    CharacterReply,
+    ScreenAnalysis,
+    create_backend,
+    create_vision_backend,
+)
 from tool.config import AppSettings
+from tool.runtime_logging import get_logger
 from tool.tts import TTSClient, TTSError
+
+
+logger = get_logger("worker")
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,11 @@ class ConversationWorker(QThread):
 
     def run(self) -> None:
         try:
+            logger.info(
+                "对话任务开始 | 后端=%s | 主动事件=%s",
+                self.settings.mode,
+                self.event_context is not None,
+            )
             backend = create_backend(self.settings)
             reply = backend.chat(
                 self.history,
@@ -70,6 +84,7 @@ class ConversationWorker(QThread):
                             sentence.emotion,
                         )
                     except TTSError as exc:
+                        logger.warning("TTS 合成失败：%s", exc)
                         self.warning.emit(str(exc))
 
             if self._cancelled.is_set():
@@ -84,8 +99,13 @@ class ConversationWorker(QThread):
                     is_user_message=self.event_context is None,
                 )
             )
+            logger.info(
+                "对话任务完成 | 句子数=%s",
+                len(reply.sentences),
+            )
         except Exception as exc:
             if not self._cancelled.is_set():
+                logger.exception("对话任务失败")
                 self.error.emit(str(exc))
 
     @staticmethod
@@ -124,14 +144,23 @@ class VisionWorker(QThread):
 
     def run(self) -> None:
         try:
-            analysis = create_backend(self.settings).describe_image(
+            logger.info(
+                "屏幕视觉分析开始 | 后端=%s",
+                self.settings.vision.provider,
+            )
+            analysis = create_vision_backend(self.settings).describe_image(
                 self.image_path,
                 self.previous_analysis,
             )
             if not self._cancelled.is_set():
                 self.analysis_ready.emit(analysis)
+                logger.info(
+                    "屏幕视觉分析完成 | 显著变化=%s",
+                    analysis.significant_change,
+                )
         except Exception as exc:
             if not self._cancelled.is_set():
+                logger.exception("屏幕视觉分析失败")
                 self.error.emit(str(exc))
         finally:
             try:

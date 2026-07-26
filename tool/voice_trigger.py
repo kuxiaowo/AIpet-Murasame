@@ -10,7 +10,11 @@ import sounddevice as sd
 from pynput import keyboard
 
 from tool.config import get_cache_dir
+from tool.runtime_logging import get_logger
 from tool.stt import transcribe_full
+
+
+logger = get_logger("voice")
 
 
 class AudioRecorder:
@@ -25,7 +29,7 @@ class AudioRecorder:
 
     def _callback(self, indata, frames, time_info, status):
         if status:
-            print(f"[AIpet][voice] record status: {status}")
+            logger.warning("录音设备状态：%s", status)
         with self._lock:
             self._frames.append(indata.copy())
 
@@ -39,7 +43,7 @@ class AudioRecorder:
             callback=self._callback,
         )
         self._stream.start()
-        print("[AIpet][voice] 录音开始")
+        logger.info("录音开始")
 
     def stop_and_save(self, wav_path: str) -> Optional[str]:
         if self._stream is None:
@@ -51,7 +55,7 @@ class AudioRecorder:
             self._stream = None
         with self._lock:
             if not self._frames:
-                print("[AIpet][voice] 没有录到有效音频")
+                logger.warning("没有录到有效音频")
                 return None
             data = np.concatenate(self._frames, axis=0)
         try:
@@ -61,10 +65,10 @@ class AudioRecorder:
                 wf.setsampwidth(2)  # int16
                 wf.setframerate(self.samplerate)
                 wf.writeframes(data.tobytes())
-            print(f"[AIpet][voice] 录音保存: {wav_path}")
+            logger.info("录音已保存到临时文件")
             return wav_path
         except Exception as exc:
-            print(f"[AIpet][voice] 保存 WAV 失败: {exc}")
+            logger.exception("保存 WAV 失败")
             return None
 
 
@@ -112,7 +116,7 @@ class CapslockVoiceTrigger:
             daemon=True,
         )
         self._listener.start()
-        print("[AIpet][voice] CapsLock 语音触发已启动")
+        logger.info("CapsLock 语音触发已启动")
 
     def stop(self) -> None:
         if self._listener is not None:
@@ -163,10 +167,10 @@ class CapslockVoiceTrigger:
                 try:
                     self.on_record_start()
                 except Exception as exc:
-                    print(f"[AIpet][voice] 录音开始回调失败: {exc}")
+                    logger.exception("录音开始回调失败")
         except Exception as exc:
             self._recording = False
-            print(f"[AIpet][voice] 启动录音失败: {exc}")
+            logger.exception("启动录音失败")
 
     # 录音结束 -> 保存 WAV -> STT -> 回调
     def _handle_record_done(self) -> None:
@@ -178,7 +182,7 @@ class CapslockVoiceTrigger:
             try:
                 self.on_record_end()
             except Exception as exc:
-                print(f"[AIpet][voice] 录音结束回调失败: {exc}")
+                logger.exception("录音结束回调失败")
         if not saved:
             return
 
@@ -191,23 +195,23 @@ class CapslockVoiceTrigger:
                 )
                 text = (text or "").strip()
                 if not text:
-                    print("[AIpet][voice] 语音识别结果为空")
+                    logger.warning("语音识别结果为空")
                     return
-                print(f"[AIpet][voice] 识别文本: {text}")
+                logger.info("语音识别完成（内容不写入日志）")
                 try:
                     self.on_text_ready(text)
                 except Exception as exc:
-                    print(f"[AIpet][voice] 回调处理失败: {exc}")
+                    logger.exception("语音识别回调处理失败")
             except Exception as exc:
-                print(f"[AIpet][voice] 语音识别失败: {exc}")
+                logger.exception("语音识别失败")
                 if self.on_error:
                     self.on_error(str(exc))
             finally:
                 try:
                     Path(saved).unlink(missing_ok=True)
-                    print(f"[AIpet][voice] 删除临时录音: {saved}")
+                    logger.info("语音临时文件已删除")
                 except Exception as exc:
-                    print(f"[AIpet][voice] 删除临时录音失败: {exc}")
+                    logger.warning("删除语音临时文件失败：%s", exc)
 
         t = threading.Thread(target=_stt_and_callback, daemon=True)
         t.start()

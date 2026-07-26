@@ -11,7 +11,7 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
 from classes.download_manager import DownloadSnapshot, whisper_job_id
 from classes.murasame_class import Murasame
@@ -57,6 +57,34 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(
                     dialog._form_settings().ui_language,
                     "zh-CN",
+                )
+                dialog.show_log_console.setChecked(True)
+                self.assertTrue(
+                    dialog._form_settings().display.show_log_console
+                )
+                dialog._set_combo_data(dialog.mode_combo, "api")
+                dialog._set_combo_data(dialog.api_provider, "openai")
+                self.assertEqual(dialog.api_provider_stack.currentIndex(), 2)
+                dialog.openai_key.setText("openai-key")
+                dialog._set_combo_data(
+                    dialog.vision_provider,
+                    "ollama",
+                )
+                self.assertEqual(
+                    dialog.vision_provider_stack.currentIndex(),
+                    0,
+                )
+                dialog.vision_ollama_model.setCurrentText("local-vl")
+                separated = dialog._form_settings()
+                self.assertEqual(separated.api.provider, "openai")
+                self.assertEqual(
+                    separated.api.openai_chat_model,
+                    "gpt-5.6-luna",
+                )
+                self.assertEqual(separated.vision.provider, "ollama")
+                self.assertEqual(
+                    separated.vision.ollama_model,
+                    "local-vl",
                 )
                 self.assertGreaterEqual(
                     dialog.stt_model.findText("large-v3"),
@@ -155,10 +183,11 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_engine_root.setText(
                     str(Path(directory) / "missing-engine")
                 )
+                explicit_engine = dialog.tts_engine_root.text()
                 dialog._on_tts_checked(ready_engine, True)
                 self.assertEqual(
                     dialog.tts_engine_root.text(),
-                    str(managed_engine),
+                    explicit_engine,
                 )
                 self.assertEqual(
                     dialog.tts_service_button.text(),
@@ -174,7 +203,7 @@ class UISmokeTests(unittest.TestCase):
                 self.assertTrue(dialog.tts_service_button.isEnabled())
 
                 dialog.ollama_chat_model.setCurrentText("custom-chat")
-                dialog._model_target = ("ollama", "deepseek")
+                dialog._model_target = ("chat", "ollama", "deepseek")
                 dialog._on_models_ready(["model-a", "model-b"])
                 self.assertEqual(
                     dialog.ollama_chat_model.currentText(),
@@ -182,6 +211,12 @@ class UISmokeTests(unittest.TestCase):
                 )
                 self.assertGreaterEqual(
                     dialog.ollama_chat_model.findText("model-a"),
+                    0,
+                )
+                dialog._model_target = ("vision", "ollama", "ollama")
+                dialog._on_models_ready(["vision-a", "vision-b"])
+                self.assertGreaterEqual(
+                    dialog.vision_ollama_model.findText("vision-a"),
                     0,
                 )
                 pet._start_thinking_animation()
@@ -193,6 +228,20 @@ class UISmokeTests(unittest.TestCase):
                 self.assertFalse(pet.thinking_timer.isActive())
 
                 with patch.object(pet, "start_thread") as start_thread:
+                    pet._proactive_cooldown_until = 0
+                    self.assertTrue(
+                        pet._try_start_proactive_event("自动事件一")
+                    )
+                    self.assertFalse(
+                        pet._try_start_proactive_event("自动事件二")
+                    )
+                    start_thread.assert_called_once_with(
+                        "自动事件一",
+                        role="system",
+                    )
+
+                    start_thread.reset_mock()
+                    pet._proactive_cooldown_until = 0
                     pet._reset_screen_observation()
                     pet._on_screen_analysis(
                         ScreenAnalysis(
@@ -239,11 +288,11 @@ class UISmokeTests(unittest.TestCase):
                     )
                     start_thread.assert_called_once()
 
-                    pet._screen_reply_cooldown_until = 0
+                    pet._proactive_cooldown_until = 0
                     pet._on_screen_analysis(changed)
                     start_thread.assert_called_once()
 
-                    pet._screen_reply_cooldown_until = 0
+                    pet._proactive_cooldown_until = 0
                     pet._on_screen_analysis(
                         ScreenAnalysis(
                             software="密码管理器",
@@ -251,10 +300,56 @@ class UISmokeTests(unittest.TestCase):
                             significant_change=True,
                             change_type="app_switch",
                             change_summary="切换到密码管理器",
-                            sensitive=True,
                         )
                     )
-                    start_thread.assert_called_once()
+                    self.assertEqual(start_thread.call_count, 2)
+
+                with patch.object(
+                    pet,
+                    "_try_start_proactive_event",
+                ) as proactive_event:
+                    pet._reset_idle_state()
+                    with patch(
+                        "classes.murasame_class.get_idle_seconds",
+                        return_value=(
+                            pet.settings.idle.thinking_minutes * 60 + 1
+                        ),
+                    ):
+                        pet.check_idle_state()
+                    proactive_event.assert_called_once()
+
+                    proactive_event.reset_mock()
+                    pet._reset_idle_state()
+                    with patch(
+                        "classes.murasame_class.get_idle_seconds",
+                        return_value=(
+                            pet.settings.idle.away_minutes * 60 + 1
+                        ),
+                    ):
+                        pet.check_idle_state()
+                    proactive_event.assert_called_once()
+
+                    proactive_event.reset_mock()
+                    pet.idle_away_triggered = True
+                    pet.away_trigger_time = time.time() - 31
+                    with patch(
+                        "classes.murasame_class.get_idle_seconds",
+                        return_value=0,
+                    ):
+                        pet.check_idle_state()
+                    proactive_event.assert_called_once()
+
+                with patch.object(
+                    dialog,
+                    "_background_check_is_running",
+                    return_value=True,
+                ):
+                    dialog.accept()
+                self.assertEqual(dialog.result(), QDialog.Accepted)
+                self.assertEqual(
+                    dialog.result_settings().tts.engine_root,
+                    explicit_engine,
+                )
                 pet.shutdown()
                 dialog.close()
             finally:

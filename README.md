@@ -13,7 +13,7 @@
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
   <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
-  <img alt="Cloud APIs" src="https://img.shields.io/badge/API-DeepSeek%20%7C%20Alibaba_Cloud-6246EA?style=flat-square">
+  <img alt="Cloud APIs" src="https://img.shields.io/badge/API-DeepSeek%20%7C%20Alibaba%20%7C%20OpenAI-6246EA?style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
 </p>
 
@@ -39,28 +39,33 @@
 
 AIpet is an always-on-top Murasame desktop companion for Windows. The character is simulated entirely through a personality prompt—there is no bundled chat Transformer, LoRA adapter, PyTorch runtime, or model download script.
 
-You can run conversations through a local [Ollama](https://ollama.com/) service or an OpenAI-compatible cloud API. DeepSeek and Alibaba Cloud Model Studio are built in, while the backend boundary stays small enough to extend.
+You can run conversations through a local [Ollama](https://ollama.com/) service or an OpenAI-compatible cloud API. DeepSeek, Alibaba Cloud Model Studio, and OpenAI are built in. Chat and vision backends are configured independently, so a cloud chat model can use a local Ollama vision model.
 
 ## Highlights
 
 - **Two backend modes** — local Ollama or a cloud API.
 - **Selectable models** — configure chat and vision models independently.
-- **Built-in providers** — DeepSeek for chat and Alibaba Cloud for chat plus vision.
+- **Built-in providers** — DeepSeek, Alibaba Cloud, OpenAI, and local Ollama.
 - **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
 - **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, and one of six emotions.
 - **Deterministic portraits** — emotions map to known portrait layers in code; model changes cannot invent broken layer IDs.
 - **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
+- **Live diagnostic console** — optionally open a real-time command window with backend requests, worker progress, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`.
 - **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, then analyzed in the background.
 - **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
 - **Private user state** — configuration, keys, and conversation history live outside the Git repository.
 
 ## Supported backends
 
-| Mode | Provider | Chat | Vision | Default chat model | Default vision model |
-|---|---|:---:|:---:|---|---|
-| Ollama | Any compatible local model | ✓ | ✓ | `qwen3:14b` | `qwen2.5vl:7b` |
-| API | DeepSeek | ✓ | — | `deepseek-v4-flash` | — |
-| API | Alibaba Cloud Model Studio | ✓ | ✓ | `qwen-plus` | `qwen3-vl-plus` |
+| Purpose | Provider | Default model |
+|---|---|---|
+| Chat | Ollama | `qwen3:14b` |
+| Chat | DeepSeek | `deepseek-v4-flash` |
+| Chat | Alibaba Cloud Model Studio | `qwen-plus` |
+| Chat | OpenAI | `gpt-5.6-luna` |
+| Vision | Ollama (local) | `qwen2.5vl:7b` |
+| Vision | Alibaba Cloud Model Studio | `qwen3-vl-plus` |
+| Vision | OpenAI | `gpt-5.6-luna` |
 
 Model fields are editable. The defaults are starting points, not hard-coded requirements.
 
@@ -70,11 +75,15 @@ Model fields are editable. The defaults are starting points, not hard-coded requ
 flowchart LR
     UI["PyQt5 desktop pet<br>Settings"] --> C["Conversation worker"]
     UI --> V["Vision worker"]
-    C --> B{"Backend"}
-    V --> B
-    B --> O["Ollama /api/chat"]
-    B --> D["DeepSeek API"]
-    B --> A["Alibaba Cloud API"]
+    C --> CB{"Chat backend"}
+    V --> VB{"Independent vision backend"}
+    CB --> O["Ollama /api/chat"]
+    CB --> D["DeepSeek API"]
+    CB --> A["Alibaba Cloud API"]
+    CB --> OA["OpenAI API"]
+    VB --> VO["Local Ollama"]
+    VB --> A
+    VB --> OA
     C --> R["Validated reply<br>zh + ja + emotion"]
     R --> P["Deterministic portrait layers"]
     R --> T["Optional GPT-SoVITS"]
@@ -137,11 +146,12 @@ ollama pull qwen3:14b
 ollama pull qwen2.5vl:7b
 ```
 
-For a cloud API, have a DeepSeek or Alibaba Cloud key ready. Keys may also be provided through environment variables:
+For a cloud API, have a DeepSeek, Alibaba Cloud, or OpenAI key ready. Keys may also be provided through environment variables:
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "your-key"
 $env:DASHSCOPE_API_KEY = "your-key"
+$env:OPENAI_API_KEY = "your-key"
 ```
 
 ### 4. Launch
@@ -159,18 +169,22 @@ Open **Settings…** from the tray menu at any time.
 ### Models
 
 - Switch between Ollama and API mode.
-- Select DeepSeek or Alibaba Cloud.
+- Select DeepSeek, Alibaba Cloud, or OpenAI for chat.
 - Edit server URLs and timeout values.
-- Select separate chat and vision models.
+- Select an independent Ollama, Alibaba Cloud, or OpenAI vision backend.
 - Enable or disable DeepSeek V4 thinking mode.
 - Select a built-in faster-whisper model or enter a local directory. AIpet checks only that directory or its managed default—never other Hugging Face caches—and can download a selected model with in-card byte progress.
 - Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
-- Test the connection and populate model lists from the selected service.
+- Model lists load automatically when Settings opens. Use the connection
+  buttons to refresh after changing an address, provider, or API key.
 
-The model loader calls Ollama's `GET /api/tags` or the cloud provider's `GET /models`. Every model selector remains editable, so custom IDs still work when an endpoint omits a model or model listing is unavailable.
+The model loader calls Ollama's `GET /api/tags` or the cloud provider's
+`GET /models`. Chat and vision lists use their own configured endpoints.
+Every model selector remains editable, so custom IDs still work when an
+endpoint omits a model or model listing is unavailable.
 
-DeepSeek V4 uses the current `deepseek-v4-flash` and `deepseek-v4-pro` IDs. Retired `deepseek-chat` and `deepseek-reasoner` settings are migrated automatically. DeepSeek is intentionally chat-only in the current integration; screen vision is available with Ollama or Alibaba Cloud.
+DeepSeek V4 uses the current `deepseek-v4-flash` and `deepseek-v4-pro` IDs. Retired `deepseek-chat` and `deepseek-reasoner` settings are migrated automatically. Existing combined chat/vision configurations are migrated to the new independent vision settings.
 
 ### Character
 
@@ -201,7 +215,7 @@ On Windows, user data is stored under:
 
 Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`; managed Whisper and TTS models use the repository's `models` directory. Set `AIPET_MODEL_DIR` only when an explicit override is needed. The project-local model directory is ignored by Git.
 
-API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY` or `DASHSCOPE_API_KEY`. Runtime files and secrets are ignored by Git.
+API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, or `OPENAI_API_KEY`. Runtime files and secrets are ignored by Git.
 
 Screen vision is disabled by default. When enabled, screenshots are sent only to the vision backend selected in Settings.
 
@@ -263,7 +277,7 @@ ui/
 ## Known limitations
 
 - Desktop behavior is designed and tested primarily for Windows.
-- DeepSeek screen vision is not enabled because this integration only targets its chat API.
+- Chat and vision credentials are configured separately; selecting OpenAI or Alibaba Cloud for both may therefore require entering the same key in both panels or using an environment variable.
 - Network cancellation is cooperative: an interrupted HTTP request may finish in the background, but stale results are ignored.
 - Character artwork and voice assets can have terms different from the source-code license.
 

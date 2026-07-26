@@ -37,7 +37,7 @@ from tool.time_utils import build_time_context
 
 
 SCREEN_PIXEL_CHANGE_THRESHOLD = 0.012
-SCREEN_REPLY_COOLDOWN_SECONDS = 300
+PROACTIVE_COOLDOWN_SECONDS = 180
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -128,7 +128,7 @@ class Murasame(QLabel):
         self._last_screen_analysis: ScreenAnalysis | None = None
         self._screen_baseline_ready = False
         self._last_spoken_screen_event = ""
-        self._screen_reply_cooldown_until = 0.0
+        self._proactive_cooldown_until = 0.0
         self._playback_result: ConversationResult | None = None
         self._playback_index = 0
         self._sound: QSound | None = None
@@ -239,7 +239,23 @@ class Murasame(QLabel):
         self._last_screen_analysis = None
         self._screen_baseline_ready = False
         self._last_spoken_screen_event = ""
-        self._screen_reply_cooldown_until = 0.0
+
+    def _try_start_proactive_event(self, event_context: str) -> bool:
+        if (
+            self._dnd_enabled
+            or self.input_mode
+            or bool(self._workers)
+            or self._playback_result is not None
+        ):
+            return False
+
+        now = time.monotonic()
+        if now < self._proactive_cooldown_until:
+            return False
+
+        self._proactive_cooldown_until = now + PROACTIVE_COOLDOWN_SECONDS
+        self.start_thread(event_context, role="system")
+        return True
 
     def check_idle_state(self) -> None:
         if self._dnd_enabled:
@@ -255,9 +271,8 @@ class Murasame(QLabel):
             and self.away_trigger_time is not None
         ):
             if time.time() - self.away_trigger_time >= 30:
-                self.start_thread(
+                self._try_start_proactive_event(
                     "用户刚刚回到电脑前。简短欢迎主人回来，并自然地问是否要继续刚才的事情。",
-                    role="system",
                 )
             self._reset_idle_state()
             return
@@ -270,18 +285,16 @@ class Murasame(QLabel):
         if idle_seconds >= away_seconds and not self.idle_away_triggered:
             self.idle_away_triggered = True
             self.away_trigger_time = time.time()
-            self.start_thread(
+            self._try_start_proactive_event(
                 "用户已经离开电脑一段时间。轻声问主人是否还在，并提醒适当休息。",
-                role="system",
             )
             return
 
         if not self.idle_thinking_triggered:
             self.idle_thinking_triggered = True
-            self.start_thread(
+            self._try_start_proactive_event(
                 "用户一段时间没有输入，可能正在思考、发呆或休息。"
                 "温柔地关心一下，避免过分打扰。",
-                role="system",
             )
 
     def _capture_screen(self) -> None:
@@ -386,12 +399,8 @@ class Murasame(QLabel):
             return
         if (
             not analysis.significant_change
-            or analysis.sensitive
             or analysis.change_type == "none"
             or not analysis.change_summary.strip()
-            or self.input_mode
-            or bool(self._workers)
-            or self._playback_result is not None
         ):
             return
 
@@ -399,14 +408,6 @@ class Murasame(QLabel):
         if not event_key or event_key == self._last_spoken_screen_event:
             return
 
-        now = time.monotonic()
-        if now < self._screen_reply_cooldown_until:
-            return
-
-        self._last_spoken_screen_event = event_key
-        self._screen_reply_cooldown_until = (
-            now + SCREEN_REPLY_COOLDOWN_SECONDS
-        )
         details = [
             "屏幕发生了明显变化。",
             f"变化类型：{analysis.change_type}",
@@ -420,10 +421,8 @@ class Murasame(QLabel):
         if analysis.change_summary:
             details.append(f"变化摘要：{analysis.change_summary}")
         details.append(f"当前时间：{build_time_context()}")
-        self.start_thread(
-            "\n".join(details),
-            role="system",
-        )
+        if self._try_start_proactive_event("\n".join(details)):
+            self._last_spoken_screen_event = event_key
 
     def start_thread(self, text: str, role: str = "user", t: bool = False) -> None:
         del t  # Kept for compatibility with previous call sites.

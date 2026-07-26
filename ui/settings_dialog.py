@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import ValidationError
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -35,7 +35,7 @@ from classes.download_manager import (
     DownloadSnapshot,
     whisper_job_id,
 )
-from tool.backends import create_backend
+from tool.backends import create_backend, create_vision_backend
 from tool.config import (
     APISettings,
     AppSettings,
@@ -50,6 +50,7 @@ from tool.config import (
     load_personality,
 )
 from tool.network import is_loopback_url
+from tool.runtime_logging import get_logger
 from tool.tts_assets import (
     TTSAssetState,
     configure_local_tts_weights,
@@ -97,18 +98,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "api_group": "OpenAI-compatible cloud API",
         "provider": "Provider",
         "provider_aliyun": "Alibaba Cloud Model Studio",
+        "provider_openai": "OpenAI",
         "deepseek_api_key": "API key / DEEPSEEK_API_KEY",
         "aliyun_api_key": "API key / DASHSCOPE_API_KEY",
+        "openai_api_key": "API key / OPENAI_API_KEY",
         "base_url": "Base URL",
         "deepseek_thinking": "Enable DeepSeek thinking mode (slower)",
         "deepseek_note": (
-            "DeepSeek V4 is used for chat. This provider does not supply the "
-            "screen-vision model in AIpet."
+            "DeepSeek V4 is used for chat. Choose the independent vision "
+            "backend under Extensions."
         ),
         "load_models": "Test connection & load models",
         "model_list_help": (
             "Uses Ollama /api/tags or the provider's /models endpoint. "
             "Model fields stay editable for custom or unlisted IDs."
+        ),
+        "load_vision_models": "Test connection & load vision models",
+        "vision_model_list_help": (
+            "Loads the complete model list from the vision provider and "
+            "keeps the field editable for custom model IDs."
         ),
         "identity_group": "Identity",
         "user_name": "User name",
@@ -125,17 +133,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "import_prompt": "Import prompt from text file…",
         "vision_group": "Screen vision",
+        "vision_provider": "Vision backend",
+        "vision_provider_ollama": "Ollama (local service)",
+        "vision_provider_aliyun": "Alibaba Cloud Model Studio",
+        "vision_provider_openai": "OpenAI",
         "vision_enabled": (
             "Check the selected screen and react only to significant changes"
         ),
         "interval": "Interval",
         "vision_supported": (
             "The first screenshot establishes a baseline. Near-identical "
-            "screens stay local; significant reactions have a 5-minute cooldown."
-        ),
-        "vision_unsupported": (
-            "DeepSeek mode is chat-only. Choose Alibaba Cloud or Ollama "
-            "to enable screen vision."
+            "screens stay local; automatic reactions share a 3-minute cooldown. "
+            "The vision backend is independent from the chat backend."
         ),
         "tts_group": "Text-to-speech (GPT-SoVITS)",
         "whisper_group": "Speech input (Whisper)",
@@ -230,6 +239,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "display_group": "Screen and portrait",
         "screen_index": "Screen index",
         "portrait_ratio": "Portrait height ratio",
+        "show_log_console": "Open live diagnostic console",
         "thinking_reminder": "Thinking reminder",
         "away_reminder": "Away reminder",
         "conversation_memory": "Conversation memory",
@@ -298,17 +308,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "api_group": "OpenAI 兼容云端 API",
         "provider": "服务商",
         "provider_aliyun": "阿里云百炼",
+        "provider_openai": "OpenAI",
         "deepseek_api_key": "API Key / DEEPSEEK_API_KEY",
         "aliyun_api_key": "API Key / DASHSCOPE_API_KEY",
+        "openai_api_key": "API Key / OPENAI_API_KEY",
         "base_url": "基础地址",
         "deepseek_thinking": "启用 DeepSeek 思考模式（响应更慢）",
         "deepseek_note": (
-            "DeepSeek V4 用于对话；AIpet 当前不使用该服务商提供屏幕视觉模型。"
+            "DeepSeek V4 用于对话；视觉后端请在“拓展功能”中独立选择。"
         ),
         "load_models": "测试连接并加载模型",
         "model_list_help": (
             "Ollama 使用 /api/tags，云端服务使用 /models。"
             "下拉框始终可以手动输入自定义或未列出的模型 ID。"
+        ),
+        "load_vision_models": "测试连接并加载视觉模型",
+        "vision_model_list_help": (
+            "从当前视觉服务地址读取完整模型列表；"
+            "仍可手动输入自定义模型 ID。"
         ),
         "identity_group": "身份",
         "user_name": "用户名称",
@@ -323,14 +340,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "prompt_placeholder": "描述角色身份、说话风格、关系和行为边界……",
         "import_prompt": "从文本文件导入提示词…",
         "vision_group": "屏幕视觉",
+        "vision_provider": "视觉后端",
+        "vision_provider_ollama": "Ollama（本地服务）",
+        "vision_provider_aliyun": "阿里云百炼",
+        "vision_provider_openai": "OpenAI",
         "vision_enabled": "检查所选屏幕，仅在明显变化时主动回应",
         "interval": "间隔",
         "vision_supported": (
             "首次截图只建立基线；近似相同的画面不会送入视觉模型，"
-            "明显变化的主动回应有 5 分钟冷却。"
-        ),
-        "vision_unsupported": (
-            "DeepSeek 模式当前只支持对话；请改用阿里云或 Ollama 启用屏幕视觉。"
+            "所有自动主动回应共用 3 分钟冷却。"
+            "视觉后端与语言模型后端相互独立。"
         ),
         "tts_group": "语音合成（GPT-SoVITS）",
         "whisper_group": "语音输入（Whisper）",
@@ -408,6 +427,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "display_group": "屏幕与立绘",
         "screen_index": "屏幕编号",
         "portrait_ratio": "立绘高度比例",
+        "show_log_console": "打开实时日志命令行",
         "thinking_reminder": "思考提醒",
         "away_reminder": "离开提醒",
         "conversation_memory": "对话记忆",
@@ -442,18 +462,39 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 }
 
 
+logger = get_logger("settings")
+
+
 class ModelListWorker(QThread):
     models_ready = pyqtSignal(list)
     error = pyqtSignal(str)
 
-    def __init__(self, settings: AppSettings, parent=None):
+    def __init__(
+        self,
+        settings: AppSettings,
+        *,
+        vision: bool = False,
+        parent=None,
+    ):
         super().__init__(parent)
         self.settings = settings
+        self.vision = vision
 
     def run(self) -> None:
         try:
-            self.models_ready.emit(create_backend(self.settings).list_models())
+            backend = (
+                create_vision_backend(self.settings)
+                if self.vision
+                else create_backend(self.settings)
+            )
+            self.models_ready.emit(
+                backend.list_models(vision=self.vision)
+            )
         except Exception as exc:
+            logger.exception(
+                "%s模型列表加载失败",
+                "视觉" if self.vision else "语言",
+            )
             self.error.emit(str(exc))
 
 
@@ -547,7 +588,9 @@ class SettingsDialog(QDialog):
         self._original = settings.model_copy(deep=True)
         self._first_run = first_run
         self._model_worker: ModelListWorker | None = None
-        self._model_target: tuple[str, str] | None = None
+        self._model_target: tuple[str, str, str] | None = None
+        self._model_fetch_queue: list[bool] = []
+        self._auto_models_requested = False
         self._whisper_check_worker: WhisperModelCheckWorker | None = None
         self._pending_whisper_model: str | None = None
         self._tts_check_worker: TTSCheckWorker | None = None
@@ -557,6 +600,7 @@ class SettingsDialog(QDialog):
         self._pending_tts_check = False
         self._tts_download_prompted = False
         self._tts_engine_download_needed = False
+        self._closing = False
         self._result: AppSettings | None = None
         self.download_manager = download_manager or DownloadManager(
             QApplication.instance()
@@ -620,6 +664,13 @@ class SettingsDialog(QDialog):
         self._update_whisper_state()
         self._update_tts_state()
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if self._auto_models_requested:
+            return
+        self._auto_models_requested = True
+        QTimer.singleShot(0, self._auto_fetch_models)
+
     def _add_row(
         self,
         form: QFormLayout,
@@ -667,14 +718,12 @@ class SettingsDialog(QDialog):
         form = QFormLayout(self.ollama_group)
         self.ollama_url = QLineEdit()
         self.ollama_chat_model = self._editable_combo()
-        self.ollama_vision_model = self._editable_combo()
         self.ollama_context_window = self._spinbox(2_048, 131_072)
         self.ollama_context_window.setSingleStep(1_024)
         self.ollama_timeout = self._spinbox(10, 600)
         self.ollama_keep_alive = QLineEdit()
         self._add_row(form, "server_url", self.ollama_url)
         self._add_row(form, "chat_model", self.ollama_chat_model)
-        self._add_row(form, "vision_model", self.ollama_vision_model)
         self._add_row(form, "context_window", self.ollama_context_window)
         self._add_row(form, "request_timeout", self.ollama_timeout)
         self._add_row(form, "keep_alive", self.ollama_keep_alive)
@@ -687,6 +736,7 @@ class SettingsDialog(QDialog):
         self.api_provider = QComboBox()
         self.api_provider.addItem("DeepSeek", "deepseek")
         self.api_provider.addItem("", "aliyun")
+        self.api_provider.addItem("OpenAI", "openai")
         self.api_provider.currentIndexChanged.connect(
             self._update_api_provider
         )
@@ -696,6 +746,7 @@ class SettingsDialog(QDialog):
         self.api_provider_stack = QStackedWidget()
         self.api_provider_stack.addWidget(self._build_deepseek_panel())
         self.api_provider_stack.addWidget(self._build_aliyun_panel())
+        self.api_provider_stack.addWidget(self._build_openai_panel())
         layout.addWidget(self.api_provider_stack)
 
         common_form = QFormLayout()
@@ -729,11 +780,23 @@ class SettingsDialog(QDialog):
         self.aliyun_key = self._password_field()
         self.aliyun_url = QLineEdit()
         self.aliyun_chat_model = self._editable_combo()
-        self.aliyun_vision_model = self._editable_combo()
         self._add_row(form, "aliyun_api_key", self.aliyun_key)
         self._add_row(form, "base_url", self.aliyun_url)
         self._add_row(form, "chat_model", self.aliyun_chat_model)
-        self._add_row(form, "vision_model", self.aliyun_vision_model)
+        return panel
+
+    def _build_openai_panel(self) -> QWidget:
+        panel = QWidget()
+        form = QFormLayout(panel)
+        self.openai_key = self._password_field()
+        self.openai_url = QLineEdit()
+        self.openai_chat_model = self._editable_combo()
+        self.openai_chat_model.addItems(
+            ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+        )
+        self._add_row(form, "openai_api_key", self.openai_key)
+        self._add_row(form, "base_url", self.openai_url)
+        self._add_row(form, "chat_model", self.openai_chat_model)
         return panel
 
     def _build_character_tab(self) -> QWidget:
@@ -768,14 +831,61 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(page)
 
         self.vision_group = QGroupBox()
-        vision_form = QFormLayout(self.vision_group)
+        vision_layout = QVBoxLayout(self.vision_group)
+        vision_provider_form = QFormLayout()
+        self.vision_provider = QComboBox()
+        self.vision_provider.addItem("", "ollama")
+        self.vision_provider.addItem("", "aliyun")
+        self.vision_provider.addItem("", "openai")
+        self.vision_provider.currentIndexChanged.connect(
+            self._update_vision_compatibility
+        )
+        self._add_row(
+            vision_provider_form,
+            "vision_provider",
+            self.vision_provider,
+        )
+        vision_layout.addLayout(vision_provider_form)
+
+        self.vision_provider_stack = QStackedWidget()
+        self.vision_provider_stack.addWidget(
+            self._build_vision_ollama_panel()
+        )
+        self.vision_provider_stack.addWidget(
+            self._build_vision_aliyun_panel()
+        )
+        self.vision_provider_stack.addWidget(
+            self._build_vision_openai_panel()
+        )
+        vision_layout.addWidget(self.vision_provider_stack)
+
+        vision_model_row = QHBoxLayout()
+        self.fetch_vision_models_button = QPushButton()
+        self.fetch_vision_models_button.clicked.connect(
+            self._fetch_vision_models
+        )
+        vision_model_row.addWidget(self.fetch_vision_models_button)
+        vision_model_row.addStretch(1)
+        vision_layout.addLayout(vision_model_row)
+        self.vision_model_list_help = QLabel()
+        self.vision_model_list_help.setWordWrap(True)
+        vision_layout.addWidget(self.vision_model_list_help)
+
+        vision_form = QFormLayout()
         self.vision_enabled = QCheckBox()
         self.vision_interval = self._spinbox(10, 86_400)
+        self.vision_timeout = self._spinbox(10, 600)
         self.vision_compatibility = QLabel()
         self.vision_compatibility.setWordWrap(True)
         vision_form.addRow(self.vision_enabled)
         self._add_row(vision_form, "interval", self.vision_interval)
+        self._add_row(
+            vision_form,
+            "request_timeout",
+            self.vision_timeout,
+        )
         vision_form.addRow(self.vision_compatibility)
+        vision_layout.addLayout(vision_form)
 
         self.tts_group = QGroupBox()
         tts_form = QFormLayout(self.tts_group)
@@ -862,6 +972,64 @@ class SettingsDialog(QDialog):
         scroll.setWidget(page)
         return scroll
 
+    def _build_vision_ollama_panel(self) -> QWidget:
+        panel = QWidget()
+        form = QFormLayout(panel)
+        self.vision_ollama_url = QLineEdit()
+        self.vision_ollama_model = self._editable_combo()
+        self.vision_ollama_context_window = self._spinbox(
+            2_048,
+            131_072,
+        )
+        self.vision_ollama_context_window.setSingleStep(1_024)
+        self.vision_ollama_keep_alive = QLineEdit()
+        self._add_row(form, "server_url", self.vision_ollama_url)
+        self._add_row(form, "vision_model", self.vision_ollama_model)
+        self._add_row(
+            form,
+            "context_window",
+            self.vision_ollama_context_window,
+        )
+        self._add_row(
+            form,
+            "keep_alive",
+            self.vision_ollama_keep_alive,
+        )
+        return panel
+
+    def _build_vision_aliyun_panel(self) -> QWidget:
+        panel = QWidget()
+        form = QFormLayout(panel)
+        self.vision_aliyun_key = self._password_field()
+        self.vision_aliyun_url = QLineEdit()
+        self.vision_aliyun_model = self._editable_combo()
+        self._add_row(
+            form,
+            "aliyun_api_key",
+            self.vision_aliyun_key,
+        )
+        self._add_row(form, "base_url", self.vision_aliyun_url)
+        self._add_row(form, "vision_model", self.vision_aliyun_model)
+        return panel
+
+    def _build_vision_openai_panel(self) -> QWidget:
+        panel = QWidget()
+        form = QFormLayout(panel)
+        self.vision_openai_key = self._password_field()
+        self.vision_openai_url = QLineEdit()
+        self.vision_openai_model = self._editable_combo()
+        self.vision_openai_model.addItems(
+            ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+        )
+        self._add_row(
+            form,
+            "openai_api_key",
+            self.vision_openai_key,
+        )
+        self._add_row(form, "base_url", self.vision_openai_url)
+        self._add_row(form, "vision_model", self.vision_openai_model)
+        return panel
+
     def _build_automation_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -895,12 +1063,14 @@ class SettingsDialog(QDialog):
         self.portrait_ratio.setRange(0.2, 1.0)
         self.portrait_ratio.setSingleStep(0.05)
         self.portrait_ratio.setDecimals(2)
+        self.show_log_console = QCheckBox()
         self._add_row(display_form, "screen_index", self.screen_index)
         self._add_row(
             display_form,
             "portrait_ratio",
             self.portrait_ratio,
         )
+        display_form.addRow(self.show_log_console)
         layout.addWidget(self.display_group)
         layout.addStretch(1)
         return page
@@ -963,10 +1133,6 @@ class SettingsDialog(QDialog):
             self.ollama_chat_model,
             settings.ollama.chat_model,
         )
-        self._set_editable_combo(
-            self.ollama_vision_model,
-            settings.ollama.vision_model,
-        )
         self.ollama_timeout.setValue(settings.ollama.timeout_seconds)
         self.ollama_context_window.setValue(settings.ollama.context_window)
         self.ollama_keep_alive.setText(settings.ollama.keep_alive)
@@ -985,9 +1151,11 @@ class SettingsDialog(QDialog):
             self.aliyun_chat_model,
             settings.api.aliyun_chat_model,
         )
+        self.openai_key.setText(settings.api.openai_api_key)
+        self.openai_url.setText(settings.api.openai_base_url)
         self._set_editable_combo(
-            self.aliyun_vision_model,
-            settings.api.aliyun_vision_model,
+            self.openai_chat_model,
+            settings.api.openai_chat_model,
         )
         self.api_timeout.setValue(settings.api.timeout_seconds)
 
@@ -1000,6 +1168,36 @@ class SettingsDialog(QDialog):
 
         self.vision_enabled.setChecked(settings.vision.enabled)
         self.vision_interval.setValue(settings.vision.interval_seconds)
+        self.vision_timeout.setValue(settings.vision.timeout_seconds)
+        self._set_combo_data(
+            self.vision_provider,
+            settings.vision.provider,
+        )
+        self.vision_ollama_url.setText(
+            settings.vision.ollama_base_url
+        )
+        self._set_editable_combo(
+            self.vision_ollama_model,
+            settings.vision.ollama_model,
+        )
+        self.vision_ollama_context_window.setValue(
+            settings.vision.ollama_context_window
+        )
+        self.vision_ollama_keep_alive.setText(
+            settings.vision.ollama_keep_alive
+        )
+        self.vision_aliyun_key.setText(settings.vision.aliyun_api_key)
+        self.vision_aliyun_url.setText(settings.vision.aliyun_base_url)
+        self._set_editable_combo(
+            self.vision_aliyun_model,
+            settings.vision.aliyun_model,
+        )
+        self.vision_openai_key.setText(settings.vision.openai_api_key)
+        self.vision_openai_url.setText(settings.vision.openai_base_url)
+        self._set_editable_combo(
+            self.vision_openai_model,
+            settings.vision.openai_model,
+        )
         self.tts_enabled.setChecked(settings.tts.enabled)
         self.tts_url.setText(settings.tts.base_url)
         self.tts_timeout.setValue(settings.tts.timeout_seconds)
@@ -1011,6 +1209,9 @@ class SettingsDialog(QDialog):
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
             settings.display.portrait_screen_ratio
+        )
+        self.show_log_console.setChecked(
+            settings.display.show_log_console
         )
         self.thinking_minutes.setValue(settings.idle.thinking_minutes)
         self.away_minutes.setValue(settings.idle.away_minutes)
@@ -1069,6 +1270,26 @@ class SettingsDialog(QDialog):
             self._text("provider_aliyun"),
         )
         self._set_combo_item_text(
+            self.api_provider,
+            "openai",
+            self._text("provider_openai"),
+        )
+        self._set_combo_item_text(
+            self.vision_provider,
+            "ollama",
+            self._text("vision_provider_ollama"),
+        )
+        self._set_combo_item_text(
+            self.vision_provider,
+            "aliyun",
+            self._text("vision_provider_aliyun"),
+        )
+        self._set_combo_item_text(
+            self.vision_provider,
+            "openai",
+            self._text("vision_provider_openai"),
+        )
+        self._set_combo_item_text(
             self.portrait,
             "a",
             self._text("portrait_a"),
@@ -1083,12 +1304,21 @@ class SettingsDialog(QDialog):
         self.deepseek_note.setText(self._text("deepseek_note"))
         self.fetch_models_button.setText(self._text("load_models"))
         self.model_list_help.setText(self._text("model_list_help"))
+        self.fetch_vision_models_button.setText(
+            self._text("load_vision_models")
+        )
+        self.vision_model_list_help.setText(
+            self._text("vision_model_list_help")
+        )
         self.prompt_help.setText(self._text("prompt_help"))
         self.personality_prompt.setPlaceholderText(
             self._text("prompt_placeholder")
         )
         self.import_button.setText(self._text("import_prompt"))
         self.vision_enabled.setText(self._text("vision_enabled"))
+        self.show_log_console.setText(
+            self._text("show_log_console")
+        )
         self.tts_enabled.setText(self._text("tts_enabled"))
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
@@ -1104,12 +1334,22 @@ class SettingsDialog(QDialog):
         self.aliyun_key.setPlaceholderText(
             self._text("password_placeholder")
         )
+        self.openai_key.setPlaceholderText(
+            self._text("password_placeholder")
+        )
+        self.vision_aliyun_key.setPlaceholderText(
+            self._text("password_placeholder")
+        )
+        self.vision_openai_key.setPlaceholderText(
+            self._text("password_placeholder")
+        )
 
         seconds = self._text("seconds")
         for spinbox in (
             self.ollama_timeout,
             self.api_timeout,
             self.vision_interval,
+            self.vision_timeout,
             self.tts_timeout,
         ):
             spinbox.setSuffix(seconds)
@@ -1261,6 +1501,9 @@ class SettingsDialog(QDialog):
         if self._whisper_check_worker is worker:
             self._whisper_check_worker = None
         worker.deleteLater()
+        if self._closing:
+            self._pending_whisper_model = None
+            return
         pending = self._pending_whisper_model
         self._pending_whisper_model = None
         current = self.stt_model.currentText().strip()
@@ -1376,7 +1619,7 @@ class SettingsDialog(QDialog):
         state: TTSAssetState,
         reachable: bool,
     ) -> None:
-        if not self.tts_enabled.isChecked():
+        if self._closing or not self.tts_enabled.isChecked():
             return
         local_endpoint = is_loopback_url(self.tts_url.text().strip())
         if not local_endpoint:
@@ -1385,21 +1628,11 @@ class SettingsDialog(QDialog):
             return
 
         configured_engine = self.tts_engine_root.text().strip()
-        if state.engine_root is not None and (
-            not configured_engine
-            or not (
-                Path(configured_engine).expanduser() / "api_v2.py"
-            ).is_file()
-        ):
+        if state.engine_root is not None and not configured_engine:
             self.tts_engine_root.setText(str(state.engine_root))
         if (
             state.model_directory is not None
-            and (
-                not self.tts_model_dir.text().strip()
-                or not Path(
-                    self.tts_model_dir.text().strip()
-                ).expanduser().is_dir()
-            )
+            and not self.tts_model_dir.text().strip()
         ):
             self.tts_model_dir.setText(str(state.model_directory))
 
@@ -1541,6 +1774,8 @@ class SettingsDialog(QDialog):
         if self._tts_service_worker is worker:
             self._tts_service_worker = None
         worker.deleteLater()
+        if self._closing:
+            return
         if self._tts_service_error is None:
             self._update_tts_state()
         else:
@@ -1576,6 +1811,9 @@ class SettingsDialog(QDialog):
         if self._tts_check_worker is worker:
             self._tts_check_worker = None
         worker.deleteLater()
+        if self._closing:
+            self._pending_tts_check = False
+            return
         if self._pending_tts_check:
             self._pending_tts_check = False
             self._update_tts_state()
@@ -1799,23 +2037,30 @@ class SettingsDialog(QDialog):
         if not hasattr(self, "api_provider_stack"):
             return
         provider = self.api_provider.currentData()
+        provider_index = {
+            "deepseek": 0,
+            "aliyun": 1,
+            "openai": 2,
+        }
         self.api_provider_stack.setCurrentIndex(
-            0 if provider == "deepseek" else 1
+            provider_index.get(provider, 0)
         )
-        self._update_vision_compatibility()
 
     def _update_vision_compatibility(self) -> None:
-        if not hasattr(self, "vision_compatibility"):
+        if not hasattr(self, "vision_provider_stack"):
             return
-        unsupported = (
-            self.mode_combo.currentData() == "api"
-            and self.api_provider.currentData() == "deepseek"
+        provider_index = {
+            "ollama": 0,
+            "aliyun": 1,
+            "openai": 2,
+        }
+        self.vision_provider_stack.setCurrentIndex(
+            provider_index.get(self.vision_provider.currentData(), 0)
         )
-        self.vision_enabled.setEnabled(not unsupported)
-        if unsupported:
-            self.vision_enabled.setChecked(False)
-        key = "vision_unsupported" if unsupported else "vision_supported"
-        self.vision_compatibility.setText(self._text(key))
+        self.vision_enabled.setEnabled(True)
+        self.vision_compatibility.setText(
+            self._text("vision_supported")
+        )
 
     def _import_prompt(self) -> None:
         file_name, _ = QFileDialog.getOpenFileName(
@@ -1845,7 +2090,6 @@ class SettingsDialog(QDialog):
             ollama=OllamaSettings(
                 base_url=self.ollama_url.text().strip(),
                 chat_model=self.ollama_chat_model.currentText().strip(),
-                vision_model=self.ollama_vision_model.currentText().strip(),
                 context_window=self.ollama_context_window.value(),
                 timeout_seconds=self.ollama_timeout.value(),
                 keep_alive=self.ollama_keep_alive.text().strip(),
@@ -1854,8 +2098,10 @@ class SettingsDialog(QDialog):
                 provider=self.api_provider.currentData(),
                 deepseek_api_key=self.deepseek_key.text().strip(),
                 aliyun_api_key=self.aliyun_key.text().strip(),
+                openai_api_key=self.openai_key.text().strip(),
                 deepseek_base_url=self.deepseek_url.text().strip(),
                 aliyun_base_url=self.aliyun_url.text().strip(),
+                openai_base_url=self.openai_url.text().strip(),
                 deepseek_chat_model=(
                     self.deepseek_chat_model.currentText().strip()
                 ),
@@ -1863,14 +2109,36 @@ class SettingsDialog(QDialog):
                 aliyun_chat_model=(
                     self.aliyun_chat_model.currentText().strip()
                 ),
-                aliyun_vision_model=(
-                    self.aliyun_vision_model.currentText().strip()
+                openai_chat_model=(
+                    self.openai_chat_model.currentText().strip()
                 ),
                 timeout_seconds=self.api_timeout.value(),
             ),
             vision=VisionSettings(
                 enabled=self.vision_enabled.isChecked(),
                 interval_seconds=self.vision_interval.value(),
+                provider=self.vision_provider.currentData(),
+                ollama_base_url=self.vision_ollama_url.text().strip(),
+                ollama_model=(
+                    self.vision_ollama_model.currentText().strip()
+                ),
+                ollama_context_window=(
+                    self.vision_ollama_context_window.value()
+                ),
+                ollama_keep_alive=(
+                    self.vision_ollama_keep_alive.text().strip()
+                ),
+                aliyun_api_key=self.vision_aliyun_key.text().strip(),
+                aliyun_base_url=self.vision_aliyun_url.text().strip(),
+                aliyun_model=(
+                    self.vision_aliyun_model.currentText().strip()
+                ),
+                openai_api_key=self.vision_openai_key.text().strip(),
+                openai_base_url=self.vision_openai_url.text().strip(),
+                openai_model=(
+                    self.vision_openai_model.currentText().strip()
+                ),
+                timeout_seconds=self.vision_timeout.value(),
             ),
             tts=TTSSettings(
                 enabled=self.tts_enabled.isChecked(),
@@ -1892,6 +2160,7 @@ class SettingsDialog(QDialog):
             display=DisplaySettings(
                 screen_index=self.screen_index.value(),
                 portrait_screen_ratio=self.portrait_ratio.value(),
+                show_log_console=self.show_log_console.isChecked(),
             ),
             idle=IdleSettings(
                 thinking_minutes=self.thinking_minutes.value(),
@@ -1901,6 +2170,55 @@ class SettingsDialog(QDialog):
         )
 
     def _fetch_models(self) -> None:
+        self._start_model_fetch(vision=False)
+
+    def _fetch_vision_models(self) -> None:
+        self._start_model_fetch(vision=True)
+
+    def _auto_fetch_models(self) -> None:
+        if self._closing:
+            return
+        try:
+            settings = self._form_settings()
+        except ValidationError:
+            return
+
+        scopes: list[bool] = []
+        if (
+            settings.mode == "ollama"
+            or bool(settings.api.selected_api_key())
+        ):
+            scopes.append(False)
+        if (
+            settings.vision.provider == "ollama"
+            or bool(settings.vision.selected_api_key())
+        ):
+            scopes.append(True)
+        self._model_fetch_queue = scopes
+        self._start_next_model_fetch()
+
+    def _start_next_model_fetch(self) -> None:
+        if (
+            self._closing
+            or self._model_worker is not None
+            or not self._model_fetch_queue
+        ):
+            return
+        self._start_model_fetch(
+            vision=self._model_fetch_queue.pop(0),
+            notify_if_busy=False,
+        )
+
+    def _start_model_fetch(
+        self,
+        *,
+        vision: bool,
+        notify_if_busy: bool = True,
+    ) -> None:
+        if self._model_worker is not None:
+            if notify_if_busy:
+                self._show_running_message()
+            return
         try:
             settings = self._form_settings()
         except ValidationError as exc:
@@ -1912,9 +2230,26 @@ class SettingsDialog(QDialog):
             return
 
         self.fetch_models_button.setEnabled(False)
+        self.fetch_vision_models_button.setEnabled(False)
         self._set_status("connecting")
-        self._model_target = (settings.mode, settings.api.provider)
-        worker = ModelListWorker(settings, self)
+        self._model_target = (
+            "vision" if vision else "chat",
+            (
+                settings.vision.provider
+                if vision
+                else settings.mode
+            ),
+            (
+                settings.vision.provider
+                if vision
+                else settings.api.provider
+            ),
+        )
+        worker = ModelListWorker(
+            settings,
+            vision=vision,
+            parent=self,
+        )
         self._model_worker = worker
         worker.models_ready.connect(self._on_models_ready)
         worker.error.connect(self._on_models_error)
@@ -1922,25 +2257,39 @@ class SettingsDialog(QDialog):
         worker.start()
 
     def _finish_model_worker(self, worker: ModelListWorker) -> None:
-        self.fetch_models_button.setEnabled(True)
         if self._model_worker is worker:
             self._model_worker = None
         worker.deleteLater()
+        if self._model_fetch_queue and not self._closing:
+            QTimer.singleShot(0, self._start_next_model_fetch)
+            return
+        self.fetch_models_button.setEnabled(True)
+        self.fetch_vision_models_button.setEnabled(True)
 
     def _on_models_ready(self, models: list[str]) -> None:
         if not models:
             self._set_status("models_empty")
             return
 
-        mode, provider = self._model_target or (
+        scope, mode, provider = self._model_target or (
+            "chat",
             self.mode_combo.currentData(),
             self.api_provider.currentData(),
         )
         targets: list[QComboBox]
-        if mode == "ollama":
-            targets = [self.ollama_chat_model, self.ollama_vision_model]
+        if scope == "vision":
+            if provider == "ollama":
+                targets = [self.vision_ollama_model]
+            elif provider == "aliyun":
+                targets = [self.vision_aliyun_model]
+            else:
+                targets = [self.vision_openai_model]
+        elif mode == "ollama":
+            targets = [self.ollama_chat_model]
         elif provider == "aliyun":
-            targets = [self.aliyun_chat_model, self.aliyun_vision_model]
+            targets = [self.aliyun_chat_model]
+        elif provider == "openai":
+            targets = [self.openai_chat_model]
         else:
             targets = [self.deepseek_chat_model]
 
@@ -1967,9 +2316,6 @@ class SettingsDialog(QDialog):
         )
 
     def accept(self) -> None:
-        if self._background_check_is_running():
-            self._show_running_message()
-            return
         prompt = self.personality_prompt.toPlainText().strip()
         if not prompt:
             QMessageBox.warning(
@@ -1987,7 +2333,10 @@ class SettingsDialog(QDialog):
                 str(exc),
             )
             return
-        if settings.requires_api_key():
+        if (
+            settings.requires_api_key()
+            or settings.requires_vision_api_key()
+        ):
             QMessageBox.warning(
                 self,
                 self._text("missing_key"),
@@ -2008,6 +2357,7 @@ class SettingsDialog(QDialog):
             return
 
         self._result = settings
+        self._closing = True
         super().accept()
 
     def reject(self) -> None:

@@ -18,8 +18,12 @@ from urllib.parse import quote
 import requests
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
+from tool.runtime_logging import get_logger
 from tool.tts_assets import managed_gpt_sovits_dir, managed_tts_model_dir
 from tool.whisper_models import managed_whisper_dir, model_repository
+
+
+logger = get_logger("download")
 
 
 TTS_JOB_ID = "tts:murasame"
@@ -517,7 +521,23 @@ class DownloadManager(QObject):
         worker.deleteLater()
 
     def _publish(self, job_id: str, snapshot: DownloadSnapshot) -> None:
+        previous = self._snapshots.get(job_id)
         self._snapshots[job_id] = snapshot
+        if previous is None or previous.status != snapshot.status:
+            if snapshot.status == "failed":
+                logger.error(
+                    "下载任务失败 | %s | 目标=%s | %s",
+                    job_id,
+                    snapshot.destination or "-",
+                    snapshot.message,
+                )
+            else:
+                logger.info(
+                    "下载任务状态 | %s | %s | 目标=%s",
+                    job_id,
+                    snapshot.status,
+                    snapshot.destination or "-",
+                )
         self.changed.emit(job_id, snapshot)
 
     def shutdown(self) -> None:
