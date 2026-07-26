@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
@@ -12,13 +13,14 @@ import numpy as np
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt5.QtCore import QRect, Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
 from classes.download_manager import DownloadSnapshot, whisper_job_id
 from classes.murasame_class import Murasame, screen_local_mask_rect
+from classes.workers import ConversationResult
 from main import move_pet_to_configured_screen
-from tool.backends import ScreenAnalysis
+from tool.backends import ScreenAnalysis, parse_character_reply
 from tool.config import AppSettings
 from tool.portraits import layers_for
 from tool.tts_assets import TTSAssetState
@@ -71,6 +73,59 @@ class UISmokeTests(unittest.TestCase):
         self.assertEqual(image.pixelColor(120, 40).name(), "#000000")
         self.assertEqual(image.pixelColor(10, 10).name(), "#ffffff")
 
+    def test_disabled_screen_vision_is_inert(self) -> None:
+        settings = AppSettings(mode="api")
+        settings.vision.enabled = False
+        settings.vision.provider = "ollama"
+        dialog = SettingsDialog(settings)
+
+        self.assertFalse(dialog.vision_options.isEnabled())
+        self.assertFalse(dialog.vision_provider.isEnabled())
+        self.assertFalse(dialog.fetch_vision_models_button.isEnabled())
+        with patch.object(dialog, "_start_model_fetch") as start_fetch:
+            dialog._auto_fetch_models()
+            dialog._fetch_vision_models()
+            start_fetch.assert_not_called()
+
+        dialog.vision_enabled.setChecked(True)
+        self.assertTrue(dialog.vision_options.isEnabled())
+        self.assertTrue(dialog.vision_provider.isEnabled())
+        self.assertTrue(dialog.fetch_vision_models_button.isEnabled())
+        with patch.object(dialog, "_start_model_fetch") as start_fetch:
+            dialog._auto_fetch_models()
+            start_fetch.assert_called_once_with(
+                vision=True,
+                notify_if_busy=False,
+            )
+
+    def test_models_tab_does_not_compress_form_rows(self) -> None:
+        previous_font = self.app.font()
+        try:
+            self.app.setFont(QFont("Segoe UI", 18))
+            settings = AppSettings(mode="api", ui_language="zh-CN")
+            dialog = SettingsDialog(settings)
+            dialog.tabs.setCurrentIndex(0)
+            dialog.show()
+            self.app.processEvents()
+
+            self.assertGreaterEqual(
+                dialog.api_group.height(),
+                dialog.api_group.minimumSizeHint().height(),
+            )
+            for field in (
+                dialog.deepseek_key,
+                dialog.deepseek_url,
+                dialog.deepseek_chat_model,
+                dialog.api_timeout,
+            ):
+                self.assertGreaterEqual(
+                    field.height(),
+                    field.minimumSizeHint().height(),
+                )
+            dialog.close()
+        finally:
+            self.app.setFont(previous_font)
+
     def test_settings_dialog_and_pet_construct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             previous = os.environ.get("AIPET_DATA_DIR")
@@ -86,6 +141,7 @@ class UISmokeTests(unittest.TestCase):
                 settings.display.screen_name = screen.name()
                 settings.display.window_x = 24
                 settings.display.window_y = 36
+                settings.character.outfit = "casual"
                 dialog = SettingsDialog(settings)
                 pet = Murasame(settings)
                 self.assertGreater(pet.width(), 0)
@@ -106,6 +162,10 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(
                     dialog._form_settings().ui_language,
                     "zh-CN",
+                )
+                self.assertEqual(
+                    dialog._form_settings().character.outfit,
+                    "casual",
                 )
                 dialog.show_log_console.setChecked(True)
                 self.assertTrue(
@@ -190,8 +250,13 @@ class UISmokeTests(unittest.TestCase):
                 )
                 previous_center_x = pet.geometry().center().x()
                 previous_bottom = pet.geometry().bottom()
-                pet.update_portrait(layers_for("a", "高兴"), "a")
+                pet.update_portrait(
+                    layers_for("a", "高兴", "uniform"),
+                    "a",
+                    "uniform",
+                )
                 self.assertEqual(pet._current_portrait, "a")
+                self.assertEqual(pet._current_outfit, "uniform")
                 self.assertLessEqual(
                     abs(pet.geometry().center().x() - previous_center_x),
                     1,
@@ -201,8 +266,33 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(pet._current_portrait, "a")
                 self.assertEqual(
                     pet._current_layers,
-                    layers_for("a", "高兴"),
+                    layers_for("a", "高兴", "uniform"),
                 )
+
+                outfit_reply = parse_character_reply(
+                    '{"outfit":"sleepwear","sentences":['
+                    '{"zh":"晚安。","ja":"お休みじゃ。",'
+                    '"emotion":"平静","portrait":"b"}]}'
+                )
+                with patch.object(pet, "_play_next_sentence") as play_next:
+                    pet._on_reply(
+                        pet._generation,
+                        ConversationResult(
+                            reply=outfit_reply,
+                            audio_paths=[None],
+                            user_text="换上睡衣",
+                            is_user_message=True,
+                        ),
+                    )
+                self.assertEqual(
+                    pet.settings.character.outfit,
+                    "sleepwear",
+                )
+                self.assertEqual(
+                    json.loads(pet.history[-1]["content"])["outfit"],
+                    "sleepwear",
+                )
+                play_next.assert_called_once()
 
                 pet.history = [
                     {"role": "user", "content": "remember this"},
@@ -469,6 +559,18 @@ class UISmokeTests(unittest.TestCase):
                         )
                     )
                     self.assertEqual(start_thread.call_count, 2)
+                    self.assertEqual(
+                        [
+                            entry.change_summary
+                            for entry in pet.screen_memory_store.entries
+                        ],
+                        [
+                            "从编辑器切换到浏览器",
+                            "任务执行完成",
+                            "从编辑器切换到浏览器",
+                            "切换到密码管理器",
+                        ],
+                    )
 
                 with patch.object(
                     pet,

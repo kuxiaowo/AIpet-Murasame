@@ -41,6 +41,7 @@
   "character": {
     "user_name": "主人",
     "portrait": "b",
+    "outfit": "kimono",
     "personality_file": "prompt.txt"
   },
   "display": {

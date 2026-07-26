@@ -32,7 +32,7 @@ from tool.backends import ScreenAnalysis
 from tool.config import AppSettings, PROJECT_ROOT, get_cache_dir
 from tool.generate import generate_fgimage
 from tool.portraits import default_layers, layers_for
-from tool.storage import HistoryStore
+from tool.storage import HistoryStore, ScreenMemoryEntry, ScreenMemoryStore
 from tool.time_utils import build_time_context
 
 
@@ -138,6 +138,7 @@ class Murasame(QLabel):
 
         self.history_store = HistoryStore(limit=self.settings.history_limit)
         self.history = self.history_store.load()
+        self.screen_memory_store = ScreenMemoryStore()
         self._generation = 0
         self._workers: dict[int, ConversationWorker] = {}
         self._vision_worker: VisionWorker | None = None
@@ -173,7 +174,14 @@ class Murasame(QLabel):
         self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.setMouseTracking(True)
 
-        self.update_portrait(default_layers(self.settings.character.portrait))
+        self.update_portrait(
+            default_layers(
+                self.settings.character.portrait,
+                self.settings.character.outfit,
+            ),
+            self.settings.character.portrait,
+            self.settings.character.outfit,
+        )
         self._apply_automatic_behavior_settings()
 
     def _load_font(self) -> str:
@@ -184,6 +192,7 @@ class Murasame(QLabel):
 
     def apply_settings(self, settings: AppSettings) -> None:
         old_portrait = self.settings.character.portrait
+        old_outfit = self.settings.character.outfit
         was_dnd_enabled = self._dnd_enabled
         current_layers = getattr(
             self,
@@ -191,6 +200,7 @@ class Murasame(QLabel):
             default_layers(old_portrait),
         )
         current_portrait = getattr(self, "_current_portrait", old_portrait)
+        current_outfit = getattr(self, "_current_outfit", old_outfit)
         self.settings = settings.model_copy(deep=True)
         self._dnd_enabled = self.settings.idle.do_not_disturb
         if self._dnd_enabled:
@@ -202,11 +212,23 @@ class Murasame(QLabel):
         self.history_store.save(self.history)
         self._reset_screen_observation()
 
-        if old_portrait != self.settings.character.portrait:
+        if (
+            old_portrait != self.settings.character.portrait
+            or old_outfit != self.settings.character.outfit
+        ):
             portrait = self.settings.character.portrait
-            self.update_portrait(default_layers(portrait), portrait)
+            outfit = self.settings.character.outfit
+            self.update_portrait(
+                default_layers(portrait, outfit),
+                portrait,
+                outfit,
+            )
         else:
-            self.update_portrait(current_layers, current_portrait)
+            self.update_portrait(
+                current_layers,
+                current_portrait,
+                current_outfit,
+            )
         self._reset_idle_state()
         self._apply_automatic_behavior_settings()
 
@@ -454,7 +476,20 @@ class Murasame(QLabel):
             return
 
         event_key = self._screen_event_key(analysis)
-        if not event_key or event_key == self._last_spoken_screen_event:
+        if not event_key:
+            return
+        self.screen_memory_store.remember(
+            ScreenMemoryEntry.now(
+                change_type=analysis.change_type,
+                software=analysis.software,
+                activity=analysis.activity,
+                topic=analysis.topic,
+                recognized_characters=analysis.recognized_characters,
+                murasame_visible=analysis.murasame_visible,
+                change_summary=analysis.change_summary,
+            )
+        )
+        if event_key == self._last_spoken_screen_event:
             return
 
         details = [
@@ -493,11 +528,17 @@ class Murasame(QLabel):
         self._generation += 1
         generation = self._generation
         event_context = clean_text if role == "system" else None
+        screen_memory = (
+            self.screen_memory_store.prompt_text()
+            if self.settings.vision.enabled
+            else None
+        )
         worker = ConversationWorker(
             self.settings.model_copy(deep=True),
             list(self.history),
             clean_text if role == "user" else "",
             event_context=event_context,
+            screen_memory=screen_memory,
             parent=self,
         )
         self._workers[generation] = worker
@@ -546,10 +587,15 @@ class Murasame(QLabel):
             return
 
         self._stop_thinking_animation()
+        outfit = result.reply.outfit or self.settings.character.outfit
+        self.settings.character.outfit = outfit
         if result.is_user_message:
             self.history.append({"role": "user", "content": result.user_text})
         self.history.append(
-            {"role": "assistant", "content": result.reply.chinese_text()}
+            {
+                "role": "assistant",
+                "content": result.reply.model_dump_json(exclude_none=True),
+            }
         )
         self.history = self.history[-self.settings.history_limit :]
         self.history_store.save(self.history)
@@ -571,9 +617,11 @@ class Murasame(QLabel):
         self._playback_index += 1
         sentence = result.reply.sentences[index]
         portrait = sentence.portrait or self.settings.character.portrait
+        outfit = self.settings.character.outfit
         self.update_portrait(
-            layers_for(portrait, sentence.emotion),
+            layers_for(portrait, sentence.emotion, outfit),
             portrait,
+            outfit,
         )
         self.show_text(sentence.zh, typing=True)
 
@@ -628,6 +676,7 @@ class Murasame(QLabel):
         self,
         layers: list[int],
         portrait: str | None = None,
+        outfit: str | None = None,
     ) -> None:
         previous_geometry = (
             self.geometry()
@@ -640,8 +689,10 @@ class Murasame(QLabel):
             else self._configured_screen()
         )
         portrait = portrait or self.settings.character.portrait
+        outfit = outfit or self.settings.character.outfit
         self._current_layers = list(layers)
         self._current_portrait = portrait
+        self._current_outfit = outfit
         target = f"ムラサメ{portrait}"
         bgra_image = generate_fgimage(target, layers)
         rgba_image = cv2.cvtColor(bgra_image, cv2.COLOR_BGRA2RGBA)
@@ -1005,8 +1056,15 @@ class Murasame(QLabel):
         self._cancel_active_jobs()
         self.history.clear()
         self.history_store.clear()
-        self.update_portrait(default_layers(self.settings.character.portrait))
-        self.show_text("已经忘掉之前的对话了。", typing=False)
+        self.screen_memory_store.clear()
+        portrait = self.settings.character.portrait
+        outfit = self.settings.character.outfit
+        self.update_portrait(
+            default_layers(portrait, outfit),
+            portrait,
+            outfit,
+        )
+        self.show_text("已经忘掉之前的对话和屏幕事件了。", typing=False)
 
     def shutdown(self) -> None:
         self._screen_resize_timer.stop()

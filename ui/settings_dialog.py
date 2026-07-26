@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
@@ -118,6 +119,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "portrait_set": "Default portrait set",
         "portrait_a": "Portrait A",
         "portrait_b": "Portrait B",
+        "outfit": "Default outfit",
+        "outfit_sleepwear": "Sleepwear",
+        "outfit_casual": "Casual outfit",
+        "outfit_uniform": "School uniform",
+        "outfit_kimono": "Purple kimono",
         "prompt_group": "Personality prompt",
         "prompt_help": (
             "This is the personality layer. AIpet adds the structured JSON "
@@ -347,6 +353,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "portrait_set": "默认立绘组",
         "portrait_a": "立绘 A",
         "portrait_b": "立绘 B",
+        "outfit": "默认服装",
+        "outfit_sleepwear": "睡衣",
+        "outfit_casual": "粉白便衣",
+        "outfit_uniform": "校服",
+        "outfit_kimono": "紫色和服",
         "prompt_group": "人格提示词",
         "prompt_help": (
             "这里仅描述人格。AIpet 会自动添加结构化 JSON 规则，"
@@ -694,6 +705,7 @@ class SettingsDialog(QDialog):
         self.whisper_model_dir.editingFinished.connect(
             self._update_whisper_state
         )
+        self.vision_enabled.toggled.connect(self._update_vision_state)
         self.tts_enabled.toggled.connect(self._update_tts_state)
         self.tts_url.editingFinished.connect(self._update_tts_state)
         self.tts_engine_root.editingFinished.connect(self._update_tts_state)
@@ -701,6 +713,7 @@ class SettingsDialog(QDialog):
         self.download_manager.changed.connect(self._on_download_changed)
         self._update_backend_visibility()
         self._retranslate_ui()
+        self._update_vision_state(self.vision_enabled.isChecked())
         self._update_whisper_state()
         self._update_tts_state()
 
@@ -718,12 +731,14 @@ class SettingsDialog(QDialog):
         field: QWidget,
     ) -> None:
         label = QLabel()
+        label.setWordWrap(True)
         form.addRow(label, field)
         self._form_labels.setdefault(key, []).append(label)
 
     def _build_models_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
+        layout.setSizeConstraint(QLayout.SetMinimumSize)
 
         self.backend_group = QGroupBox()
         mode_form = QFormLayout(self.backend_group)
@@ -751,7 +766,10 @@ class SettingsDialog(QDialog):
         self.model_list_help.setWordWrap(True)
         layout.addWidget(self.model_list_help)
         layout.addStretch(1)
-        return page
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        return scroll
 
     def _build_ollama_panel(self) -> QWidget:
         self.ollama_group = QGroupBox()
@@ -849,8 +867,14 @@ class SettingsDialog(QDialog):
         self.portrait = QComboBox()
         self.portrait.addItem("", "a")
         self.portrait.addItem("", "b")
+        self.outfit = QComboBox()
+        self.outfit.addItem("", "sleepwear")
+        self.outfit.addItem("", "casual")
+        self.outfit.addItem("", "uniform")
+        self.outfit.addItem("", "kimono")
         self._add_row(identity_form, "user_name", self.user_name)
         self._add_row(identity_form, "portrait_set", self.portrait)
+        self._add_row(identity_form, "outfit", self.outfit)
         layout.addWidget(self.identity_group)
 
         self.prompt_group = QGroupBox()
@@ -872,6 +896,12 @@ class SettingsDialog(QDialog):
 
         self.vision_group = QGroupBox()
         vision_layout = QVBoxLayout(self.vision_group)
+        self.vision_enabled = QCheckBox()
+        vision_layout.addWidget(self.vision_enabled)
+
+        self.vision_options = QWidget()
+        vision_options_layout = QVBoxLayout(self.vision_options)
+        vision_options_layout.setContentsMargins(0, 0, 0, 0)
         vision_provider_form = QFormLayout()
         self.vision_provider = QComboBox()
         self.vision_provider.addItem("", "ollama")
@@ -885,7 +915,7 @@ class SettingsDialog(QDialog):
             "vision_provider",
             self.vision_provider,
         )
-        vision_layout.addLayout(vision_provider_form)
+        vision_options_layout.addLayout(vision_provider_form)
 
         self.vision_provider_stack = QStackedWidget()
         self.vision_provider_stack.addWidget(
@@ -897,7 +927,7 @@ class SettingsDialog(QDialog):
         self.vision_provider_stack.addWidget(
             self._build_vision_openai_panel()
         )
-        vision_layout.addWidget(self.vision_provider_stack)
+        vision_options_layout.addWidget(self.vision_provider_stack)
 
         vision_model_row = QHBoxLayout()
         self.fetch_vision_models_button = QPushButton()
@@ -906,18 +936,16 @@ class SettingsDialog(QDialog):
         )
         vision_model_row.addWidget(self.fetch_vision_models_button)
         vision_model_row.addStretch(1)
-        vision_layout.addLayout(vision_model_row)
+        vision_options_layout.addLayout(vision_model_row)
         self.vision_model_list_help = QLabel()
         self.vision_model_list_help.setWordWrap(True)
-        vision_layout.addWidget(self.vision_model_list_help)
+        vision_options_layout.addWidget(self.vision_model_list_help)
 
         vision_form = QFormLayout()
-        self.vision_enabled = QCheckBox()
         self.vision_interval = self._spinbox(10, 86_400)
         self.vision_timeout = self._spinbox(10, 600)
         self.vision_compatibility = QLabel()
         self.vision_compatibility.setWordWrap(True)
-        vision_form.addRow(self.vision_enabled)
         self._add_row(vision_form, "interval", self.vision_interval)
         self._add_row(
             vision_form,
@@ -925,7 +953,8 @@ class SettingsDialog(QDialog):
             self.vision_timeout,
         )
         vision_form.addRow(self.vision_compatibility)
-        vision_layout.addLayout(vision_form)
+        vision_options_layout.addLayout(vision_form)
+        vision_layout.addWidget(self.vision_options)
 
         self.tts_group = QGroupBox()
         tts_form = QFormLayout(self.tts_group)
@@ -1222,6 +1251,7 @@ class SettingsDialog(QDialog):
 
         self.user_name.setText(settings.character.user_name)
         self._set_combo_data(self.portrait, settings.character.portrait)
+        self._set_combo_data(self.outfit, settings.character.outfit)
         try:
             self.personality_prompt.setPlainText(load_personality(settings))
         except OSError:
@@ -1361,6 +1391,12 @@ class SettingsDialog(QDialog):
             "b",
             self._text("portrait_b"),
         )
+        for outfit in ("sleepwear", "casual", "uniform", "kimono"):
+            self._set_combo_item_text(
+                self.outfit,
+                outfit,
+                self._text(f"outfit_{outfit}"),
+            )
 
         self.deepseek_thinking.setText(self._text("deepseek_thinking"))
         self.do_not_disturb.setText(self._text("do_not_disturb"))
@@ -2241,9 +2277,29 @@ class SettingsDialog(QDialog):
         self.vision_provider_stack.setCurrentIndex(
             provider_index.get(self.vision_provider.currentData(), 0)
         )
-        self.vision_enabled.setEnabled(True)
         self.vision_compatibility.setText(
             self._text("vision_supported")
+        )
+
+    def _update_vision_state(self, enabled: bool) -> None:
+        if not hasattr(self, "vision_options"):
+            return
+        self.vision_options.setEnabled(enabled)
+        if not enabled:
+            self._model_fetch_queue = [
+                vision
+                for vision in self._model_fetch_queue
+                if not vision
+            ]
+        self._update_model_fetch_buttons()
+
+    def _update_model_fetch_buttons(self) -> None:
+        if not hasattr(self, "fetch_models_button"):
+            return
+        idle = self._model_worker is None
+        self.fetch_models_button.setEnabled(idle)
+        self.fetch_vision_models_button.setEnabled(
+            idle and self.vision_enabled.isChecked()
         )
 
     def _import_prompt(self) -> None:
@@ -2357,6 +2413,7 @@ class SettingsDialog(QDialog):
             character=CharacterSettings(
                 user_name=self.user_name.text().strip(),
                 portrait=self.portrait.currentData(),
+                outfit=self.outfit.currentData(),
                 personality_file=str(personality_path),
             ),
             display=DisplaySettings(
@@ -2383,6 +2440,8 @@ class SettingsDialog(QDialog):
         self._start_model_fetch(vision=False)
 
     def _fetch_vision_models(self) -> None:
+        if not self.vision_enabled.isChecked():
+            return
         self._start_model_fetch(vision=True)
 
     def _auto_fetch_models(self) -> None:
@@ -2399,7 +2458,7 @@ class SettingsDialog(QDialog):
             or bool(settings.api.selected_api_key())
         ):
             scopes.append(False)
-        if (
+        if settings.vision.enabled and (
             settings.vision.provider == "ollama"
             or bool(settings.vision.selected_api_key())
         ):
@@ -2425,6 +2484,8 @@ class SettingsDialog(QDialog):
         vision: bool,
         notify_if_busy: bool = True,
     ) -> None:
+        if vision and not self.vision_enabled.isChecked():
+            return
         if self._model_worker is not None:
             if notify_if_busy:
                 self._show_running_message()
@@ -2473,8 +2534,7 @@ class SettingsDialog(QDialog):
         if self._model_fetch_queue and not self._closing:
             QTimer.singleShot(0, self._start_next_model_fetch)
             return
-        self.fetch_models_button.setEnabled(True)
-        self.fetch_vision_models_button.setEnabled(True)
+        self._update_model_fetch_buttons()
 
     def _on_models_ready(self, models: list[str]) -> None:
         if not models:

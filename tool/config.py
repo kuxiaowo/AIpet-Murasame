@@ -198,6 +198,7 @@ class STTSettings(BaseModel):
 class CharacterSettings(BaseModel):
     user_name: str = Field(default="主人", min_length=1, max_length=30)
     portrait: Literal["a", "b"] = "b"
+    outfit: Literal["sleepwear", "casual", "uniform", "kimono"] = "kimono"
     personality_file: str = Field(default="prompt.txt", min_length=1)
 
 

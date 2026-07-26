@@ -42,6 +42,7 @@ class ConversationWorker(QThread):
         user_text: str,
         *,
         event_context: str | None = None,
+        screen_memory: str | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -49,6 +50,7 @@ class ConversationWorker(QThread):
         self.history = history
         self.user_text = user_text
         self.event_context = event_context
+        self.screen_memory = screen_memory
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
@@ -74,6 +76,7 @@ class ConversationWorker(QThread):
                 self.history,
                 self.user_text,
                 self.event_context,
+                self.screen_memory,
             )
             if self._cancelled.is_set():
                 log_event(logger, "conversation.cancelled")
@@ -113,6 +116,7 @@ class ConversationWorker(QThread):
                 logger,
                 "conversation.completed",
                 sentence_count=len(reply.sentences),
+                outfit=reply.outfit or self.settings.character.outfit,
                 emotions=[
                     sentence.emotion for sentence in reply.sentences
                 ],

@@ -47,11 +47,12 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 - **Selectable models** — configure chat and vision models independently.
 - **Built-in providers** — DeepSeek, Alibaba Cloud, OpenAI, and local Ollama.
 - **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
-- **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, one of six emotions, and a safe `a`/`b` portrait pose.
-- **Deterministic portraits** — the model may switch between the two validated poses, while pose and emotion map to known portrait layers in code; model changes cannot invent broken layer IDs.
+- **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, one of six emotions, a safe `a`/`b` portrait pose, and one of four outfits.
+- **Deterministic portraits** — the model may switch between validated poses and outfits, while outfit, pose, and emotion map to known portrait layers in code; model changes cannot invent broken layer IDs.
 - **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
 - **Live diagnostic console** — optionally open a real-time command window with correlated request/response JSON, worker events, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`; API secrets are redacted and large base64 media is represented by length and SHA-256 metadata.
 - **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, the pet window is masked before analysis, and the vision model can identify likely on-screen characters including Murasame.
+- **Bounded screen memory** — only significant screen changes are retained as compact structured summaries for later conversations; raw screenshots are never added to conversation history.
 - **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
 - **Private user state** — configuration, keys, and conversation history live outside the Git repository.
 
@@ -176,8 +177,10 @@ Open **Settings…** from the tray menu at any time.
 - Select a faster-whisper model or repository ID and an explicit download directory. AIpet downloads and loads the model from that exact directory and prompts when it is missing.
 - Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
-- Model lists load automatically when Settings opens. Use the connection
-  buttons to refresh after changing an address, provider, or API key.
+- Model lists for enabled features load automatically when Settings opens.
+  Disabled screen vision neither enables its controls nor contacts its provider.
+  Use the connection buttons to refresh after changing an address, provider,
+  or API key.
 
 The model loader calls Ollama's `GET /api/tags` or the cloud provider's
 `GET /models`. Chat and vision lists use their own configured endpoints.
@@ -188,7 +191,7 @@ DeepSeek V4 uses the current `deepseek-v4-flash` and `deepseek-v4-pro` IDs. Reti
 
 ### Character
 
-- Set the user name and portrait set.
+- Set the user name, default portrait set, and default outfit.
 - Create or edit the personality prompt visually.
 - Import a UTF-8 text or Markdown prompt.
 
@@ -201,7 +204,7 @@ AIpet adds the structured response contract automatically. The personality file 
 - Download missing Murasame GPT/SoVITS weights with resumable in-card progress after accepting the model notice.
 - Configure optional faster-whisper input.
 - Select a display, portrait scale, idle thresholds, and history size.
-- Persist Do Not Disturb from either Settings or the tray, and clear saved conversation history from Settings with confirmation.
+- Persist Do Not Disturb from either Settings or the tray, and clear saved conversation and screen-event memory from Settings with confirmation.
 
 ## Data and API keys
 
@@ -211,6 +214,7 @@ On Windows, user data is stored under:
 %APPDATA%\AIpet-Murasame\
 ├── config.json
 ├── history.json
+├── screen_memory.json
 └── personality.txt
 ```
 
@@ -218,7 +222,11 @@ Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`. New W
 
 API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, or `OPENAI_API_KEY`. Runtime files and secrets are ignored by Git.
 
-Screen vision is disabled by default. When enabled, screenshots are sent only to the vision backend selected in Settings.
+Screen vision is disabled by default. When enabled, screenshots are sent only
+to the vision backend selected in Settings. AIpet retains at most 12 significant
+screen-event summaries and injects up to 8 recent entries under a character
+budget; consecutive duplicates are removed and raw screenshots are not
+persisted.
 
 ## GPT-SoVITS
 
@@ -267,7 +275,7 @@ classes/
 tool/
 ├── backends.py         # Ollama and OpenAI-compatible API adapters
 ├── config.py           # Validated user settings
-├── portraits.py        # Emotion-to-layer mapping
+├── portraits.py        # Outfit/pose/emotion-to-layer mapping
 ├── storage.py          # Conversation persistence
 ├── tts.py              # GPT-SoVITS client
 └── tts_service.py      # Managed local GPT-SoVITS process
