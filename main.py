@@ -149,12 +149,17 @@ def configure_voice_trigger(
     bridge = VoiceBridge(pet)
     bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
     bridge.record_start.connect(
-        lambda: pet.show_text(ui_text(settings, "recording"), typing=False)
+        lambda: pet.show_text(
+            ui_text(settings, "recording"),
+            typing=False,
+            speaker_name=settings.character.user_name,
+        )
     )
     bridge.record_end.connect(
         lambda: pet.show_text(
             ui_text(settings, "recognizing"),
             typing=False,
+            speaker_name=settings.character.user_name,
         )
     )
     bridge.error.connect(

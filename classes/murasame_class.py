@@ -857,10 +857,15 @@ class Murasame(QLabel):
         )
         self.border_size = max(1, round(self._base_border_size * scale))
 
-    def show_text(self, text: str, typing: bool = True) -> None:
+    def show_text(
+        self,
+        text: str,
+        typing: bool = True,
+        speaker_name: str | None = None,
+    ) -> None:
         self._stop_thinking_animation()
         self.full_text = wrap_text(text)
-        self.typing_prefix = f"【{self.pet_name}】\n"
+        self.typing_prefix = f"【{speaker_name or self.pet_name}】\n"
         self.typing_index = 0
         self.typing_timer.stop()
         if typing:

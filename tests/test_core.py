@@ -25,8 +25,12 @@ from tool.config import (
     CharacterSettings,
     IdleSettings,
     PROJECT_ROOT,
+    STTSettings,
     TTSSettings,
     VisionSettings,
+    default_tts_engine_root,
+    default_tts_model_dir,
+    default_whisper_model_dir,
     get_model_dir,
     load_settings,
     save_settings,
@@ -50,6 +54,32 @@ class CoreTests(unittest.TestCase):
             {"AIPET_MODEL_DIR": ""},
         ):
             self.assertEqual(get_model_dir(), PROJECT_ROOT / "models")
+
+    def test_empty_download_paths_receive_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                "os.environ",
+                {"AIPET_MODEL_DIR": directory},
+            ):
+                tts = TTSSettings(engine_root="", model_dir="")
+                stt = STTSettings(model="large-v3", model_dir="")
+
+                self.assertEqual(
+                    tts.engine_root,
+                    default_tts_engine_root(),
+                )
+                self.assertEqual(tts.model_dir, default_tts_model_dir())
+                self.assertEqual(
+                    stt.model_dir,
+                    default_whisper_model_dir("large-v3"),
+                )
+
+        custom = TTSSettings(
+            engine_root="D:/custom/GPT-SoVITS",
+            model_dir="D:/custom/Murasame",
+        )
+        self.assertEqual(custom.engine_root, "D:/custom/GPT-SoVITS")
+        self.assertEqual(custom.model_dir, "D:/custom/Murasame")
 
     def test_character_reply_accepts_fenced_json(self) -> None:
         payload = {

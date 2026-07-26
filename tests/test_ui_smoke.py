@@ -73,6 +73,28 @@ class UISmokeTests(unittest.TestCase):
         self.assertEqual(image.pixelColor(120, 40).name(), "#000000")
         self.assertEqual(image.pixelColor(10, 10).name(), "#ffffff")
 
+    def test_status_text_can_use_the_user_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {"AIPET_DATA_DIR": directory},
+            ):
+                settings = AppSettings()
+                settings.character.user_name = "主人"
+                pet = Murasame(settings)
+                try:
+                    pet.show_text(
+                        "正在录音……",
+                        typing=False,
+                        speaker_name=settings.character.user_name,
+                    )
+                    self.assertTrue(pet.display_text.startswith("【主人】\n"))
+
+                    pet.show_text("角色台词", typing=False)
+                    self.assertTrue(pet.display_text.startswith("【丛雨】\n"))
+                finally:
+                    pet.shutdown()
+
     def test_disabled_screen_vision_is_inert(self) -> None:
         settings = AppSettings(mode="api")
         settings.vision.enabled = False
@@ -166,6 +188,21 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(
                     dialog._form_settings().character.outfit,
                     "casual",
+                )
+                default_model_root = Path(
+                    os.environ["AIPET_MODEL_DIR"]
+                ).resolve()
+                self.assertEqual(
+                    Path(dialog.tts_engine_root.text()),
+                    default_model_root / "tts" / "GPT-SoVITS",
+                )
+                self.assertEqual(
+                    Path(dialog.tts_model_dir.text()),
+                    default_model_root / "tts" / "Murasame_SoVITS",
+                )
+                self.assertEqual(
+                    Path(dialog.whisper_model_dir.text()),
+                    default_model_root / "whisper" / "large-v3",
                 )
                 dialog.show_log_console.setChecked(True)
                 self.assertTrue(

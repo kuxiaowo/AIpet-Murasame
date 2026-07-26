@@ -45,6 +45,34 @@ def get_model_dir() -> Path:
     return PROJECT_ROOT / "models"
 
 
+def get_default_download_root() -> Path:
+    override = os.getenv("AIPET_MODEL_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if os.name == "nt":
+        return Path("C:/AIpet/models")
+    return get_model_dir()
+
+
+def default_tts_engine_root() -> str:
+    return str(get_default_download_root() / "tts" / "GPT-SoVITS")
+
+
+def default_tts_model_dir() -> str:
+    return str(get_default_download_root() / "tts" / "Murasame_SoVITS")
+
+
+def default_whisper_model_dir(model_name: str = "large-v3") -> str:
+    safe_name = (
+        model_name.strip()
+        .replace("/", "--")
+        .replace("\\", "--")
+        .replace(":", "-")
+        or "large-v3"
+    )
+    return str(get_default_download_root() / "whisper" / safe_name)
+
+
 class OllamaSettings(BaseModel):
     base_url: str = Field(
         default="http://127.0.0.1:11434",
@@ -183,16 +211,30 @@ class TTSSettings(BaseModel):
         default="http://127.0.0.1:9880/tts",
         min_length=1,
     )
-    engine_root: str = ""
-    model_dir: str = ""
+    engine_root: str = Field(default_factory=default_tts_engine_root)
+    model_dir: str = Field(default_factory=default_tts_model_dir)
     timeout_seconds: int = Field(default=300, ge=10, le=900)
+
+    @model_validator(mode="after")
+    def fill_default_paths(self) -> "TTSSettings":
+        if not self.engine_root.strip():
+            self.engine_root = default_tts_engine_root()
+        if not self.model_dir.strip():
+            self.model_dir = default_tts_model_dir()
+        return self
 
 
 class STTSettings(BaseModel):
     enabled: bool = False
     model: str = Field(default="large-v3", min_length=1)
-    model_dir: str = ""
+    model_dir: str = Field(default_factory=default_whisper_model_dir)
     device: Literal["auto", "cuda", "cpu"] = "auto"
+
+    @model_validator(mode="after")
+    def fill_default_path(self) -> "STTSettings":
+        if not self.model_dir.strip():
+            self.model_dir = default_whisper_model_dir(self.model)
+        return self
 
 
 class CharacterSettings(BaseModel):

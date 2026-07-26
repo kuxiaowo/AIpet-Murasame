@@ -174,7 +174,7 @@ Open **Settings…** from the tray menu at any time.
 - Edit server URLs and timeout values.
 - Select an independent Ollama, Alibaba Cloud, or OpenAI vision backend.
 - Enable or disable DeepSeek V4 thinking mode.
-- Select a faster-whisper model or repository ID and an explicit download directory. AIpet downloads and loads the model from that exact directory and prompts when it is missing.
+- Select a faster-whisper model or repository ID and an explicit download directory. New Windows configurations default Whisper, GPT-SoVITS, and Murasame voice assets to separate directories under `C:\AIpet\models`; existing custom paths are preserved.
 - Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
 - Model lists for enabled features load automatically when Settings opens.

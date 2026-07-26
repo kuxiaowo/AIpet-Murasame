@@ -28,14 +28,14 @@
   "tts": {
     "enabled": false,
     "base_url": "http://127.0.0.1:9880/tts",
-    "engine_root": "",
-    "model_dir": "",
+    "engine_root": "C:/AIpet/models/tts/GPT-SoVITS",
+    "model_dir": "C:/AIpet/models/tts/Murasame_SoVITS",
     "timeout_seconds": 300
   },
   "stt": {
     "enabled": false,
     "model": "large-v3",
-    "model_dir": "",
+    "model_dir": "C:/AIpet/models/whisper/large-v3",
     "device": "auto"
   },
   "character": {
