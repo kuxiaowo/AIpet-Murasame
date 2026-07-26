@@ -1,0 +1,64 @@
+{
+  "ui_language": "en",
+  "mode": "ollama",
+  "ollama": {
+    "base_url": "http://127.0.0.1:11434",
+    "chat_model": "qwen3:14b",
+    "vision_model": "qwen2.5vl:7b",
+    "context_window": 8192,
+    "timeout_seconds": 180,
+    "keep_alive": "10m"
+  },
+  "api": {
+    "provider": "deepseek",
+    "deepseek_api_key": "",
+    "aliyun_api_key": "",
+    "deepseek_base_url": "https://api.deepseek.com",
+    "aliyun_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "deepseek_chat_model": "deepseek-v4-flash",
+    "deepseek_thinking": false,
+    "aliyun_chat_model": "qwen-plus",
+    "aliyun_vision_model": "qwen3-vl-plus",
+    "timeout_seconds": 180
+  },
+  "vision": {
+    "enabled": false,
+    "interval_seconds": 300
+  },
+  "tts": {
+    "enabled": false,
+    "backend": "local",
+    "base_url": "http://127.0.0.1:9880/tts",
+    "engine_root": "C:/AIpet/models/tts/GPT-SoVITS",
+    "model_dir": "C:/AIpet/models/tts/Murasame_SoVITS",
+    "autodl_ssh_command": "",
+    "autodl_remote_command": "bash -lc 'bash run.sh; bash'",
+    "autodl_remote_reference_root": "/root/reference_voices",
+    "autodl_password_encrypted": "",
+    "timeout_seconds": 300
+  },
+  "stt": {
+    "enabled": false,
+    "model": "large-v3",
+    "model_dir": "C:/AIpet/models/whisper/large-v3",
+    "device": "auto",
+    "input_device": ""
+  },
+  "character": {
+    "user_name": "主人",
+    "portrait": "b",
+    "outfit": "kimono",
+    "personality_file": "prompt.txt"
+  },
+  "display": {
+    "screen_index": 0,
+    "portrait_screen_ratio": 0.8,
+    "show_log_console": false
+  },
+  "idle": {
+    "do_not_disturb": false,
+    "thinking_minutes": 6,
+    "away_minutes": 10
+  },
+  "history_limit": 30
+}
