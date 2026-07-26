@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -325,10 +324,9 @@ def _locate_runtime_python(engine_root: Path) -> Path:
             candidate = directory / name
             if candidate.is_file():
                 return candidate.resolve()
-    current = Path(sys.executable)
-    if current.is_file():
-        return current.resolve()
-    raise TTSServiceError("No Python runtime was found for GPT-SoVITS.")
+    raise TTSServiceError(
+        "GPT-SoVITS does not contain a bundled Python runtime."
+    )
 
 
 def _report(callback: ProgressCallback | None, stage: str) -> None:

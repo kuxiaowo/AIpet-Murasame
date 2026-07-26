@@ -7,11 +7,15 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
+from main import run_special_mode
+from tool import runtime_logging
 from tool.log_viewer import _print_appended, _print_recent
 from tool.runtime_logging import (
     DailyFileHandler,
     _console_python_executable,
+    _viewer_command,
     format_json_for_log,
 )
 
@@ -87,6 +91,55 @@ class RuntimeLoggingTests(unittest.TestCase):
                 _console_python_executable(str(python)),
                 str(python),
             )
+
+    def test_source_viewer_command_runs_log_viewer_script(self) -> None:
+        with (
+            patch.object(runtime_logging.sys, "executable", "python.exe"),
+            patch.object(
+                runtime_logging.sys,
+                "frozen",
+                False,
+                create=True,
+            ),
+        ):
+            command = _viewer_command(Path("C:/logs"), 123)
+
+        self.assertEqual(
+            command,
+            [
+                "python.exe",
+                str(runtime_logging.LOG_VIEWER),
+                "C:\\logs",
+                "123",
+            ],
+        )
+
+    def test_frozen_viewer_command_reuses_exe_special_mode(self) -> None:
+        with (
+            patch.object(runtime_logging.sys, "executable", "AIpet.exe"),
+            patch.object(
+                runtime_logging.sys,
+                "frozen",
+                True,
+                create=True,
+            ),
+        ):
+            command = _viewer_command(Path("C:/logs"), 123)
+
+        self.assertEqual(
+            command,
+            ["AIpet.exe", "--log-viewer", "C:\\logs", "123"],
+        )
+
+    def test_main_dispatches_log_viewer_special_mode(self) -> None:
+        with patch("tool.log_viewer.follow") as follow:
+            result = run_special_mode(
+                ["AIpet.exe", "--log-viewer", "C:/logs", "123"]
+            )
+
+        self.assertEqual(result, 0)
+        follow.assert_called_once_with(Path("C:/logs"), 123)
+        self.assertIsNone(run_special_mode(["AIpet.exe"]))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PyQt5.QtCore import QObject, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
@@ -62,6 +63,23 @@ UI_TEXT = {
         "save_failed": "设置保存失败",
     },
 }
+
+
+def run_special_mode(argv: list[str] | None = None) -> int | None:
+    args = sys.argv if argv is None else argv
+    if len(args) < 2 or args[1] != "--log-viewer":
+        return None
+    if len(args) != 4:
+        return 2
+    try:
+        parent_process_id = int(args[3])
+    except ValueError:
+        return 2
+
+    from tool.log_viewer import follow
+
+    follow(Path(args[2]), parent_process_id)
+    return 0
 
 
 def ui_text(settings: AppSettings, key: str, **values: object) -> str:
@@ -418,4 +436,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    special_mode_result = run_special_mode()
+    raise SystemExit(
+        main() if special_mode_result is None else special_mode_result
+    )

@@ -13,12 +13,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
+from tool.config import get_user_data_dir
+
 
 LOGGER_NAME = "aipet"
 LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LOG_DIRECTORY = PROJECT_ROOT / "logs"
-LEGACY_LOG_PATH = LOG_DIRECTORY / "aipet.log"
+LOG_DIRECTORY = get_user_data_dir() / "logs"
+LEGACY_LOG_PATH = PROJECT_ROOT / "logs" / "aipet.log"
 LOG_VIEWER = Path(__file__).with_name("log_viewer.py")
 
 _file_handler: DailyFileHandler | None = None
@@ -245,14 +247,8 @@ def _ensure_viewer() -> bool:
         return False
 
     try:
-        executable = _console_python_executable(sys.executable)
         _viewer_process = subprocess.Popen(
-            [
-                executable,
-                str(LOG_VIEWER),
-                str(LOG_DIRECTORY),
-                str(os.getpid()),
-            ],
+            _viewer_command(LOG_DIRECTORY, os.getpid()),
             cwd=str(PROJECT_ROOT),
             creationflags=subprocess.CREATE_NEW_CONSOLE,
             close_fds=True,
@@ -262,6 +258,26 @@ def _ensure_viewer() -> bool:
         get_logger("startup").exception("无法打开实时日志窗口")
         return False
     return True
+
+
+def _viewer_command(
+    log_directory: Path,
+    parent_process_id: int,
+) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [
+            sys.executable,
+            "--log-viewer",
+            str(log_directory),
+            str(parent_process_id),
+        ]
+
+    return [
+        _console_python_executable(sys.executable),
+        str(LOG_VIEWER),
+        str(log_directory),
+        str(parent_process_id),
+    ]
 
 
 def _console_python_executable(executable: str) -> str:

@@ -39,6 +39,17 @@ class TTSServiceTests(unittest.TestCase):
                 environment["PATH"].startswith(str(engine / "runtime"))
             )
 
+    def test_build_command_requires_engine_python_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            engine = self._create_engine(Path(directory))
+            (engine / "runtime" / "python.exe").unlink()
+
+            with self.assertRaisesRegex(
+                TTSServiceError,
+                "does not contain a bundled Python runtime",
+            ):
+                _build_start_command(engine, ("127.0.0.1", 9880))
+
     def test_ensure_running_launches_once_and_stop_only_owned_process(
         self,
     ) -> None:
