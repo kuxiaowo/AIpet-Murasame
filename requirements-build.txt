@@ -1,2 +1,0 @@
--r requirements-voice.txt
-pyinstaller==6.21.0

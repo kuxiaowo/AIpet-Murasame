@@ -5,7 +5,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files
 
 
-project_root = Path(SPECPATH)
+project_root = Path(SPECPATH).parent
 
 datas = [
     (str(project_root / "fgimages"), "fgimages"),

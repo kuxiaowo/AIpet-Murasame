@@ -6,9 +6,10 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$requirementsPath = Join-Path $projectRoot "requirements-build.txt"
-$specPath = Join-Path $projectRoot "AIpet.spec"
+$packagingRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent $packagingRoot
+$requirementsPath = Join-Path $packagingRoot "requirements-build.txt"
+$specPath = Join-Path $packagingRoot "AIpet.spec"
 $distPath = Join-Path $projectRoot "dist"
 $workPath = Join-Path $projectRoot "build"
 
