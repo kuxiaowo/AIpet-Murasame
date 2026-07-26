@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import subprocess
 import sys
 import time
+import uuid
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 
 LOGGER_NAME = "aipet"
@@ -25,6 +29,12 @@ _base_logger = logging.getLogger(LOGGER_NAME)
 _base_logger.setLevel(logging.INFO)
 _base_logger.propagate = False
 _base_logger.addHandler(logging.NullHandler())
+
+
+@dataclass(frozen=True)
+class RequestLogContext:
+    request_id: str
+    started_at: float
 
 
 class DailyFileHandler(logging.Handler):
@@ -113,9 +123,20 @@ def log_request(
     logger: logging.Logger,
     method: str,
     url: str,
-) -> float:
-    logger.info("请求开始 | %s %s", method.upper(), url)
-    return time.monotonic()
+    payload: Any = None,
+) -> RequestLogContext:
+    context = RequestLogContext(
+        request_id=uuid.uuid4().hex[:8],
+        started_at=time.monotonic(),
+    )
+    logger.info(
+        "请求发出 | ID=%s | %s %s | JSON=\n%s",
+        context.request_id,
+        method.upper(),
+        url,
+        format_json_for_log({} if payload is None else payload),
+    )
+    return context
 
 
 def log_response(
@@ -123,16 +144,96 @@ def log_response(
     method: str,
     url: str,
     status_code: int,
-    started_at: float,
+    context: RequestLogContext,
+    payload: Any,
 ) -> None:
-    elapsed_ms = (time.monotonic() - started_at) * 1_000
+    elapsed_ms = (time.monotonic() - context.started_at) * 1_000
     logger.info(
-        "请求完成 | %s %s | HTTP %s | %.0f ms",
+        "收到响应 | ID=%s | %s %s | HTTP %s | %.0f ms | JSON=\n%s",
+        context.request_id,
         method.upper(),
         url,
         status_code,
         elapsed_ms,
+        format_json_for_log(payload),
     )
+
+
+def log_event(
+    logger: logging.Logger,
+    event: str,
+    **details: Any,
+) -> None:
+    logger.info(
+        "事件 | %s | JSON=%s",
+        event,
+        format_json_for_log(details, indent=None),
+    )
+
+
+def format_json_for_log(payload: Any, *, indent: int | None = 2) -> str:
+    """Serialize JSON safely while keeping diagnostic data readable.
+
+    Image/audio base64 blobs are represented by metadata. Logging those blobs
+    verbatim would rapidly create multi-gigabyte daily logs and make the live
+    viewer unusable.
+    """
+    sanitized = _sanitize_log_value(payload)
+    try:
+        return json.dumps(
+            sanitized,
+            ensure_ascii=False,
+            indent=indent,
+            default=str,
+        )
+    except (TypeError, ValueError):
+        return json.dumps(
+            {"unserializable": repr(sanitized)},
+            ensure_ascii=False,
+            indent=indent,
+        )
+
+
+def _sanitize_log_value(value: Any, key: str = "") -> Any:
+    normalized_key = key.lower().replace("-", "_")
+    if normalized_key in {
+        "api_key",
+        "apikey",
+        "authorization",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+    }:
+        return "<已脱敏>"
+    if isinstance(value, dict):
+        return {
+            str(item_key): _sanitize_log_value(item, str(item_key))
+            for item_key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_log_value(item, key) for item in value]
+    if isinstance(value, str) and _looks_like_base64_blob(
+        value,
+        normalized_key,
+    ):
+        digest = hashlib.sha256(
+            value.encode("ascii", errors="ignore")
+        ).hexdigest()
+        media_type = "base64"
+        if value.startswith("data:"):
+            media_type = value[5:].split(";", 1)[0] or media_type
+        return (
+            f"<{media_type} 数据已省略；字符数={len(value)}；"
+            f"sha256={digest}>"
+        )
+    return value
+
+
+def _looks_like_base64_blob(value: str, key: str) -> bool:
+    if value.startswith("data:") and ";base64," in value[:128]:
+        return True
+    return key in {"image", "images", "audio"} and len(value) > 1_024
 
 
 def _ensure_viewer() -> bool:
@@ -144,22 +245,32 @@ def _ensure_viewer() -> bool:
         return False
 
     try:
+        executable = _console_python_executable(sys.executable)
         _viewer_process = subprocess.Popen(
             [
-                sys.executable,
+                executable,
                 str(LOG_VIEWER),
                 str(LOG_DIRECTORY),
                 str(os.getpid()),
             ],
             cwd=str(PROJECT_ROOT),
-            stdin=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NEW_CONSOLE,
+            close_fds=True,
         )
     except OSError:
         _viewer_process = None
         get_logger("startup").exception("无法打开实时日志窗口")
         return False
     return True
+
+
+def _console_python_executable(executable: str) -> str:
+    """Use python.exe even when the Qt application was started by pythonw.exe."""
+    path = Path(executable)
+    if path.name.lower() != "pythonw.exe":
+        return str(path)
+    console_python = path.with_name("python.exe")
+    return str(console_python) if console_python.is_file() else str(path)
 
 
 def _migrate_legacy_log() -> None:

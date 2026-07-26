@@ -19,8 +19,7 @@ import requests
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 from tool.runtime_logging import get_logger
-from tool.tts_assets import managed_gpt_sovits_dir, managed_tts_model_dir
-from tool.whisper_models import managed_whisper_dir, model_repository
+from tool.whisper_models import model_repository
 
 
 logger = get_logger("download")
@@ -80,6 +79,8 @@ class AssetDownloadWorker(QThread):
         identifier: str,
         destination: Path,
         include_tts_engine: bool = False,
+        *,
+        tts_engine_destination: Path | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -88,6 +89,7 @@ class AssetDownloadWorker(QThread):
         self.identifier = identifier
         self.destination = destination
         self.include_tts_engine = include_tts_engine
+        self.tts_engine_destination = tts_engine_destination
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
@@ -306,10 +308,12 @@ class AssetDownloadWorker(QThread):
         )
         if archive_item is None:
             raise RuntimeError("GPT-SoVITS engine archive was not prepared")
+        if self.tts_engine_destination is None:
+            raise RuntimeError("GPT-SoVITS download directory was not provided")
         archive = self.destination / archive_item.relative_path
         _extract_gpt_sovits_archive(
             archive,
-            managed_gpt_sovits_dir(),
+            self.tts_engine_destination,
             progress_callback=lambda completed, count, current: (
                 self.extracting.emit(
                     self.job_id,
@@ -342,20 +346,34 @@ class DownloadManager(QObject):
     def snapshot(self, job_id: str) -> DownloadSnapshot:
         return self._snapshots.get(job_id, DownloadSnapshot())
 
-    def start_whisper(self, model_name: str) -> str:
+    def start_whisper(
+        self,
+        model_name: str,
+        destination: Path,
+    ) -> str:
         repository = model_repository(model_name)
         job_id = whisper_job_id(repository)
-        destination = managed_whisper_dir(repository)
         self._start(job_id, "whisper", repository, destination)
         return job_id
 
-    def start_tts(self, *, include_engine: bool = False) -> str:
+    def start_tts(
+        self,
+        model_destination: Path,
+        *,
+        include_engine: bool = False,
+        engine_destination: Path | None = None,
+    ) -> str:
+        if include_engine and engine_destination is None:
+            raise ValueError(
+                "GPT-SoVITS download directory is required"
+            )
         self._start(
             TTS_JOB_ID,
             "tts",
             TTS_MODEL_NAME,
-            managed_tts_model_dir(),
+            model_destination,
             include_tts_engine=include_engine,
+            tts_engine_destination=engine_destination,
         )
         return TTS_JOB_ID
 
@@ -366,6 +384,7 @@ class DownloadManager(QObject):
         identifier: str,
         destination: Path,
         include_tts_engine: bool = False,
+        tts_engine_destination: Path | None = None,
     ) -> None:
         existing = self._workers.get(job_id)
         if existing is not None and existing.isRunning():
@@ -377,7 +396,8 @@ class DownloadManager(QObject):
             identifier,
             destination,
             include_tts_engine,
-            self,
+            tts_engine_destination=tts_engine_destination,
+            parent=self,
         )
         self._workers[job_id] = worker
         self._publish(

@@ -35,6 +35,7 @@
   "stt": {
     "enabled": false,
     "model": "large-v3",
+    "model_dir": "",
     "device": "auto"
   },
   "character": {
@@ -48,6 +49,7 @@
     "show_log_console": false
   },
   "idle": {
+    "do_not_disturb": false,
     "thinking_minutes": 6,
     "away_minutes": 10
   },

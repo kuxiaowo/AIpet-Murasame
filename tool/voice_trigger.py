@@ -87,6 +87,7 @@ class CapslockVoiceTrigger:
         on_record_start: Optional[Callable[[], None]] = None,
         on_record_end: Optional[Callable[[], None]] = None,
         model_name: str = "large-v3",
+        model_directory: str = "",
         device: str = "auto",
         on_error: Optional[Callable[[str], None]] = None,
     ):
@@ -95,6 +96,7 @@ class CapslockVoiceTrigger:
         self.on_record_start = on_record_start
         self.on_record_end = on_record_end
         self.model_name = model_name
+        self.model_directory = model_directory
         self.device = device
         self.on_error = on_error
 
@@ -191,6 +193,7 @@ class CapslockVoiceTrigger:
                 text = transcribe_full(
                     saved,
                     model_size=self.model_name,
+                    model_directory=self.model_directory,
                     device=self.device,
                 )
                 text = (text or "").strip()

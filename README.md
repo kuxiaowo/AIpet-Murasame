@@ -47,11 +47,11 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 - **Selectable models** — configure chat and vision models independently.
 - **Built-in providers** — DeepSeek, Alibaba Cloud, OpenAI, and local Ollama.
 - **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
-- **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, and one of six emotions.
-- **Deterministic portraits** — emotions map to known portrait layers in code; model changes cannot invent broken layer IDs.
+- **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, one of six emotions, and a safe `a`/`b` portrait pose.
+- **Deterministic portraits** — the model may switch between the two validated poses, while pose and emotion map to known portrait layers in code; model changes cannot invent broken layer IDs.
 - **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
-- **Live diagnostic console** — optionally open a real-time command window with backend requests, worker progress, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`.
-- **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, then analyzed in the background.
+- **Live diagnostic console** — optionally open a real-time command window with correlated request/response JSON, worker events, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`; API secrets are redacted and large base64 media is represented by length and SHA-256 metadata.
+- **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, the pet window is masked before analysis, and the vision model can identify likely on-screen characters including Murasame.
 - **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
 - **Private user state** — configuration, keys, and conversation history live outside the Git repository.
 
@@ -173,7 +173,7 @@ Open **Settings…** from the tray menu at any time.
 - Edit server URLs and timeout values.
 - Select an independent Ollama, Alibaba Cloud, or OpenAI vision backend.
 - Enable or disable DeepSeek V4 thinking mode.
-- Select a built-in faster-whisper model or enter a local directory. AIpet checks only that directory or its managed default—never other Hugging Face caches—and can download a selected model with in-card byte progress.
+- Select a faster-whisper model or repository ID and an explicit download directory. AIpet downloads and loads the model from that exact directory and prompts when it is missing.
 - Switch the settings and tray UI between English and Simplified Chinese.
 - Limit Ollama's context window to avoid unexpectedly large model allocations.
 - Model lists load automatically when Settings opens. Use the connection
@@ -201,6 +201,7 @@ AIpet adds the structured response contract automatically. The personality file 
 - Download missing Murasame GPT/SoVITS weights with resumable in-card progress after accepting the model notice.
 - Configure optional faster-whisper input.
 - Select a display, portrait scale, idle thresholds, and history size.
+- Persist Do Not Disturb from either Settings or the tray, and clear saved conversation history from Settings with confirmation.
 
 ## Data and API keys
 
@@ -213,7 +214,7 @@ On Windows, user data is stored under:
 └── personality.txt
 ```
 
-Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`; managed Whisper and TTS models use the repository's `models` directory. Set `AIPET_MODEL_DIR` only when an explicit override is needed. The project-local model directory is ignored by Git.
+Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`. New Whisper and TTS downloads use the directories entered in Settings and stop with a prompt when a required directory is blank. The repository's `models` directory, optionally overridden with `AIPET_MODEL_DIR`, is retained only for discovering assets downloaded by older versions and is ignored by Git.
 
 API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, or `OPENAI_API_KEY`. Runtime files and secrets are ignored by Git.
 
@@ -229,7 +230,7 @@ http://127.0.0.1:9880/tts
 
 The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. Reference audio is stored under `reference_voices` inside the configured voice model directory, so only one voice model path is required.
 
-For a loopback endpoint, AIpet checks the path entered by the user, or only its managed default directory when the field is empty. It no longer scans environment variables or nearby folders for models. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice` and are downloaded into the voice model directory.
+For a loopback endpoint, the two path fields are also the exact download destinations: character weights and references go to the voice model directory, while the engine archive is extracted into the GPT-SoVITS directory. Downloading prompts for any required path left empty. AIpet no longer silently redirects a new download to the project model directory. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice`.
 
 When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. Remote endpoints are health-checked but never launched or stopped locally.
 

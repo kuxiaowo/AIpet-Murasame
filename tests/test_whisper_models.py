@@ -75,6 +75,10 @@ class WhisperModelTests(unittest.TestCase):
                     find_local_model("large-v3"),
                     str(managed.resolve()),
                 )
+            self.assertEqual(
+                find_local_model("large-v3", str(managed)),
+                str(managed.resolve()),
+            )
 
     def test_missing_named_model_does_not_search_other_caches(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -91,7 +95,7 @@ class WhisperModelTests(unittest.TestCase):
         with (
             patch.dict(sys.modules, {"faster_whisper": module}),
             patch("tool.stt.find_local_model", return_value=None),
-            self.assertRaisesRegex(RuntimeError, "managed default"),
+            self.assertRaisesRegex(RuntimeError, "configured model directory"),
         ):
             transcribe_full("audio.wav", model_size="large-v3")
         whisper_model.assert_not_called()

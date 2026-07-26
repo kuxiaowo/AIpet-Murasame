@@ -55,7 +55,6 @@ from tool.tts_assets import (
     TTSAssetState,
     configure_local_tts_weights,
     locate_tts_assets,
-    managed_tts_model_dir,
     tts_service_is_reachable,
 )
 from tool.tts_service import (
@@ -74,10 +73,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "en": {
         "title_setup": "AIpet Initial Setup",
         "title_settings": "AIpet Settings",
-        "intro": (
-            "Configure the model backend, vision, voice, and character prompt. "
-            "No local LoRA or chat Transformer is loaded."
-        ),
         "language": "Language / 语言",
         "tab_models": "Language models",
         "tab_extensions": "Extensions",
@@ -120,7 +115,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "identity_group": "Identity",
         "user_name": "User name",
-        "portrait_set": "Portrait set",
+        "portrait_set": "Default portrait set",
         "portrait_a": "Portrait A",
         "portrait_b": "Portrait B",
         "prompt_group": "Personality prompt",
@@ -151,8 +146,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_enabled": "Use GPT-SoVITS-compatible TTS",
         "tts_endpoint": "TTS endpoint",
         "tts_timeout": "TTS timeout",
-        "tts_engine_root": "GPT-SoVITS directory",
-        "tts_model_dir": "Voice model directory (includes references)",
+        "tts_engine_root": "GPT-SoVITS download/install directory",
+        "tts_model_dir": "Voice model download directory (includes references)",
         "browse": "Browse…",
         "tts_disabled": (
             "Enable TTS to check the engine, voice model, references, and service."
@@ -213,17 +208,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "files",
         "download_steps": "steps",
         "stt_enabled": "Hold Caps Lock for speech input",
-        "whisper_model": "Whisper model or local directory",
+        "whisper_model": "Whisper model or repository ID",
+        "whisper_model_dir": "Whisper model download directory",
         "stt_device": "STT device",
         "whisper_download": "Download model",
         "whisper_disabled": (
-            "Enable speech input to check the selected path or managed default."
+            "Enable speech input to check the selected download directory."
         ),
-        "whisper_checking": "Checking the selected or managed model directory…",
+        "whisper_checking": "Checking the selected model directory…",
         "whisper_installed": "Available locally: {path}",
         "whisper_missing": (
-            "Not found in the selected path or managed default directory. "
-            "Enter a local path or download the selected model."
+            "The selected model is not available in the download directory. "
+            "Choose a directory, then download the model."
         ),
         "whisper_path_missing": (
             "The entered local model directory is incomplete or does not exist."
@@ -235,7 +231,30 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_verifying": "Checking {model}: {detail}",
         "whisper_downloaded": "Download complete. Available locally: {path}",
         "whisper_download_failed": "Download failed: {message}",
+        "download_path_required_title": "Download directory required",
+        "tts_model_path_required": (
+            "Select the voice model download directory before downloading."
+        ),
+        "tts_engine_path_required": (
+            "Select the GPT-SoVITS download/install directory before "
+            "downloading the engine."
+        ),
+        "whisper_path_required": (
+            "Select the Whisper model download directory before downloading."
+        ),
+        "download_path_invalid": "The selected directory cannot be used: {message}",
         "automation_group": "Idle behavior and memory",
+        "do_not_disturb": "Do not disturb",
+        "clear_history": "Clear conversation history…",
+        "clear_history_confirm_title": "Clear conversation history?",
+        "clear_history_confirm_body": (
+            "This immediately removes all saved conversation history. "
+            "The action cannot be undone by cancelling this settings window."
+        ),
+        "history_cleared": "Conversation history has been cleared.",
+        "history_unavailable_first_run": (
+            "Conversation history is not available during initial setup."
+        ),
         "display_group": "Screen and portrait",
         "screen_index": "Screen index",
         "portrait_ratio": "Portrait height ratio",
@@ -284,10 +303,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "zh-CN": {
         "title_setup": "AIpet 初始设置",
         "title_settings": "AIpet 设置",
-        "intro": (
-            "配置模型后端、视觉、语音和角色提示词。"
-            "程序不会加载本地 LoRA 或聊天 Transformer。"
-        ),
         "language": "界面语言 / Language",
         "tab_models": "语言模型",
         "tab_extensions": "拓展功能",
@@ -329,7 +344,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "identity_group": "身份",
         "user_name": "用户名称",
-        "portrait_set": "立绘组",
+        "portrait_set": "默认立绘组",
         "portrait_a": "立绘 A",
         "portrait_b": "立绘 B",
         "prompt_group": "人格提示词",
@@ -356,8 +371,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_enabled": "使用 GPT-SoVITS 兼容 TTS",
         "tts_endpoint": "TTS 地址",
         "tts_timeout": "TTS 超时",
-        "tts_engine_root": "GPT-SoVITS 目录",
-        "tts_model_dir": "角色语音模型目录（含参考音频）",
+        "tts_engine_root": "GPT-SoVITS 下载及安装目录",
+        "tts_model_dir": "角色语音模型下载目录（含参考音频）",
         "browse": "浏览…",
         "tts_disabled": "启用 TTS 后，将检查引擎、角色模型、参考音频和服务。",
         "tts_invalid": "请先填写有效的 TTS 地址。",
@@ -407,15 +422,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "个文件",
         "download_steps": "个步骤",
         "stt_enabled": "长按 Caps Lock 进行语音输入",
-        "whisper_model": "Whisper 模型或本地目录",
+        "whisper_model": "Whisper 模型或仓库 ID",
+        "whisper_model_dir": "Whisper 模型下载目录",
         "stt_device": "语音识别设备",
         "whisper_download": "下载模型",
-        "whisper_disabled": "启用语音输入后，将检查填写目录或程序管理的默认目录。",
-        "whisper_checking": "正在检查填写目录或程序管理的默认目录……",
+        "whisper_disabled": "启用语音输入后，将检查填写的模型下载目录。",
+        "whisper_checking": "正在检查填写的模型目录……",
         "whisper_installed": "本地已安装：{path}",
         "whisper_missing": (
-            "填写目录和程序管理的默认目录中均未找到。"
-            "可填写本地目录，或下载当前所选模型。"
+            "填写的下载目录中没有可用的所选模型。"
+            "请选择目录，然后下载模型。"
         ),
         "whisper_path_missing": "填写的本地模型目录不存在或模型文件不完整。",
         "whisper_downloading": "正在下载 {model}：{detail}",
@@ -423,7 +439,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_verifying": "正在校验 {model}：{detail}",
         "whisper_downloaded": "下载完成，本地路径：{path}",
         "whisper_download_failed": "下载失败：{message}",
+        "download_path_required_title": "需要填写下载目录",
+        "tts_model_path_required": "请先选择角色语音模型下载目录。",
+        "tts_engine_path_required": "请先选择 GPT-SoVITS 下载及安装目录。",
+        "whisper_path_required": "请先选择 Whisper 模型下载目录。",
+        "download_path_invalid": "无法使用所选目录：{message}",
         "automation_group": "空闲行为与记忆",
+        "do_not_disturb": "勿扰模式",
+        "clear_history": "清除历史对话…",
+        "clear_history_confirm_title": "确定清除历史对话？",
+        "clear_history_confirm_body": (
+            "这会立即清除全部已保存的历史对话。"
+            "即使之后取消设置，也无法撤销该操作。"
+        ),
+        "history_cleared": "历史对话已清除。",
+        "history_unavailable_first_run": "首次设置时没有可清除的历史对话。",
         "display_group": "屏幕与立绘",
         "screen_index": "屏幕编号",
         "portrait_ratio": "立绘高度比例",
@@ -499,15 +529,24 @@ class ModelListWorker(QThread):
 
 
 class WhisperModelCheckWorker(QThread):
-    checked = pyqtSignal(str, str)
+    checked = pyqtSignal(str, str, str)
 
-    def __init__(self, model_name: str, parent=None):
+    def __init__(
+        self,
+        model_name: str,
+        model_directory: str,
+        parent=None,
+    ):
         super().__init__(parent)
         self.model_name = model_name
+        self.model_directory = model_directory
 
     def run(self) -> None:
-        path = find_local_model(self.model_name) or ""
-        self.checked.emit(self.model_name, path)
+        path = find_local_model(
+            self.model_name,
+            self.model_directory,
+        ) or ""
+        self.checked.emit(self.model_name, self.model_directory, path)
 
 
 class TTSCheckWorker(QThread):
@@ -576,6 +615,8 @@ class TTSServiceWorker(QThread):
 class SettingsDialog(QDialog):
     """Visual bilingual configuration and personality creation window."""
 
+    clear_history_requested = pyqtSignal()
+
     def __init__(
         self,
         settings: AppSettings,
@@ -592,7 +633,7 @@ class SettingsDialog(QDialog):
         self._model_fetch_queue: list[bool] = []
         self._auto_models_requested = False
         self._whisper_check_worker: WhisperModelCheckWorker | None = None
-        self._pending_whisper_model: str | None = None
+        self._pending_whisper_model: tuple[str, str] | None = None
         self._tts_check_worker: TTSCheckWorker | None = None
         self._tts_service_worker: TTSServiceWorker | None = None
         self._tts_service_error: str | None = None
@@ -616,10 +657,6 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(700, 650)
         self.resize(760, 720)
         root = QVBoxLayout(self)
-
-        self.intro_label = QLabel()
-        self.intro_label.setWordWrap(True)
-        root.addWidget(self.intro_label)
 
         language_form = QFormLayout()
         self.language_label = QLabel()
@@ -654,6 +691,9 @@ class SettingsDialog(QDialog):
         )
         self.stt_enabled.toggled.connect(self._update_whisper_state)
         self.stt_model.currentTextChanged.connect(self._update_whisper_state)
+        self.whisper_model_dir.editingFinished.connect(
+            self._update_whisper_state
+        )
         self.tts_enabled.toggled.connect(self._update_tts_state)
         self.tts_url.editingFinished.connect(self._update_tts_state)
         self.tts_engine_root.editingFinished.connect(self._update_tts_state)
@@ -919,6 +959,11 @@ class SettingsDialog(QDialog):
         self.stt_enabled = QCheckBox()
         self.stt_model = self._editable_combo()
         self.stt_model.addItems(WHISPER_MODELS)
+        self.whisper_model_dir = QLineEdit()
+        self.whisper_model_browse = QPushButton()
+        self.whisper_model_browse.clicked.connect(
+            self._browse_whisper_model
+        )
         self.stt_device = QComboBox()
         self.stt_device.addItems(["auto", "cuda", "cpu"])
         self.whisper_status = QLabel()
@@ -960,6 +1005,14 @@ class SettingsDialog(QDialog):
         whisper_form = QFormLayout(self.whisper_group)
         whisper_form.addRow(self.stt_enabled)
         self._add_row(whisper_form, "whisper_model", self.stt_model)
+        self._add_row(
+            whisper_form,
+            "whisper_model_dir",
+            self._path_picker(
+                self.whisper_model_dir,
+                self.whisper_model_browse,
+            ),
+        )
         whisper_form.addRow(self.whisper_status)
         whisper_form.addRow(self.whisper_progress)
         whisper_form.addRow(self.whisper_download_button)
@@ -1038,6 +1091,8 @@ class SettingsDialog(QDialog):
         self.thinking_minutes = self._spinbox(1, 1_440)
         self.away_minutes = self._spinbox(2, 1_440)
         self.history_limit = self._spinbox(4, 200)
+        self.do_not_disturb = QCheckBox()
+        self.clear_history_button = QPushButton()
         self._add_row(
             behavior_form,
             "thinking_reminder",
@@ -1048,6 +1103,12 @@ class SettingsDialog(QDialog):
             behavior_form,
             "conversation_memory",
             self.history_limit,
+        )
+        behavior_form.addRow(self.do_not_disturb)
+        behavior_form.addRow(self.clear_history_button)
+        self.clear_history_button.setEnabled(not self._first_run)
+        self.clear_history_button.clicked.connect(
+            self._confirm_clear_history
         )
         layout.addWidget(self.automation_group)
         layout.addStretch(1)
@@ -1205,6 +1266,7 @@ class SettingsDialog(QDialog):
         self.tts_model_dir.setText(settings.tts.model_dir)
         self.stt_enabled.setChecked(settings.stt.enabled)
         self._set_editable_combo(self.stt_model, settings.stt.model)
+        self.whisper_model_dir.setText(settings.stt.model_dir)
         self.stt_device.setCurrentText(settings.stt.device)
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
@@ -1215,6 +1277,7 @@ class SettingsDialog(QDialog):
         )
         self.thinking_minutes.setValue(settings.idle.thinking_minutes)
         self.away_minutes.setValue(settings.idle.away_minutes)
+        self.do_not_disturb.setChecked(settings.idle.do_not_disturb)
         self.history_limit.setValue(settings.history_limit)
 
     def _language(self) -> str:
@@ -1231,7 +1294,6 @@ class SettingsDialog(QDialog):
     def _retranslate_ui(self) -> None:
         title_key = "title_setup" if self._first_run else "title_settings"
         self.setWindowTitle(self._text(title_key))
-        self.intro_label.setText(self._text("intro"))
         self.language_label.setText(self._text("language"))
         self.tabs.setTabText(0, self._text("tab_models"))
         self.tabs.setTabText(1, self._text("tab_extensions"))
@@ -1301,6 +1363,15 @@ class SettingsDialog(QDialog):
         )
 
         self.deepseek_thinking.setText(self._text("deepseek_thinking"))
+        self.do_not_disturb.setText(self._text("do_not_disturb"))
+        self.clear_history_button.setText(self._text("clear_history"))
+        self.clear_history_button.setToolTip(
+            (
+                ""
+                if not self._first_run
+                else self._text("history_unavailable_first_run")
+            )
+        )
         self.deepseek_note.setText(self._text("deepseek_note"))
         self.fetch_models_button.setText(self._text("load_models"))
         self.model_list_help.setText(self._text("model_list_help"))
@@ -1328,6 +1399,7 @@ class SettingsDialog(QDialog):
         self.whisper_download_button.setText(
             self._text("whisper_download")
         )
+        self.whisper_model_browse.setText(self._text("browse"))
         self.deepseek_key.setPlaceholderText(
             self._text("password_placeholder")
         )
@@ -1419,6 +1491,7 @@ class SettingsDialog(QDialog):
             return
         enabled = self.stt_enabled.isChecked()
         model_name = self.stt_model.currentText().strip()
+        model_directory = self.whisper_model_dir.text().strip()
         repository = model_repository(model_name) if model_name else ""
         snapshot = self.download_manager.snapshot(
             whisper_job_id(repository)
@@ -1429,6 +1502,8 @@ class SettingsDialog(QDialog):
             "downloading",
         }
         self.stt_model.setEnabled(enabled and not downloading)
+        self.whisper_model_dir.setEnabled(enabled and not downloading)
+        self.whisper_model_browse.setEnabled(enabled and not downloading)
         self.stt_device.setEnabled(enabled)
         self.whisper_download_button.setEnabled(False)
         self._render_progress(self.whisper_progress, snapshot)
@@ -1445,14 +1520,25 @@ class SettingsDialog(QDialog):
             self._whisper_check_worker is not None
             and self._whisper_check_worker.isRunning()
         ):
-            self._pending_whisper_model = model_name
+            self._pending_whisper_model = (
+                model_name,
+                model_directory,
+            )
             self._set_whisper_status("whisper_checking")
             return
-        self._start_whisper_check(model_name)
+        self._start_whisper_check(model_name, model_directory)
 
-    def _start_whisper_check(self, model_name: str) -> None:
+    def _start_whisper_check(
+        self,
+        model_name: str,
+        model_directory: str,
+    ) -> None:
         self._set_whisper_status("whisper_checking")
-        worker = WhisperModelCheckWorker(model_name, self)
+        worker = WhisperModelCheckWorker(
+            model_name,
+            model_directory,
+            self,
+        )
         self._whisper_check_worker = worker
         worker.checked.connect(self._on_whisper_checked)
         worker.finished.connect(
@@ -1460,10 +1546,16 @@ class SettingsDialog(QDialog):
         )
         worker.start()
 
-    def _on_whisper_checked(self, model_name: str, path: str) -> None:
+    def _on_whisper_checked(
+        self,
+        model_name: str,
+        model_directory: str,
+        path: str,
+    ) -> None:
         if (
             not self.stt_enabled.isChecked()
             or model_name != self.stt_model.currentText().strip()
+            or model_directory != self.whisper_model_dir.text().strip()
         ):
             return
         if path:
@@ -1506,13 +1598,16 @@ class SettingsDialog(QDialog):
             return
         pending = self._pending_whisper_model
         self._pending_whisper_model = None
-        current = self.stt_model.currentText().strip()
+        current = (
+            self.stt_model.currentText().strip(),
+            self.whisper_model_dir.text().strip(),
+        )
         if (
             self.stt_enabled.isChecked()
             and pending
             and pending == current
         ):
-            self._start_whisper_check(pending)
+            self._start_whisper_check(*pending)
 
     def _download_whisper_model(self) -> None:
         model_name = self.stt_model.currentText().strip()
@@ -1523,10 +1618,21 @@ class SettingsDialog(QDialog):
         ):
             return
 
-        job_id = self.download_manager.start_whisper(model_name)
+        destination = self._require_download_directory(
+            self.whisper_model_dir,
+            "whisper_path_required",
+        )
+        if destination is None:
+            return
+        job_id = self.download_manager.start_whisper(
+            model_name,
+            destination,
+        )
         snapshot = self.download_manager.snapshot(job_id)
         self.whisper_download_button.setEnabled(False)
         self.stt_model.setEnabled(False)
+        self.whisper_model_dir.setEnabled(False)
+        self.whisper_model_browse.setEnabled(False)
         self._render_whisper_download(model_name, snapshot)
 
     def _render_whisper_download(
@@ -1556,15 +1662,33 @@ class SettingsDialog(QDialog):
             detail=detail,
         )
 
+    def _set_tts_path_controls(self, *, downloading: bool) -> None:
+        enabled = self.tts_enabled.isChecked()
+        local_endpoint = is_loopback_url(self.tts_url.text().strip())
+        self.tts_engine_root.setEnabled(
+            enabled and local_endpoint and not downloading
+        )
+        self.tts_engine_browse.setEnabled(
+            enabled and local_endpoint and not downloading
+        )
+        self.tts_model_dir.setEnabled(enabled and not downloading)
+        self.tts_model_browse.setEnabled(enabled and not downloading)
+
     def _update_tts_state(self) -> None:
         if not hasattr(self, "tts_status"):
             return
         enabled = self.tts_enabled.isChecked()
         local_endpoint = is_loopback_url(self.tts_url.text().strip())
-        self.tts_engine_root.setEnabled(enabled and local_endpoint)
-        self.tts_engine_browse.setEnabled(enabled and local_endpoint)
-        self.tts_model_dir.setEnabled(enabled)
-        self.tts_model_browse.setEnabled(enabled)
+        snapshot = self.download_manager.snapshot(TTS_JOB_ID)
+        downloading = snapshot.status in {
+            "preparing",
+            "checking",
+            "downloading",
+            "extracting",
+            "installing",
+            "cleaning",
+        }
+        self._set_tts_path_controls(downloading=downloading)
         self.tts_download_button.setEnabled(False)
         self.tts_service_button.setVisible(local_endpoint)
         self._set_tts_service_button("start", False)
@@ -1573,15 +1697,7 @@ class SettingsDialog(QDialog):
             and self._tts_service_worker.isRunning()
         ):
             return
-        snapshot = self.download_manager.snapshot(TTS_JOB_ID)
-        if snapshot.status in {
-            "preparing",
-            "checking",
-            "downloading",
-            "extracting",
-            "installing",
-            "cleaning",
-        }:
+        if downloading:
             self._render_tts_download(snapshot)
             return
         self.tts_progress.hide()
@@ -1784,6 +1900,20 @@ class SettingsDialog(QDialog):
     def _request_tts_download(self) -> None:
         if not self.tts_enabled.isChecked():
             return
+        model_destination = self._require_download_directory(
+            self.tts_model_dir,
+            "tts_model_path_required",
+        )
+        if model_destination is None:
+            return
+        engine_destination = None
+        if self._tts_engine_download_needed:
+            engine_destination = self._require_download_directory(
+                self.tts_engine_root,
+                "tts_engine_path_required",
+            )
+            if engine_destination is None:
+                return
         answer = QMessageBox.question(
             self,
             self._text("tts_download_consent_title"),
@@ -1797,11 +1927,12 @@ class SettingsDialog(QDialog):
         )
         if answer != QMessageBox.Yes:
             return
-        destination = managed_tts_model_dir()
-        self.tts_model_dir.setText(str(destination))
         self.download_manager.start_tts(
+            model_destination,
             include_engine=self._tts_engine_download_needed,
+            engine_destination=engine_destination,
         )
+        self._set_tts_path_controls(downloading=True)
         self.tts_download_button.setEnabled(False)
         self._render_tts_download(
             self.download_manager.snapshot(TTS_JOB_ID)
@@ -1879,6 +2010,7 @@ class SettingsDialog(QDialog):
                 "installing",
                 "cleaning",
             }:
+                self._set_tts_path_controls(downloading=True)
                 self._render_tts_download(snapshot)
             elif snapshot.status == "completed":
                 self.tts_download_button.setEnabled(False)
@@ -1891,6 +2023,7 @@ class SettingsDialog(QDialog):
                 )
                 self._update_tts_state()
             elif snapshot.status == "failed":
+                self._set_tts_path_controls(downloading=False)
                 self.tts_download_button.setEnabled(
                     self.tts_enabled.isChecked()
                     and is_loopback_url(self.tts_url.text().strip())
@@ -1917,6 +2050,12 @@ class SettingsDialog(QDialog):
             self._render_whisper_download(model_name, snapshot)
         elif snapshot.status == "completed":
             self.stt_model.setEnabled(self.stt_enabled.isChecked())
+            self.whisper_model_dir.setEnabled(
+                self.stt_enabled.isChecked()
+            )
+            self.whisper_model_browse.setEnabled(
+                self.stt_enabled.isChecked()
+            )
             self._render_progress(self.whisper_progress, snapshot)
             self._set_whisper_status(
                 "whisper_downloaded",
@@ -1924,6 +2063,12 @@ class SettingsDialog(QDialog):
             )
         elif snapshot.status == "failed":
             self.stt_model.setEnabled(self.stt_enabled.isChecked())
+            self.whisper_model_dir.setEnabled(
+                self.stt_enabled.isChecked()
+            )
+            self.whisper_model_browse.setEnabled(
+                self.stt_enabled.isChecked()
+            )
             self.whisper_download_button.setEnabled(
                 self.stt_enabled.isChecked()
             )
@@ -2026,6 +2171,45 @@ class SettingsDialog(QDialog):
             self.tts_model_dir.setText(selected)
             self._update_tts_state()
 
+    def _browse_whisper_model(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            self._text("whisper_model_dir"),
+            self.whisper_model_dir.text().strip() or str(Path.home()),
+        )
+        if selected:
+            self.whisper_model_dir.setText(selected)
+            self._update_whisper_state()
+
+    def _require_download_directory(
+        self,
+        field: QLineEdit,
+        missing_key: str,
+    ) -> Path | None:
+        value = field.text().strip()
+        if not value:
+            QMessageBox.warning(
+                self,
+                self._text("download_path_required_title"),
+                self._text(missing_key),
+            )
+            return None
+        directory = Path(value).expanduser()
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            if not directory.is_dir():
+                raise NotADirectoryError(str(directory))
+            resolved = directory.resolve()
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                self._text("download_path_required_title"),
+                self._text("download_path_invalid", message=exc),
+            )
+            return None
+        field.setText(str(resolved))
+        return resolved
+
     def _update_backend_visibility(self) -> None:
         if not hasattr(self, "backend_stack"):
             return
@@ -2082,8 +2266,25 @@ class SettingsDialog(QDialog):
                 str(exc),
             )
 
+    def _confirm_clear_history(self) -> None:
+        if self._first_run:
+            return
+        answer = QMessageBox.question(
+            self,
+            self._text("clear_history_confirm_title"),
+            self._text("clear_history_confirm_body"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self.clear_history_requested.emit()
+        self._set_status("history_cleared")
+
     def _form_settings(self) -> AppSettings:
         personality_path = get_user_data_dir() / "personality.txt"
+        screen_index = self.screen_index.value()
+        original_display = self._original.display
         return AppSettings(
             ui_language=self._language(),
             mode=self.mode_combo.currentData(),
@@ -2150,6 +2351,7 @@ class SettingsDialog(QDialog):
             stt=STTSettings(
                 enabled=self.stt_enabled.isChecked(),
                 model=self.stt_model.currentText().strip(),
+                model_dir=self.whisper_model_dir.text().strip(),
                 device=self.stt_device.currentText(),
             ),
             character=CharacterSettings(
@@ -2158,11 +2360,19 @@ class SettingsDialog(QDialog):
                 personality_file=str(personality_path),
             ),
             display=DisplaySettings(
-                screen_index=self.screen_index.value(),
+                screen_index=screen_index,
+                screen_name=(
+                    original_display.screen_name
+                    if screen_index == original_display.screen_index
+                    else ""
+                ),
+                window_x=original_display.window_x,
+                window_y=original_display.window_y,
                 portrait_screen_ratio=self.portrait_ratio.value(),
                 show_log_console=self.show_log_console.isChecked(),
             ),
             idle=IdleSettings(
+                do_not_disturb=self.do_not_disturb.isChecked(),
                 thinking_minutes=self.thinking_minutes.value(),
                 away_minutes=self.away_minutes.value(),
             ),

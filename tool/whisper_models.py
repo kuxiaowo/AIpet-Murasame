@@ -54,8 +54,11 @@ def managed_whisper_dir(model_name: str) -> Path:
     return get_model_dir() / "whisper" / safe_name
 
 
-def find_local_model(model_name: str) -> str | None:
-    """Check only an explicit directory or AIpet's managed default directory."""
+def find_local_model(
+    model_name: str,
+    configured_model_dir: str = "",
+) -> str | None:
+    """Check an explicit model path, configured download path, or legacy path."""
 
     if looks_like_local_model_path(model_name):
         local_path = Path(model_name).expanduser()
@@ -63,7 +66,11 @@ def find_local_model(model_name: str) -> str | None:
             return str(local_path.resolve())
         return None
 
-    managed_path = managed_whisper_dir(model_name)
+    managed_path = (
+        Path(configured_model_dir).expanduser()
+        if configured_model_dir.strip()
+        else managed_whisper_dir(model_name)
+    )
     marker = managed_path / ".aipet-download.json"
     try:
         payload = json.loads(marker.read_text(encoding="utf-8"))

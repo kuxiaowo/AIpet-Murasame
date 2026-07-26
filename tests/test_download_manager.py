@@ -14,6 +14,7 @@ from classes.download_manager import (
     TTS_ENGINE_ARCHIVE_NVIDIA50,
     TTS_REFERENCE_MODEL,
     AssetDownloadWorker,
+    DownloadManager,
     RemoteFile,
     _activate_extracted_engine,
     _extract_gpt_sovits_archive,
@@ -30,6 +31,34 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class DownloadWorkerTests(unittest.TestCase):
+    def test_manager_uses_explicit_download_destinations(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manager = DownloadManager()
+            with patch.object(manager, "_start") as start:
+                manager.start_whisper(
+                    "large-v3",
+                    root / "whisper-model",
+                )
+                self.assertEqual(
+                    start.call_args.args[3],
+                    root / "whisper-model",
+                )
+
+                manager.start_tts(
+                    root / "voice-model",
+                    include_engine=True,
+                    engine_destination=root / "GPT-SoVITS",
+                )
+                self.assertEqual(
+                    start.call_args.args[3],
+                    root / "voice-model",
+                )
+                self.assertEqual(
+                    start.call_args.kwargs["tts_engine_destination"],
+                    root / "GPT-SoVITS",
+                )
+
     def test_finds_7zip_before_bsdtar_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "7z.exe"

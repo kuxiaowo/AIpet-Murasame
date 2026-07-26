@@ -31,6 +31,22 @@ def _configure_console() -> None:
     if os.name == "nt":
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
         ctypes.windll.kernel32.SetConsoleTitleW("AIpet 实时日志")
+        # A GUI parent (pythonw.exe) has no usable standard output handles.
+        # Bind directly to this process' newly-created console.
+        sys.stdout = open(
+            "CONOUT$",
+            "w",
+            encoding="utf-8",
+            errors="replace",
+            buffering=1,
+        )
+        sys.stderr = open(
+            "CONOUT$",
+            "w",
+            encoding="utf-8",
+            errors="replace",
+            buffering=1,
+        )
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")

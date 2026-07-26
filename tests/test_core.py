@@ -13,6 +13,7 @@ from tool.backends import (
     OllamaBackend,
     ScreenAnalysis,
     build_screen_analysis_prompt,
+    build_system_prompt,
     build_messages,
     create_vision_backend,
     parse_character_reply,
@@ -49,7 +50,12 @@ class CoreTests(unittest.TestCase):
     def test_character_reply_accepts_fenced_json(self) -> None:
         payload = {
             "sentences": [
-                {"zh": "你好。", "ja": "こんにちは。", "emotion": "高兴"}
+                {
+                    "zh": "你好。",
+                    "ja": "こんにちは。",
+                    "emotion": "高兴",
+                    "portrait": "a",
+                }
             ]
         }
         reply = parse_character_reply(
@@ -57,6 +63,22 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(reply.chinese_text(), "你好。")
         self.assertEqual(reply.sentences[0].emotion, "高兴")
+        self.assertEqual(reply.sentences[0].portrait, "a")
+
+        legacy = parse_character_reply(
+            '{"sentences":[{"zh":"好。","ja":"よい。","emotion":"平静"}]}'
+        )
+        self.assertIsNone(legacy.sentences[0].portrait)
+
+    def test_character_prompt_explains_portrait_switching(self) -> None:
+        settings = AppSettings(
+            character=CharacterSettings(portrait="a")
+        )
+        prompt = build_system_prompt(settings)
+        self.assertIn("portrait", prompt)
+        self.assertIn("立绘 a 是略微侧身", prompt)
+        self.assertIn("立绘 b 是正面站立", prompt)
+        self.assertIn("默认立绘 a", prompt)
 
     def test_screen_analysis_accepts_fenced_json_and_uses_previous_scene(
         self,
@@ -69,16 +91,25 @@ class CoreTests(unittest.TestCase):
         prompt = build_screen_analysis_prompt(previous)
         self.assertIn("Visual Studio Code", prompt)
         self.assertIn("首次建立基线", prompt)
+        self.assertIn("浅薄荷绿色超长发", prompt)
+        self.assertIn("recognized_characters", prompt)
 
         analysis = parse_screen_analysis(
             "```json\n"
             '{"software":"浏览器","activity":"查看文档","topic":"API",'
+            '"recognized_characters":["丛雨（《千恋＊万花》）"],'
+            '"murasame_visible":true,'
             '"significant_change":true,"change_type":"app_switch",'
             '"change_summary":"从编辑器切换到浏览器"}'
             "\n```"
         )
         self.assertTrue(analysis.significant_change)
         self.assertEqual(analysis.change_type, "app_switch")
+        self.assertTrue(analysis.murasame_visible)
+        self.assertEqual(
+            analysis.recognized_characters,
+            ["丛雨（《千恋＊万花》）"],
+        )
 
     def test_settings_round_trip_and_idle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -91,10 +122,19 @@ class CoreTests(unittest.TestCase):
                 ),
             )
             settings.display.show_log_console = True
+            settings.display.screen_name = "DISPLAY1"
+            settings.display.window_x = 120
+            settings.display.window_y = 80
+            settings.idle.do_not_disturb = True
             save_settings(settings, path)
             self.assertEqual(load_settings(path), settings)
             self.assertTrue(
                 load_settings(path).display.show_log_console
+            )
+            self.assertEqual(load_settings(path).display.window_x, 120)
+            self.assertEqual(load_settings(path).display.window_y, 80)
+            self.assertTrue(
+                load_settings(path).idle.do_not_disturb
             )
 
         with self.assertRaises(ValidationError):
@@ -240,6 +280,8 @@ class CoreTests(unittest.TestCase):
             )
         self.assertIn("<event_context>", messages[-1]["content"])
         self.assertIn("不可信", messages[-1]["content"])
+        self.assertIn("不要直接对屏幕角色说话", messages[-1]["content"])
+        self.assertIn("你自己的角色形象", messages[-1]["content"])
 
     @patch("requests.Session.request")
     def test_ollama_chat_uses_schema(self, request: Mock) -> None:

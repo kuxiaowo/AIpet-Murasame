@@ -9,7 +9,11 @@ from datetime import date
 from pathlib import Path
 
 from tool.log_viewer import _print_appended, _print_recent
-from tool.runtime_logging import DailyFileHandler
+from tool.runtime_logging import (
+    DailyFileHandler,
+    _console_python_executable,
+    format_json_for_log,
+)
 
 
 class RuntimeLoggingTests(unittest.TestCase):
@@ -50,6 +54,39 @@ class RuntimeLoggingTests(unittest.TestCase):
             self.assertEqual(position, path.stat().st_size)
             self.assertIn("existing", output.getvalue())
             self.assertIn("live update", output.getvalue())
+
+    def test_json_log_keeps_payload_and_compacts_base64_images(self) -> None:
+        image = "a" * 2_048
+        output = format_json_for_log(
+            {
+                "model": "vision-model",
+                "messages": [{"images": [image]}],
+                "api_key": "do-not-log-this",
+            }
+        )
+
+        self.assertIn('"model": "vision-model"', output)
+        self.assertIn("数据已省略", output)
+        self.assertIn("字符数=2048", output)
+        self.assertNotIn(image, output)
+        self.assertNotIn("do-not-log-this", output)
+
+    def test_console_viewer_uses_python_instead_of_pythonw(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            pythonw = root / "pythonw.exe"
+            python.touch()
+            pythonw.touch()
+
+            self.assertEqual(
+                _console_python_executable(str(pythonw)),
+                str(python),
+            )
+            self.assertEqual(
+                _console_python_executable(str(python)),
+                str(python),
+            )
 
 
 if __name__ == "__main__":

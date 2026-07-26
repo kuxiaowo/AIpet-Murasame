@@ -191,6 +191,7 @@ class TTSSettings(BaseModel):
 class STTSettings(BaseModel):
     enabled: bool = False
     model: str = Field(default="large-v3", min_length=1)
+    model_dir: str = ""
     device: Literal["auto", "cuda", "cpu"] = "auto"
 
 
@@ -202,11 +203,15 @@ class CharacterSettings(BaseModel):
 
 class DisplaySettings(BaseModel):
     screen_index: int = Field(default=0, ge=0)
+    screen_name: str = ""
+    window_x: int | None = None
+    window_y: int | None = None
     portrait_screen_ratio: float = Field(default=0.8, ge=0.2, le=1.0)
     show_log_console: bool = False
 
 
 class IdleSettings(BaseModel):
+    do_not_disturb: bool = False
     thinking_minutes: int = Field(default=6, ge=1, le=1_440)
     away_minutes: int = Field(default=10, ge=2, le=1_440)
 

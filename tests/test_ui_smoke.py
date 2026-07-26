@@ -11,12 +11,16 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt5.QtCore import QRect, Qt
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
 from classes.download_manager import DownloadSnapshot, whisper_job_id
-from classes.murasame_class import Murasame
+from classes.murasame_class import Murasame, screen_local_mask_rect
+from main import move_pet_to_configured_screen
 from tool.backends import ScreenAnalysis
 from tool.config import AppSettings
+from tool.portraits import layers_for
 from tool.tts_assets import TTSAssetState
 from tool.whisper_models import model_repository
 from ui.settings_dialog import SettingsDialog
@@ -26,6 +30,46 @@ class UISmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_pet_mask_rect_is_screen_local_and_clipped(self) -> None:
+        screen = QRect(-1920, 0, 1920, 1080)
+        pet = QRect(-200, 900, 400, 300)
+
+        mask = screen_local_mask_rect(screen, pet, margin=0)
+
+        self.assertEqual(mask, QRect(1720, 900, 200, 180))
+        self.assertTrue(
+            screen_local_mask_rect(
+                screen,
+                QRect(100, 100, 50, 50),
+                margin=0,
+            ).isEmpty()
+        )
+
+    def test_pet_mask_is_painted_at_high_dpi_coordinates(self) -> None:
+        class FakePet:
+            @staticmethod
+            def frameGeometry() -> QRect:
+                return QRect(-40, 10, 20, 20)
+
+        class FakeScreen:
+            @staticmethod
+            def geometry() -> QRect:
+                return QRect(-100, 0, 100, 100)
+
+        pixmap = QPixmap(200, 200)
+        pixmap.setDevicePixelRatio(2.0)
+        pixmap.fill(Qt.white)
+
+        Murasame._mask_pet_from_screenshot(
+            FakePet(),
+            pixmap,
+            FakeScreen(),
+        )
+
+        image = pixmap.toImage()
+        self.assertEqual(image.pixelColor(120, 40).name(), "#000000")
+        self.assertEqual(image.pixelColor(10, 10).name(), "#ffffff")
 
     def test_settings_dialog_and_pet_construct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -37,6 +81,11 @@ class UISmokeTests(unittest.TestCase):
             )
             try:
                 settings = AppSettings()
+                screen = self.app.primaryScreen()
+                self.assertIsNotNone(screen)
+                settings.display.screen_name = screen.name()
+                settings.display.window_x = 24
+                settings.display.window_y = 36
                 dialog = SettingsDialog(settings)
                 pet = Murasame(settings)
                 self.assertGreater(pet.width(), 0)
@@ -62,6 +111,114 @@ class UISmokeTests(unittest.TestCase):
                 self.assertTrue(
                     dialog._form_settings().display.show_log_console
                 )
+                self.assertEqual(
+                    dialog._form_settings().display.window_x,
+                    24,
+                )
+                self.assertEqual(
+                    dialog._form_settings().display.window_y,
+                    36,
+                )
+                move_pet_to_configured_screen(self.app, pet, settings)
+                available = screen.availableGeometry()
+                expected_x = min(
+                    available.x() + 24,
+                    max(
+                        available.left(),
+                        available.right() - pet.width() + 1,
+                    ),
+                )
+                expected_y = min(
+                    available.y() + 36,
+                    max(
+                        available.top(),
+                        available.bottom() - pet.height() + 1,
+                    ),
+                )
+                self.assertEqual(pet.x(), expected_x)
+                self.assertEqual(pet.y(), expected_y)
+                pet.move(available.x() + 12, available.y() + 18)
+                pet.remember_window_position()
+                self.assertEqual(pet.settings.display.window_x, 12)
+                self.assertEqual(pet.settings.display.window_y, 18)
+                self.assertEqual(
+                    pet.settings.display.screen_name,
+                    screen.name(),
+                )
+                dialog.whisper_model_dir.clear()
+                with patch(
+                    "ui.settings_dialog.QMessageBox.warning"
+                ) as warning:
+                    self.assertIsNone(
+                        dialog._require_download_directory(
+                            dialog.whisper_model_dir,
+                            "whisper_path_required",
+                        )
+                    )
+                warning.assert_called_once()
+                dialog.tts_enabled.blockSignals(True)
+                dialog.tts_enabled.setChecked(True)
+                dialog.tts_enabled.blockSignals(False)
+                dialog.tts_model_dir.clear()
+                with (
+                    patch(
+                        "ui.settings_dialog.QMessageBox.warning"
+                    ) as warning,
+                    patch.object(
+                        dialog.download_manager,
+                        "start_tts",
+                    ) as start_tts,
+                ):
+                    dialog._request_tts_download()
+                warning.assert_called_once()
+                start_tts.assert_not_called()
+                dialog.tts_enabled.setChecked(False)
+
+                dialog.do_not_disturb.setChecked(True)
+                self.assertTrue(
+                    dialog._form_settings().idle.do_not_disturb
+                )
+                pet.set_dnd_enabled(True)
+                self.assertTrue(pet.is_dnd_enabled())
+                self.assertTrue(pet.settings.idle.do_not_disturb)
+                pet.set_dnd_enabled(False)
+                dialog.do_not_disturb.setChecked(False)
+
+                pet.move(
+                    available.center().x() - pet.width() // 2,
+                    available.bottom() - pet.height() + 1,
+                )
+                previous_center_x = pet.geometry().center().x()
+                previous_bottom = pet.geometry().bottom()
+                pet.update_portrait(layers_for("a", "高兴"), "a")
+                self.assertEqual(pet._current_portrait, "a")
+                self.assertLessEqual(
+                    abs(pet.geometry().center().x() - previous_center_x),
+                    1,
+                )
+                self.assertEqual(pet.geometry().bottom(), previous_bottom)
+                pet.apply_settings(settings)
+                self.assertEqual(pet._current_portrait, "a")
+                self.assertEqual(
+                    pet._current_layers,
+                    layers_for("a", "高兴"),
+                )
+
+                pet.history = [
+                    {"role": "user", "content": "remember this"},
+                    {"role": "assistant", "content": "remembered"},
+                ]
+                pet.history_store.save(pet.history)
+                dialog.clear_history_requested.connect(pet.clear_history)
+                with patch(
+                    "ui.settings_dialog.QMessageBox.question",
+                    return_value=QMessageBox.Yes,
+                ):
+                    dialog.clear_history_button.click()
+                self.assertEqual(pet.history, [])
+                self.assertEqual(pet.history_store.load(), [])
+                self.assertIn("历史对话已清除", dialog.status_label.text())
+
                 dialog._set_combo_data(dialog.mode_combo, "api")
                 dialog._set_combo_data(dialog.api_provider, "openai")
                 self.assertEqual(dialog.api_provider_stack.currentIndex(), 2)
@@ -112,6 +269,9 @@ class UISmokeTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 dialog.stt_model.setCurrentText(directory)
+                dialog.whisper_model_dir.setText(
+                    str(Path(directory) / "whisper-download")
+                )
                 dialog.stt_enabled.setChecked(True)
                 deadline = time.monotonic() + 2
                 while (
@@ -151,6 +311,12 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_enabled.blockSignals(True)
                 dialog.tts_enabled.setChecked(True)
                 dialog.tts_enabled.blockSignals(False)
+                dialog.tts_engine_root.setText(
+                    str(Path(directory) / "tts-engine-download")
+                )
+                dialog.tts_model_dir.setText(
+                    str(Path(directory) / "tts-model-download")
+                )
                 missing_engine = TTSAssetState(
                     engine_root=None,
                     engine_ready=False,

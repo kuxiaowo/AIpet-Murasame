@@ -94,15 +94,38 @@ def move_pet_to_configured_screen(
     settings: AppSettings,
 ) -> None:
     screens = app.screens()
-    index = settings.display.screen_index
+    display = settings.display
+    screen = next(
+        (
+            candidate
+            for candidate in screens
+            if display.screen_name
+            and candidate.name() == display.screen_name
+        ),
+        None,
+    )
+    index = display.screen_index
     screen = (
-        screens[index]
-        if 0 <= index < len(screens)
-        else app.primaryScreen()
+        screen
+        or (
+            screens[index]
+            if 0 <= index < len(screens)
+            else app.primaryScreen()
+        )
     )
     if screen is not None:
         geometry = screen.availableGeometry()
-        pet.move(geometry.x(), geometry.y())
+        x = geometry.x()
+        y = geometry.y()
+        if display.window_x is not None and display.window_y is not None:
+            x += display.window_x
+            y += display.window_y
+            max_x = max(geometry.left(), geometry.right() - pet.width() + 1)
+            max_y = max(geometry.top(), geometry.bottom() - pet.height() + 1)
+            x = max(geometry.left(), min(x, max_x))
+            y = max(geometry.top(), min(y, max_y))
+        pet.move(x, y)
+        pet.remember_window_position()
 
 
 def configure_voice_trigger(
@@ -148,6 +171,7 @@ def configure_voice_trigger(
         on_record_start=bridge.record_start.emit,
         on_record_end=bridge.record_end.emit,
         model_name=settings.stt.model,
+        model_directory=settings.stt.model_dir,
         device=settings.stt.device,
         on_error=bridge.error.emit,
     )
@@ -223,6 +247,7 @@ def main() -> int:
     settings_action = QAction(tray_menu)
     dnd_action = QAction(tray_menu)
     dnd_action.setCheckable(True)
+    dnd_action.setChecked(pet.is_dnd_enabled())
     screenshot_action = QAction(tray_menu)
     screenshot_action.setCheckable(True)
     screenshot_action.setChecked(pet.is_screenshot_enabled())
@@ -259,6 +284,7 @@ def main() -> int:
     voice_trigger = configure_voice_trigger(pet, settings, tray_icon)
 
     def persist_pet_settings() -> None:
+        pet.remember_window_position()
         try:
             save_settings(pet.settings)
         except OSError as exc:
@@ -275,8 +301,15 @@ def main() -> int:
         screenshot_action.blockSignals(False)
         persist_pet_settings()
 
+    def set_do_not_disturb(enabled: bool) -> None:
+        pet.set_dnd_enabled(enabled)
+        dnd_action.blockSignals(True)
+        dnd_action.setChecked(pet.is_dnd_enabled())
+        dnd_action.blockSignals(False)
+        persist_pet_settings()
+
     screenshot_action.toggled.connect(set_screen_vision)
-    dnd_action.toggled.connect(pet.set_dnd_enabled)
+    dnd_action.toggled.connect(set_do_not_disturb)
     clear_action.triggered.connect(pet.clear_history)
 
     settings_dialog: SettingsDialog | None = None
@@ -305,6 +338,9 @@ def main() -> int:
         voice_trigger = configure_voice_trigger(pet, settings, tray_icon)
         pet.apply_settings(settings)
         apply_tray_language(settings)
+        dnd_action.blockSignals(True)
+        dnd_action.setChecked(pet.is_dnd_enabled())
+        dnd_action.blockSignals(False)
         screenshot_action.blockSignals(True)
         screenshot_action.setChecked(settings.vision.enabled)
         screenshot_action.blockSignals(False)
@@ -347,6 +383,7 @@ def main() -> int:
             download_manager=download_manager,
             parent=None,
         )
+        dialog.clear_history_requested.connect(pet.clear_history)
         settings_dialog = dialog
         dialog.finished.connect(
             lambda result, current=dialog: finish_settings_dialog(

@@ -13,7 +13,7 @@ from tool.backends import (
     create_vision_backend,
 )
 from tool.config import AppSettings
-from tool.runtime_logging import get_logger
+from tool.runtime_logging import get_logger, log_event
 from tool.tts import TTSClient, TTSError
 
 
@@ -57,10 +57,17 @@ class ConversationWorker(QThread):
 
     def run(self) -> None:
         try:
-            logger.info(
-                "对话任务开始 | 后端=%s | 主动事件=%s",
-                self.settings.mode,
-                self.event_context is not None,
+            log_event(
+                logger,
+                "conversation.started",
+                backend=self.settings.mode,
+                source=(
+                    "proactive_event"
+                    if self.event_context is not None
+                    else "user"
+                ),
+                history_messages=len(self.history),
+                tts_enabled=self.settings.tts.enabled,
             )
             backend = create_backend(self.settings)
             reply = backend.chat(
@@ -69,6 +76,7 @@ class ConversationWorker(QThread):
                 self.event_context,
             )
             if self._cancelled.is_set():
+                log_event(logger, "conversation.cancelled")
                 return
 
             audio_paths: list[Path | None] = [None] * len(reply.sentences)
@@ -77,6 +85,7 @@ class ConversationWorker(QThread):
                 for index, sentence in enumerate(reply.sentences):
                     if self._cancelled.is_set():
                         self._remove_audio(audio_paths)
+                        log_event(logger, "conversation.cancelled")
                         return
                     try:
                         audio_paths[index] = tts.synthesize(
@@ -89,6 +98,7 @@ class ConversationWorker(QThread):
 
             if self._cancelled.is_set():
                 self._remove_audio(audio_paths)
+                log_event(logger, "conversation.cancelled")
                 return
 
             self.result_ready.emit(
@@ -99,9 +109,14 @@ class ConversationWorker(QThread):
                     is_user_message=self.event_context is None,
                 )
             )
-            logger.info(
-                "对话任务完成 | 句子数=%s",
-                len(reply.sentences),
+            log_event(
+                logger,
+                "conversation.completed",
+                sentence_count=len(reply.sentences),
+                emotions=[
+                    sentence.emotion for sentence in reply.sentences
+                ],
+                audio_count=sum(path is not None for path in audio_paths),
             )
         except Exception as exc:
             if not self._cancelled.is_set():
@@ -144,9 +159,11 @@ class VisionWorker(QThread):
 
     def run(self) -> None:
         try:
-            logger.info(
-                "屏幕视觉分析开始 | 后端=%s",
-                self.settings.vision.provider,
+            log_event(
+                logger,
+                "vision.started",
+                backend=self.settings.vision.provider,
+                has_previous_analysis=self.previous_analysis is not None,
             )
             analysis = create_vision_backend(self.settings).describe_image(
                 self.image_path,
@@ -154,10 +171,13 @@ class VisionWorker(QThread):
             )
             if not self._cancelled.is_set():
                 self.analysis_ready.emit(analysis)
-                logger.info(
-                    "屏幕视觉分析完成 | 显著变化=%s",
-                    analysis.significant_change,
+                log_event(
+                    logger,
+                    "vision.completed",
+                    **analysis.model_dump(mode="json"),
                 )
+            else:
+                log_event(logger, "vision.cancelled")
         except Exception as exc:
             if not self._cancelled.is_set():
                 logger.exception("屏幕视觉分析失败")

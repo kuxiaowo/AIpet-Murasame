@@ -37,7 +37,24 @@ from tool.time_utils import build_time_context
 
 
 SCREEN_PIXEL_CHANGE_THRESHOLD = 0.012
+SCREEN_PET_MASK_MARGIN = 8
 PROACTIVE_COOLDOWN_SECONDS = 180
+
+
+def screen_local_mask_rect(
+    screen_geometry: QRect,
+    window_geometry: QRect,
+    margin: int = SCREEN_PET_MASK_MARGIN,
+) -> QRect:
+    """Return the visible pet window bounds in screen-local coordinates."""
+    expanded = window_geometry.adjusted(-margin, -margin, margin, margin)
+    visible = expanded.intersected(screen_geometry)
+    if visible.isEmpty():
+        return QRect()
+    return visible.translated(
+        -screen_geometry.x(),
+        -screen_geometry.y(),
+    )
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -136,7 +153,7 @@ class Murasame(QLabel):
         self.playback_timer.setSingleShot(True)
         self.playback_timer.timeout.connect(self._play_next_sentence)
 
-        self._dnd_enabled = False
+        self._dnd_enabled = self.settings.idle.do_not_disturb
         self.idle_thinking_triggered = False
         self.idle_away_triggered = False
         self.away_trigger_time: float | None = None
@@ -167,21 +184,29 @@ class Murasame(QLabel):
 
     def apply_settings(self, settings: AppSettings) -> None:
         old_portrait = self.settings.character.portrait
+        was_dnd_enabled = self._dnd_enabled
         current_layers = getattr(
             self,
             "_current_layers",
             default_layers(old_portrait),
         )
+        current_portrait = getattr(self, "_current_portrait", old_portrait)
         self.settings = settings.model_copy(deep=True)
+        self._dnd_enabled = self.settings.idle.do_not_disturb
+        if self._dnd_enabled:
+            self._cancel_active_jobs()
+        elif was_dnd_enabled:
+            self._reset_screen_observation()
         self.history_store.limit = self.settings.history_limit
         self.history = self.history[-self.settings.history_limit :]
         self.history_store.save(self.history)
         self._reset_screen_observation()
 
         if old_portrait != self.settings.character.portrait:
-            self.update_portrait(default_layers(self.settings.character.portrait))
+            portrait = self.settings.character.portrait
+            self.update_portrait(default_layers(portrait), portrait)
         else:
-            self.update_portrait(current_layers)
+            self.update_portrait(current_layers, current_portrait)
         self._reset_idle_state()
         self._apply_automatic_behavior_settings()
 
@@ -219,6 +244,7 @@ class Murasame(QLabel):
     def set_dnd_enabled(self, enabled: bool) -> None:
         was_enabled = self._dnd_enabled
         self._dnd_enabled = bool(enabled)
+        self.settings.idle.do_not_disturb = self._dnd_enabled
         if self._dnd_enabled:
             self._cancel_active_jobs()
             self._reset_idle_state()
@@ -323,7 +349,11 @@ class Murasame(QLabel):
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         image_path = screenshot_dir / f"{uuid.uuid4().hex}.png"
         pixmap = screen.grabWindow(0)
-        if pixmap.isNull() or not pixmap.save(str(image_path), "PNG"):
+        if pixmap.isNull():
+            self.notification.emit("屏幕分析", "屏幕截图失败")
+            return
+        self._mask_pet_from_screenshot(pixmap, screen)
+        if not pixmap.save(str(image_path), "PNG"):
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
 
@@ -355,6 +385,23 @@ class Murasame(QLabel):
         worker.finished.connect(lambda: self._finish_vision_worker(worker))
         worker.start()
 
+    def _mask_pet_from_screenshot(
+        self,
+        pixmap: QPixmap,
+        screen: QScreen,
+    ) -> None:
+        mask = screen_local_mask_rect(
+            screen.geometry(),
+            self.frameGeometry(),
+        )
+        if mask.isEmpty():
+            return
+        painter = QPainter(pixmap)
+        try:
+            painter.fillRect(mask, QColor(0, 0, 0))
+        finally:
+            painter.end()
+
     def _finish_vision_worker(self, worker: VisionWorker) -> None:
         if self._vision_worker is worker:
             self._vision_worker = None
@@ -385,6 +432,8 @@ class Murasame(QLabel):
             analysis.software,
             analysis.activity,
             analysis.topic,
+            ",".join(analysis.recognized_characters),
+            str(analysis.murasame_visible),
             analysis.change_summary,
         )
         return "|".join(" ".join(part.casefold().split()) for part in parts)
@@ -418,6 +467,16 @@ class Murasame(QLabel):
             details.append(f"当前活动：{analysis.activity}")
         if analysis.topic:
             details.append(f"页面主题：{analysis.topic}")
+        if analysis.recognized_characters:
+            details.append(
+                "识别到的角色："
+                + "、".join(analysis.recognized_characters)
+            )
+        if analysis.murasame_visible:
+            details.append(
+                "画面中出现丛雨的角色形象；这是你自己的形象或作品画面，"
+                "不是另一个对话者。"
+            )
         if analysis.change_summary:
             details.append(f"变化摘要：{analysis.change_summary}")
         details.append(f"当前时间：{build_time_context()}")
@@ -511,8 +570,10 @@ class Murasame(QLabel):
         index = self._playback_index
         self._playback_index += 1
         sentence = result.reply.sentences[index]
+        portrait = sentence.portrait or self.settings.character.portrait
         self.update_portrait(
-            layers_for(self.settings.character.portrait, sentence.emotion)
+            layers_for(portrait, sentence.emotion),
+            portrait,
         )
         self.show_text(sentence.zh, typing=True)
 
@@ -563,9 +624,25 @@ class Murasame(QLabel):
             except OSError:
                 pass
 
-    def update_portrait(self, layers: list[int]) -> None:
+    def update_portrait(
+        self,
+        layers: list[int],
+        portrait: str | None = None,
+    ) -> None:
+        previous_geometry = (
+            self.geometry()
+            if self._source_portrait_pixmap is not None
+            else None
+        )
+        screen = (
+            self._screen_at_current_position()
+            if previous_geometry is not None
+            else self._configured_screen()
+        )
+        portrait = portrait or self.settings.character.portrait
         self._current_layers = list(layers)
-        target = f"ムラサメ{self.settings.character.portrait}"
+        self._current_portrait = portrait
+        target = f"ムラサメ{portrait}"
         bgra_image = generate_fgimage(target, layers)
         rgba_image = cv2.cvtColor(bgra_image, cv2.COLOR_BGRA2RGBA)
         height, width, channels = rgba_image.shape
@@ -579,10 +656,26 @@ class Murasame(QLabel):
         self._source_portrait_pixmap = QPixmap.fromImage(image)
         pixmap = self._scale_portrait_pixmap(
             self._source_portrait_pixmap,
-            self._configured_screen(),
+            screen,
         )
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
+        if previous_geometry is not None and screen is not None:
+            available = screen.availableGeometry()
+            x = previous_geometry.center().x() - pixmap.width() // 2
+            y = previous_geometry.bottom() - pixmap.height() + 1
+            max_x = max(
+                available.left(),
+                available.right() - pixmap.width() + 1,
+            )
+            max_y = max(
+                available.top(),
+                available.bottom() - pixmap.height() + 1,
+            )
+            self.move(
+                max(available.left(), min(x, max_x)),
+                max(available.top(), min(y, max_y)),
+            )
         self.update()
 
     def _configured_screen(self) -> QScreen | None:
@@ -644,6 +737,23 @@ class Murasame(QLabel):
         if handle is not None and handle.screen() is not None:
             return handle.screen()
         return self._configured_screen()
+
+    def remember_window_position(self) -> None:
+        screen = self._screen_at_current_position()
+        if screen is None:
+            return
+
+        available = screen.availableGeometry()
+        display = self.settings.display
+        display.screen_name = screen.name()
+        display.window_x = self.x() - available.x()
+        display.window_y = self.y() - available.y()
+
+        screen_key = self._screen_key(screen)
+        for index, candidate in enumerate(QGuiApplication.screens()):
+            if candidate is screen or self._screen_key(candidate) == screen_key:
+                display.screen_index = index
+                break
 
     def _adapt_to_current_screen(self) -> None:
         source = self._source_portrait_pixmap
@@ -816,6 +926,7 @@ class Murasame(QLabel):
             self.drag_offset = None
             self.setCursor(Qt.ArrowCursor)
             self._adapt_to_current_screen()
+            self.remember_window_position()
 
     def moveEvent(self, event) -> None:
         super().moveEvent(event)
@@ -891,6 +1002,7 @@ class Murasame(QLabel):
         self.update()
 
     def clear_history(self) -> None:
+        self._cancel_active_jobs()
         self.history.clear()
         self.history_store.clear()
         self.update_portrait(default_layers(self.settings.character.portrait))
