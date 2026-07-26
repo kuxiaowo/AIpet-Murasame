@@ -17,11 +17,12 @@ from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
 from classes.download_manager import DownloadSnapshot, whisper_job_id
-from classes.murasame_class import Murasame, screen_local_mask_rect
+from classes.murasame_class import Murasame
 from classes.workers import ConversationResult
 from main import move_pet_to_configured_screen
 from tool.audio_devices import AudioInputDevice
 from tool.backends import ScreenAnalysis, parse_character_reply
+from tool.cache import CacheClearResult
 from tool.config import AppSettings
 from tool.portraits import layers_for
 from tool.tts_assets import TTSAssetState
@@ -33,46 +34,6 @@ class UISmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
-
-    def test_pet_mask_rect_is_screen_local_and_clipped(self) -> None:
-        screen = QRect(-1920, 0, 1920, 1080)
-        pet = QRect(-200, 900, 400, 300)
-
-        mask = screen_local_mask_rect(screen, pet, margin=0)
-
-        self.assertEqual(mask, QRect(1720, 900, 200, 180))
-        self.assertTrue(
-            screen_local_mask_rect(
-                screen,
-                QRect(100, 100, 50, 50),
-                margin=0,
-            ).isEmpty()
-        )
-
-    def test_pet_mask_is_painted_at_high_dpi_coordinates(self) -> None:
-        class FakePet:
-            @staticmethod
-            def frameGeometry() -> QRect:
-                return QRect(-40, 10, 20, 20)
-
-        class FakeScreen:
-            @staticmethod
-            def geometry() -> QRect:
-                return QRect(-100, 0, 100, 100)
-
-        pixmap = QPixmap(200, 200)
-        pixmap.setDevicePixelRatio(2.0)
-        pixmap.fill(Qt.white)
-
-        Murasame._mask_pet_from_screenshot(
-            FakePet(),
-            pixmap,
-            FakeScreen(),
-        )
-
-        image = pixmap.toImage()
-        self.assertEqual(image.pixelColor(120, 40).name(), "#000000")
-        self.assertEqual(image.pixelColor(10, 10).name(), "#ffffff")
 
     def test_status_text_can_use_the_user_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -217,7 +178,14 @@ class UISmokeTests(unittest.TestCase):
                         dialog.tabs.tabText(index)
                         for index in range(dialog.tabs.count())
                     ],
-                    ["语言模型", "拓展功能", "角色", "自动行为", "显示"],
+                    [
+                        "语言模型",
+                        "拓展功能",
+                        "角色",
+                        "自动行为",
+                        "显示",
+                        "其他",
+                    ],
                 )
                 self.assertEqual(
                     dialog._form_settings().ui_language,
@@ -383,6 +351,25 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(pet.history, [])
                 self.assertEqual(pet.history_store.load(), [])
                 self.assertIn("历史对话已清除", dialog.status_label.text())
+
+                self.assertEqual(dialog.tabs.tabText(5), "其他")
+                with (
+                    patch(
+                        "ui.settings_dialog.QMessageBox.question",
+                        return_value=QMessageBox.Yes,
+                    ),
+                    patch(
+                        "ui.settings_dialog.clear_runtime_cache",
+                        return_value=CacheClearResult(
+                            removed_files=3,
+                            removed_bytes=1536,
+                        ),
+                    ) as clear_cache,
+                ):
+                    dialog.clear_cache_button.click()
+                clear_cache.assert_called_once_with()
+                self.assertIn("3 个缓存文件", dialog.status_label.text())
+                self.assertIn("1.5 KiB", dialog.status_label.text())
 
                 dialog._set_combo_data(dialog.mode_combo, "api")
                 dialog._set_combo_data(dialog.api_provider, "openai")
@@ -598,7 +585,6 @@ class UISmokeTests(unittest.TestCase):
                         activity="查看文档",
                         topic="Python API",
                         significant_change=True,
-                        change_type="app_switch",
                         change_summary="从编辑器切换到浏览器",
                     )
                     pet._on_screen_analysis(changed)
@@ -613,7 +599,6 @@ class UISmokeTests(unittest.TestCase):
                             software="终端",
                             activity="查看任务结果",
                             significant_change=True,
-                            change_type="completion",
                             change_summary="任务执行完成",
                         )
                     )
@@ -629,7 +614,6 @@ class UISmokeTests(unittest.TestCase):
                             software="密码管理器",
                             activity="查看登录信息",
                             significant_change=True,
-                            change_type="app_switch",
                             change_summary="切换到密码管理器",
                         )
                     )
@@ -724,10 +708,15 @@ class UISmokeTests(unittest.TestCase):
         unchanged = baseline.copy()
         tiny_change = baseline.copy()
         tiny_change[0, 0] = 255
+        subtle_scene_change = baseline.copy()
+        subtle_scene_change.flat[:52] = 255
         obvious_change = np.full((54, 96), 255, dtype=np.uint8)
 
         self.assertFalse(Murasame._pixels_changed(baseline, unchanged))
         self.assertFalse(Murasame._pixels_changed(baseline, tiny_change))
+        self.assertTrue(
+            Murasame._pixels_changed(baseline, subtle_scene_change)
+        )
         self.assertTrue(Murasame._pixels_changed(baseline, obvious_change))
 
 

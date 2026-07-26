@@ -51,7 +51,7 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 - **Deterministic portraits** — the model may switch between validated poses and outfits, while outfit, pose, and emotion map to known portrait layers in code; model changes cannot invent broken layer IDs.
 - **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
 - **Live diagnostic console** — optionally open a real-time command window with correlated request/response JSON, worker events, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`; API secrets are redacted and large base64 media is represented by length and SHA-256 metadata.
-- **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, the pet window is masked before analysis, and the vision model can identify likely on-screen characters including Murasame.
+- **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread with the pet window intact; the vision model treats an on-screen Murasame as itself while ignoring her minor movements when judging scene changes.
 - **Bounded screen memory** — only significant screen changes are retained as compact structured summaries for later conversations; raw screenshots are never added to conversation history.
 - **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
 - **Private user state** — configuration, keys, and conversation history live outside the Git repository.
@@ -240,9 +240,34 @@ The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶
 
 For a loopback endpoint, the two path fields are also the exact download destinations: character weights and references go to the voice model directory, while the engine archive is extracted into the GPT-SoVITS directory. Downloading prompts for any required path left empty. AIpet no longer silently redirects a new download to the project model directory. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice`.
 
-When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. Remote endpoints are health-checked but never launched or stopped locally.
+When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. AutoDL is handled by the managed SSH workflow below.
 
 TTS failures do not discard a model response: AIpet still displays the text and shows the speech error through the tray.
+
+### AutoDL cloud TTS
+
+The refactored application can reproduce the AutoDL workflow documented by
+older releases without requiring a hand-written OpenSSH config:
+
+1. Start the preconfigured AutoDL instance and copy its login command, such as
+   `ssh -p 12345 root@connect.example.com`.
+2. In **Settings → Extensions**, enable TTS and select **AutoDL cloud**.
+3. Paste the login command and SSH password. Keep the default remote command
+   `bash -lc 'bash run.sh; bash'` when using the prepared AIpet image.
+4. Keep the remote reference directory as `/root/reference_voices` unless the
+   image stores it elsewhere. AIpet reads the reference filename and transcript
+   over the existing SFTP session, so no local TTS assets are downloaded.
+5. Save the settings. The first speech request, or the manual start button,
+   connects to AutoDL, runs the remote script, and forwards local
+   `127.0.0.1:9880` to port `9880` inside the instance.
+
+The SSH password is never placed on a command line. It is encrypted with
+Windows DPAPI for the current Windows user before being written to the user
+configuration. AIpet closes only the SSH session and tunnel that it created.
+The AutoDL instance must already be running, and local port `9880` must be
+available. The remote `run.sh` must start the GPT-SoVITS API on
+`127.0.0.1:9880`, and the six emotion directories must exist below the
+configured remote reference directory.
 
 ## Controls
 

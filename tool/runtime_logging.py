@@ -205,6 +205,7 @@ def _sanitize_log_value(value: Any, key: str = "") -> Any:
         "access_token",
         "refresh_token",
         "password",
+        "autodl_password_encrypted",
         "secret",
     }:
         return "<已脱敏>"

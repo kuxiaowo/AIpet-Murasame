@@ -207,12 +207,17 @@ class VisionSettings(BaseModel):
 
 class TTSSettings(BaseModel):
     enabled: bool = False
+    backend: Literal["local", "autodl"] = "local"
     base_url: str = Field(
         default="http://127.0.0.1:9880/tts",
         min_length=1,
     )
     engine_root: str = Field(default_factory=default_tts_engine_root)
     model_dir: str = Field(default_factory=default_tts_model_dir)
+    autodl_ssh_command: str = ""
+    autodl_remote_command: str = "bash -lc 'bash run.sh; bash'"
+    autodl_remote_reference_root: str = "/root/reference_voices"
+    autodl_password_encrypted: str = ""
     timeout_seconds: int = Field(default=300, ge=10, le=900)
 
     @model_validator(mode="after")
@@ -222,6 +227,9 @@ class TTSSettings(BaseModel):
         if not self.model_dir.strip():
             self.model_dir = default_tts_model_dir()
         return self
+
+    def uses_autodl(self) -> bool:
+        return self.backend == "autodl"
 
 
 class STTSettings(BaseModel):

@@ -66,6 +66,7 @@ class RuntimeLoggingTests(unittest.TestCase):
                 "model": "vision-model",
                 "messages": [{"images": [image]}],
                 "api_key": "do-not-log-this",
+                "autodl_password_encrypted": "encrypted-password-token",
             }
         )
 
@@ -74,6 +75,7 @@ class RuntimeLoggingTests(unittest.TestCase):
         self.assertIn("字符数=2048", output)
         self.assertNotIn(image, output)
         self.assertNotIn("do-not-log-this", output)
+        self.assertNotIn("encrypted-password-token", output)
 
     def test_console_viewer_uses_python_instead_of_pythonw(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -26,6 +26,7 @@ from tool.backends import (
     parse_character_reply,
     parse_screen_analysis,
 )
+from tool.cache import clear_runtime_cache
 from tool.config import (
     APISettings,
     AppSettings,
@@ -55,6 +56,33 @@ from tool.tts_assets import TTSAssetState
 
 
 class CoreTests(unittest.TestCase):
+    def test_runtime_cache_clear_preserves_logs_and_other_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            disposable = {
+                cache_dir / "screens" / "screen.png": b"screen",
+                cache_dir / "voices" / "voice.wav": b"voice",
+                cache_dir / "recordings" / "nested" / "input.wav": b"recording",
+            }
+            preserved = {
+                cache_dir / "logs" / "service.log": b"log",
+                cache_dir / "future-cache" / "data.bin": b"future",
+            }
+            for path, payload in (disposable | preserved).items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+
+            result = clear_runtime_cache(cache_dir)
+
+            self.assertEqual(result.removed_files, len(disposable))
+            self.assertEqual(
+                result.removed_bytes,
+                sum(len(payload) for payload in disposable.values()),
+            )
+            self.assertEqual(result.failed_paths, ())
+            self.assertTrue(all(not path.exists() for path in disposable))
+            self.assertTrue(all(path.exists() for path in preserved))
+
     def test_audio_input_device_identifier_and_resolution(self) -> None:
         device = AudioInputDevice(
             index=37,
@@ -229,23 +257,44 @@ class CoreTests(unittest.TestCase):
         self.assertIn("首次建立基线", prompt)
         self.assertIn("浅薄荷绿色超长发", prompt)
         self.assertIn("recognized_characters", prompt)
+        self.assertIn("这是你自己在屏幕中的形象", prompt)
+        self.assertIn("游戏中切换地点", prompt)
+        self.assertNotIn("纯黑色矩形", prompt)
+        self.assertNotIn("change_type", prompt)
 
         analysis = parse_screen_analysis(
             "```json\n"
             '{"software":"浏览器","activity":"查看文档","topic":"API",'
             '"recognized_characters":["丛雨（《千恋＊万花》）"],'
             '"murasame_visible":true,'
-            '"significant_change":true,"change_type":"app_switch",'
+            '"significant_change":true,'
             '"change_summary":"从编辑器切换到浏览器"}'
             "\n```"
         )
         self.assertTrue(analysis.significant_change)
-        self.assertEqual(analysis.change_type, "app_switch")
+        self.assertEqual(
+            analysis.change_summary,
+            "从编辑器切换到浏览器",
+        )
         self.assertTrue(analysis.murasame_visible)
         self.assertEqual(
             analysis.recognized_characters,
             ["丛雨（《千恋＊万花》）"],
         )
+        inferred_summary = ScreenAnalysis(
+            activity="角色从地图探索进入战斗",
+            significant_change=True,
+        )
+        self.assertEqual(
+            inferred_summary.change_summary,
+            "角色从地图探索进入战斗",
+        )
+        unchanged = ScreenAnalysis(
+            activity="角色仍在同一区域探索",
+            significant_change=False,
+            change_summary="不应保留",
+        )
+        self.assertEqual(unchanged.change_summary, "")
 
     def test_settings_round_trip_and_idle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -395,7 +444,6 @@ class CoreTests(unittest.TestCase):
             path = Path(directory) / "screen_memory.json"
             store = ScreenMemoryStore(path=path, limit=2)
             first = ScreenMemoryEntry.now(
-                change_type="app_switch",
                 software="Visual Studio Code",
                 activity="编辑 Python 项目",
                 topic="AIpet",
@@ -411,7 +459,6 @@ class CoreTests(unittest.TestCase):
             )
             store.remember(
                 ScreenMemoryEntry.now(
-                    change_type="page_switch",
                     software="浏览器",
                     activity="查看文档",
                     topic="Python API",
@@ -420,7 +467,6 @@ class CoreTests(unittest.TestCase):
             )
             store.remember(
                 ScreenMemoryEntry.now(
-                    change_type="completion",
                     software="终端",
                     activity="查看测试结果",
                     change_summary="测试执行完成",
@@ -432,6 +478,21 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(
                 loaded.entries[-1].change_summary,
                 "测试执行完成",
+            )
+            legacy_event = loaded.entries[-1].model_dump()
+            legacy_event["change_type"] = "completion"
+            path.write_text(
+                json.dumps({"events": [legacy_event]}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            migrated = ScreenMemoryStore(path=path, limit=2)
+            self.assertEqual(len(migrated.entries), 1)
+            self.assertEqual(
+                migrated.entries[0].change_summary,
+                "测试执行完成",
+            )
+            self.assertFalse(
+                hasattr(migrated.entries[0], "change_type")
             )
             prompt = loaded.prompt_text()
             self.assertIn("打开文档页面", prompt)
@@ -542,7 +603,6 @@ class CoreTests(unittest.TestCase):
                         "activity": "查看文档",
                         "topic": "API",
                         "significant_change": True,
-                        "change_type": "app_switch",
                         "change_summary": "从编辑器切换到浏览器",
                     },
                     ensure_ascii=False,
@@ -765,7 +825,6 @@ class CoreTests(unittest.TestCase):
                                 "activity": "查看角色图标",
                                 "topic": "角色图片",
                                 "significant_change": False,
-                                "change_type": "none",
                                 "change_summary": "",
                             },
                             ensure_ascii=False,
@@ -815,7 +874,6 @@ class CoreTests(unittest.TestCase):
                                 "activity": "查看页面",
                                 "topic": "文档",
                                 "significant_change": False,
-                                "change_type": "none",
                                 "change_summary": "",
                             },
                             ensure_ascii=False,
@@ -992,6 +1050,55 @@ class CoreTests(unittest.TestCase):
             TTSClient(AppSettings()).session.trust_env,
             "localhost TTS must bypass ambient proxy settings",
         )
+
+    @patch("requests.Session.post")
+    def test_autodl_tts_uses_remote_reference_path(self, post: Mock) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.headers = {"Content-Type": "audio/wav"}
+        response.content = b"RIFF-test"
+        post.return_value = response
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = AppSettings()
+            settings.tts.enabled = True
+            settings.tts.backend = "autodl"
+            settings.tts.autodl_remote_reference_root = (
+                "/root/reference_voices"
+            )
+            with (
+                patch(
+                    "tool.tts.get_cache_dir",
+                    return_value=root,
+                ),
+                patch(
+                    "tool.tts.locate_tts_assets",
+                ) as locate_assets,
+                patch("tool.tts.get_tts_service_manager") as service_manager,
+            ):
+                service_manager.return_value.autodl_reference.return_value = (
+                    "/root/reference_voices/平静/ref.wav",
+                    "reference transcript",
+                )
+                TTSClient(settings).synthesize("こんにちは", "平静")
+
+            service_manager.return_value.ensure_running.assert_called_once_with(
+                settings.tts
+            )
+            service_manager.return_value.autodl_reference.assert_called_once_with(
+                settings.tts,
+                "平静",
+            )
+            locate_assets.assert_not_called()
+            self.assertEqual(
+                post.call_args.kwargs["json"]["ref_audio_path"],
+                "/root/reference_voices/平静/ref.wav",
+            )
+            self.assertEqual(
+                post.call_args.kwargs["json"]["prompt_text"],
+                "reference transcript",
+            )
 
 
 if __name__ == "__main__":

@@ -27,9 +27,14 @@
   },
   "tts": {
     "enabled": false,
+    "backend": "local",
     "base_url": "http://127.0.0.1:9880/tts",
     "engine_root": "C:/AIpet/models/tts/GPT-SoVITS",
     "model_dir": "C:/AIpet/models/tts/Murasame_SoVITS",
+    "autodl_ssh_command": "",
+    "autodl_remote_command": "bash -lc 'bash run.sh; bash'",
+    "autodl_remote_reference_root": "/root/reference_voices",
+    "autodl_password_encrypted": "",
     "timeout_seconds": 300
   },
   "stt": {

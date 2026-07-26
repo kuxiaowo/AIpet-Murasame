@@ -36,25 +36,8 @@ from tool.storage import HistoryStore, ScreenMemoryEntry, ScreenMemoryStore
 from tool.time_utils import build_time_context
 
 
-SCREEN_PIXEL_CHANGE_THRESHOLD = 0.012
-SCREEN_PET_MASK_MARGIN = 8
+SCREEN_PIXEL_CHANGE_THRESHOLD = 0.008
 PROACTIVE_COOLDOWN_SECONDS = 180
-
-
-def screen_local_mask_rect(
-    screen_geometry: QRect,
-    window_geometry: QRect,
-    margin: int = SCREEN_PET_MASK_MARGIN,
-) -> QRect:
-    """Return the visible pet window bounds in screen-local coordinates."""
-    expanded = window_geometry.adjusted(-margin, -margin, margin, margin)
-    visible = expanded.intersected(screen_geometry)
-    if visible.isEmpty():
-        return QRect()
-    return visible.translated(
-        -screen_geometry.x(),
-        -screen_geometry.y(),
-    )
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -374,7 +357,6 @@ class Murasame(QLabel):
         if pixmap.isNull():
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
-        self._mask_pet_from_screenshot(pixmap, screen)
         if not pixmap.save(str(image_path), "PNG"):
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
@@ -407,23 +389,6 @@ class Murasame(QLabel):
         worker.finished.connect(lambda: self._finish_vision_worker(worker))
         worker.start()
 
-    def _mask_pet_from_screenshot(
-        self,
-        pixmap: QPixmap,
-        screen: QScreen,
-    ) -> None:
-        mask = screen_local_mask_rect(
-            screen.geometry(),
-            self.frameGeometry(),
-        )
-        if mask.isEmpty():
-            return
-        painter = QPainter(pixmap)
-        try:
-            painter.fillRect(mask, QColor(0, 0, 0))
-        finally:
-            painter.end()
-
     def _finish_vision_worker(self, worker: VisionWorker) -> None:
         if self._vision_worker is worker:
             self._vision_worker = None
@@ -450,7 +415,6 @@ class Murasame(QLabel):
     @staticmethod
     def _screen_event_key(analysis: ScreenAnalysis) -> str:
         parts = (
-            analysis.change_type,
             analysis.software,
             analysis.activity,
             analysis.topic,
@@ -470,7 +434,6 @@ class Murasame(QLabel):
             return
         if (
             not analysis.significant_change
-            or analysis.change_type == "none"
             or not analysis.change_summary.strip()
         ):
             return
@@ -480,7 +443,6 @@ class Murasame(QLabel):
             return
         self.screen_memory_store.remember(
             ScreenMemoryEntry.now(
-                change_type=analysis.change_type,
                 software=analysis.software,
                 activity=analysis.activity,
                 topic=analysis.topic,
@@ -492,10 +454,7 @@ class Murasame(QLabel):
         if event_key == self._last_spoken_screen_event:
             return
 
-        details = [
-            "屏幕发生了明显变化。",
-            f"变化类型：{analysis.change_type}",
-        ]
+        details = ["屏幕发生了明显变化。"]
         if analysis.software:
             details.append(f"软件：{analysis.software}")
         if analysis.activity:
@@ -509,8 +468,8 @@ class Murasame(QLabel):
             )
         if analysis.murasame_visible:
             details.append(
-                "画面中出现丛雨的角色形象；这是你自己的形象或作品画面，"
-                "不是另一个对话者。"
+                "画面中出现你的桌宠或角色形象；这是你自己在屏幕中的形象，"
+                "不是另一个角色、用户或对话者。"
             )
         if analysis.change_summary:
             details.append(f"变化摘要：{analysis.change_summary}")

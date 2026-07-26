@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -12,23 +11,15 @@ from tool.config import get_user_data_dir
 
 class ScreenMemoryEntry(BaseModel):
     occurred_at: str = Field(max_length=40)
-    change_type: Literal[
-        "app_switch",
-        "task_switch",
-        "page_switch",
-        "error",
-        "completion",
-        "other",
-    ]
     software: str = Field(default="", max_length=80)
-    activity: str = Field(default="", max_length=160)
-    topic: str = Field(default="", max_length=160)
+    activity: str = Field(default="", max_length=240)
+    topic: str = Field(default="", max_length=240)
     recognized_characters: list[str] = Field(
         default_factory=list,
         max_length=5,
     )
     murasame_visible: bool = False
-    change_summary: str = Field(min_length=1, max_length=160)
+    change_summary: str = Field(min_length=1, max_length=240)
 
     @classmethod
     def now(cls, **values) -> "ScreenMemoryEntry":
@@ -41,7 +32,6 @@ class ScreenMemoryEntry(BaseModel):
 
     def event_key(self) -> tuple[object, ...]:
         return (
-            self.change_type,
             self.software.casefold(),
             self.activity.casefold(),
             self.topic.casefold(),

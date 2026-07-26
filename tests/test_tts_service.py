@@ -82,6 +82,7 @@ class TTSServiceTests(unittest.TestCase):
                         "tool.tts_service.tts_service_is_reachable",
                         side_effect=[False, False, True, True],
                     ),
+                    patch.object(manager._process_job, "assign"),
                     patch(
                         "tool.tts_service.subprocess.Popen",
                         return_value=process,
@@ -119,6 +120,71 @@ class TTSServiceTests(unittest.TestCase):
             self.assertRaises(TTSServiceError),
         ):
             manager.ensure_running(settings)
+
+    def test_autodl_starts_ssh_tunnel_and_remote_command(self) -> None:
+        manager = LocalTTSServiceManager()
+        settings = TTSSettings(
+            backend="autodl",
+            base_url="http://127.0.0.1:9880/tts",
+            autodl_ssh_command=(
+                "ssh -p 12345 root@connect.example.com"
+            ),
+            autodl_remote_command="bash -lc 'bash run.sh; bash'",
+            autodl_password_encrypted="encrypted",
+            timeout_seconds=10,
+        )
+        connection = Mock()
+        connection.is_active.return_value = True
+        with (
+            patch(
+                "tool.tts_service.tts_service_is_reachable",
+                side_effect=[False, False, True],
+            ),
+            patch(
+                "tool.tts_service.AutoDLTTSConnection",
+                return_value=connection,
+            ),
+            patch(
+                "tool.tts_service.unprotect_secret",
+                return_value="secret",
+            ),
+        ):
+            self.assertTrue(manager.ensure_running(settings))
+
+        connection.start.assert_called_once_with(
+            settings.autodl_ssh_command,
+            "secret",
+            settings.autodl_remote_command,
+            local_address=("127.0.0.1", 9880),
+            remote_address=("127.0.0.1", 9880),
+            progress=None,
+        )
+        self.assertTrue(manager.stop())
+        connection.stop.assert_called_once_with()
+
+    def test_autodl_rejects_unowned_service_on_tunnel_port(self) -> None:
+        manager = LocalTTSServiceManager()
+        settings = TTSSettings(
+            backend="autodl",
+            base_url="http://127.0.0.1:9880/tts",
+        )
+        with (
+            patch(
+                "tool.tts_service.tts_service_is_reachable",
+                return_value=True,
+            ),
+            self.assertRaisesRegex(
+                TTSServiceError,
+                "not started through the current AutoDL SSH session",
+            ),
+        ):
+            manager.ensure_running(settings)
+
+    def test_shutdown_closes_process_lifetime_job(self) -> None:
+        manager = LocalTTSServiceManager()
+        with patch.object(manager._process_job, "close") as close:
+            manager.shutdown()
+        close.assert_called_once_with()
 
     @staticmethod
     def _create_engine(root: Path) -> Path:

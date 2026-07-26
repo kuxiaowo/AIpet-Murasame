@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import atexit
+import ctypes
 import os
 import subprocess
 import threading
@@ -8,7 +10,9 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
+from tool.autodl_tts import AutoDLTTSConnection
 from tool.config import TTSSettings, get_cache_dir
+from tool.credentials import CredentialError, unprotect_secret
 from tool.network import is_loopback_url
 from tool.runtime_logging import get_logger
 from tool.tts_assets import (
@@ -26,12 +30,123 @@ class TTSServiceError(RuntimeError):
     pass
 
 
+class _WindowsKillOnCloseJob:
+    """Keep managed TTS children tied to the lifetime of this app process."""
+
+    _KILL_ON_JOB_CLOSE = 0x00002000
+    _EXTENDED_LIMIT_INFORMATION = 9
+
+    def __init__(self) -> None:
+        self._handle: int | None = None
+
+    def assign(self, process: subprocess.Popen[bytes]) -> None:
+        if os.name != "nt":
+            return
+
+        from ctypes import wintypes
+
+        class BasicLimitInformation(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_uint64),
+                ("WriteOperationCount", ctypes.c_uint64),
+                ("OtherOperationCount", ctypes.c_uint64),
+                ("ReadTransferCount", ctypes.c_uint64),
+                ("WriteTransferCount", ctypes.c_uint64),
+                ("OtherTransferCount", ctypes.c_uint64),
+            ]
+
+        class ExtendedLimitInformation(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", BasicLimitInformation),
+                ("IoInfo", IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.argtypes = [
+            ctypes.c_void_p,
+            wintypes.LPCWSTR,
+        ]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.AssignProcessToJobObject.argtypes = [
+            wintypes.HANDLE,
+            wintypes.HANDLE,
+        ]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+
+        if self._handle is None:
+            handle = kernel32.CreateJobObjectW(None, None)
+            if not handle:
+                raise ctypes.WinError(ctypes.get_last_error())
+            information = ExtendedLimitInformation()
+            information.BasicLimitInformation.LimitFlags = (
+                self._KILL_ON_JOB_CLOSE
+            )
+            if not kernel32.SetInformationJobObject(
+                handle,
+                self._EXTENDED_LIMIT_INFORMATION,
+                ctypes.byref(information),
+                ctypes.sizeof(information),
+            ):
+                error = ctypes.WinError(ctypes.get_last_error())
+                self._close_handle(handle)
+                raise error
+            self._handle = int(handle)
+
+        process_handle = getattr(process, "_handle", None)
+        if process_handle is None or not kernel32.AssignProcessToJobObject(
+            wintypes.HANDLE(self._handle),
+            wintypes.HANDLE(int(process_handle)),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def close(self) -> None:
+        handle = self._handle
+        self._handle = None
+        if handle is not None and os.name == "nt":
+            self._close_handle(handle)
+
+    @staticmethod
+    def _close_handle(handle: int) -> None:
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
 class LocalTTSServiceManager:
     """Own at most one GPT-SoVITS API process for the current AIpet process."""
 
     def __init__(self) -> None:
         self._condition = threading.Condition(threading.RLock())
         self._process: subprocess.Popen[bytes] | None = None
+        self._autodl_connection: AutoDLTTSConnection | None = None
+        self._process_job = _WindowsKillOnCloseJob()
         self._log_file = None
         self._server_address: tuple[str, int] | None = None
         self._starting = False
@@ -43,7 +158,10 @@ class LocalTTSServiceManager:
 
     def owns_running_process(self) -> bool:
         with self._condition:
-            return self._process_is_running_locked()
+            return self._process_is_running_locked() or (
+                self._autodl_connection is not None
+                and self._autodl_connection.is_active()
+            )
 
     def ensure_running(
         self,
@@ -51,8 +169,16 @@ class LocalTTSServiceManager:
         *,
         state: TTSAssetState | None = None,
         progress: ProgressCallback | None = None,
+        password: str = "",
     ) -> bool:
-        """Ensure a local API is reachable; return True if we launched it."""
+        """Ensure the selected TTS API is reachable; return True if started."""
+
+        if settings.uses_autodl():
+            return self._ensure_autodl_running(
+                settings,
+                progress=progress,
+                password=password,
+            )
 
         address = _local_server_address(settings.base_url)
         if tts_service_is_reachable(settings.base_url):
@@ -156,19 +282,25 @@ class LocalTTSServiceManager:
                 self._condition.notify_all()
 
     def stop(self) -> bool:
-        """Stop only the service process launched by this AIpet process."""
+        """Stop only services and SSH sessions launched by this AIpet process."""
 
         with self._condition:
             process = self._process
-            if process is None:
+            autodl_connection = self._autodl_connection
+            self._autodl_connection = None
+            if process is None and autodl_connection is None:
                 self._close_log_locked()
                 return False
 
-        self._terminate_process(process)
-        logger.info(
-            "TTS 服务已停止 | PID %s",
-            getattr(process, "pid", "unknown"),
-        )
+        if process is not None:
+            self._terminate_process(process)
+            logger.info(
+                "TTS 服务已停止 | PID %s",
+                getattr(process, "pid", "unknown"),
+            )
+        if autodl_connection is not None:
+            autodl_connection.stop()
+            logger.info("AutoDL TTS SSH 会话已关闭")
         with self._condition:
             if self._process is process:
                 self._process = None
@@ -177,10 +309,153 @@ class LocalTTSServiceManager:
             self._condition.notify_all()
         return True
 
+    def _ensure_autodl_running(
+        self,
+        settings: TTSSettings,
+        *,
+        progress: ProgressCallback | None,
+        password: str,
+    ) -> bool:
+        with self._condition:
+            active_connection = self._autodl_connection
+        if (
+            active_connection is not None
+            and active_connection.is_active()
+            and tts_service_is_reachable(settings.base_url)
+        ):
+            logger.info("AutoDL TTS 服务已在线 | %s", settings.base_url)
+            return False
+        if tts_service_is_reachable(settings.base_url):
+            raise TTSServiceError(
+                "The local TTS port is occupied by a service that was not "
+                "started through the current AutoDL SSH session. Stop that "
+                "service or use another local port."
+            )
+
+        address = _local_server_address(settings.base_url)
+        deadline = time.monotonic() + settings.timeout_seconds
+        with self._condition:
+            if self._shutting_down:
+                raise TTSServiceError("AIpet is shutting down.")
+            while self._starting:
+                _report(progress, "waiting_for_existing_start")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TTSServiceError(
+                        "Timed out while another TTS startup was in progress."
+                    )
+                self._condition.wait(min(0.5, remaining))
+            if tts_service_is_reachable(settings.base_url):
+                active_connection = self._autodl_connection
+                if (
+                    active_connection is not None
+                    and active_connection.is_active()
+                ):
+                    return False
+                raise TTSServiceError(
+                    "The local TTS port is occupied by another service."
+                )
+            if (
+                self._autodl_connection is not None
+                and self._autodl_connection.is_active()
+            ):
+                raise TTSServiceError(
+                    "The AutoDL SSH session is active, but its TTS API is not "
+                    "reachable. Stop it in Settings and try again."
+                )
+            self._autodl_connection = None
+            self._starting = True
+
+        connection = AutoDLTTSConnection()
+        try:
+            clear_password = password
+            if not clear_password:
+                try:
+                    clear_password = unprotect_secret(
+                        settings.autodl_password_encrypted
+                    )
+                except CredentialError as exc:
+                    raise TTSServiceError(str(exc)) from exc
+            connection.start(
+                settings.autodl_ssh_command,
+                clear_password,
+                settings.autodl_remote_command,
+                local_address=address,
+                remote_address=("127.0.0.1", 9880),
+                progress=progress,
+            )
+            with self._condition:
+                self._autodl_connection = connection
+
+            _report(progress, "waiting_for_api")
+            while time.monotonic() < deadline:
+                if tts_service_is_reachable(
+                    settings.base_url,
+                    timeout=0.75,
+                ):
+                    _report(progress, "ready")
+                    logger.info(
+                        "AutoDL TTS 启动完成 | %s",
+                        settings.base_url,
+                    )
+                    return True
+                if not connection.is_active():
+                    detail = connection.output_tail()
+                    suffix = f"\n{detail}" if detail else ""
+                    raise TTSServiceError(
+                        "The AutoDL SSH session ended before TTS became ready."
+                        + suffix
+                    )
+                time.sleep(0.35)
+
+            detail = connection.output_tail()
+            suffix = f"\n{detail}" if detail else ""
+            raise TTSServiceError(
+                "Timed out waiting for the AutoDL TTS API to become ready."
+                + suffix
+            )
+        except Exception:
+            logger.exception("AutoDL TTS 启动失败")
+            connection.stop()
+            with self._condition:
+                if self._autodl_connection is connection:
+                    self._autodl_connection = None
+            raise
+        finally:
+            with self._condition:
+                self._starting = False
+                self._condition.notify_all()
+
     def shutdown(self) -> None:
         with self._condition:
             self._shutting_down = True
-        self.stop()
+        try:
+            self.stop()
+        finally:
+            self._process_job.close()
+
+    def autodl_reference(
+        self,
+        settings: TTSSettings,
+        emotion: str,
+    ) -> tuple[str, str]:
+        with self._condition:
+            connection = self._autodl_connection
+        if (
+            connection is None
+            or not connection.is_active()
+            or not settings.uses_autodl()
+        ):
+            raise TTSServiceError(
+                "The AutoDL SSH session is not active."
+            )
+        try:
+            return connection.read_reference_metadata(
+                settings.autodl_remote_reference_root,
+                emotion,
+            )
+        except Exception as exc:
+            raise TTSServiceError(str(exc)) from exc
 
     def _launch(
         self,
@@ -214,6 +489,13 @@ class LocalTTSServiceManager:
         except Exception:
             log_file.close()
             raise
+        try:
+            self._process_job.assign(process)
+        except OSError as exc:
+            logger.warning(
+                "无法把 TTS 子进程绑定到桌宠生命周期：%s",
+                exc,
+            )
         with self._condition:
             self._process = process
             self._log_file = log_file
@@ -343,3 +625,6 @@ def get_tts_service_manager() -> LocalTTSServiceManager:
 
 def shutdown_tts_service() -> None:
     _SERVICE_MANAGER.shutdown()
+
+
+atexit.register(shutdown_tts_service)

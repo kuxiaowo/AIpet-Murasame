@@ -26,11 +26,20 @@ class TTSClient:
 
     def synthesize(self, text: str, emotion: Emotion) -> Path:
         config = self.settings.tts
-        state = locate_tts_assets(
-            configured_engine_root=config.engine_root,
-            configured_model_dir=config.model_dir,
-        )
-        if is_loopback_url(config.base_url):
+        if config.uses_autodl():
+            manager = get_tts_service_manager()
+            try:
+                manager.ensure_running(config)
+                reference_audio_path, prompt_text = (
+                    manager.autodl_reference(config, emotion)
+                )
+            except TTSServiceError as exc:
+                raise TTSError(f"AutoDL TTS 启动失败: {exc}") from exc
+        else:
+            state = locate_tts_assets(
+                configured_engine_root=config.engine_root,
+                configured_model_dir=config.model_dir,
+            )
             if not state.model_ready:
                 raise TTSError("丛雨 TTS 模型尚未下载完成")
             try:
@@ -41,36 +50,39 @@ class TTSClient:
             except TTSServiceError as exc:
                 raise TTSError(f"TTS 服务启动失败: {exc}") from exc
 
-        if not self._weights_configured and is_loopback_url(config.base_url):
             try:
-                configure_local_tts_weights(
-                    config.base_url,
-                    state,
-                    config.timeout_seconds,
-                )
+                if not self._weights_configured:
+                    configure_local_tts_weights(
+                        config.base_url,
+                        state,
+                        config.timeout_seconds,
+                    )
+                    self._weights_configured = True
             except requests.RequestException as exc:
                 raise TTSError(f"TTS 模型加载失败: {exc}") from exc
-            self._weights_configured = True
 
-        if state.reference_root is None:
-            raise TTSError("丛雨 TTS 参考音频尚未下载完成")
-        reference_dir = state.reference_root / emotion
-        transcript_path = reference_dir / "asr.txt"
-        audio_files = sorted(
-            path
-            for path in reference_dir.iterdir()
-            if path.suffix.lower() in {".wav", ".mp3", ".flac"}
-        )
-        if not transcript_path.exists() or not audio_files:
-            raise TTSError(f"缺少情绪参考语音: {emotion}")
+            if state.reference_root is None:
+                raise TTSError("丛雨 TTS 参考音频尚未下载完成")
+            reference_dir = state.reference_root / emotion
+            transcript_path = reference_dir / "asr.txt"
+            audio_files = sorted(
+                path
+                for path in reference_dir.iterdir()
+                if path.suffix.lower() in {".wav", ".mp3", ".flac"}
+            )
+            if not transcript_path.exists() or not audio_files:
+                raise TTSError(f"缺少情绪参考语音: {emotion}")
+            reference_audio_path = str(audio_files[0].resolve())
+            prompt_text = transcript_path.read_text(
+                encoding="utf-8"
+            ).strip()
 
-        local_audio = audio_files[0]
         params = {
             "text": text,
             "text_lang": "ja",
-            "ref_audio_path": str(local_audio.resolve()),
+            "ref_audio_path": reference_audio_path,
             "aux_ref_audio_paths": [],
-            "prompt_text": transcript_path.read_text(encoding="utf-8").strip(),
+            "prompt_text": prompt_text,
             "prompt_lang": "ja",
             "top_k": 15,
             "top_p": 1,
