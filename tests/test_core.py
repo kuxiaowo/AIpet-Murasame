@@ -8,6 +8,13 @@ from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
+from tool.audio_devices import (
+    AudioInputDevice,
+    decode_audio_input_device,
+    encode_audio_input_device,
+    list_audio_input_devices,
+    resolve_audio_input_device,
+)
 from tool.backends import (
     APIBackend,
     OllamaBackend,
@@ -48,6 +55,89 @@ from tool.tts_assets import TTSAssetState
 
 
 class CoreTests(unittest.TestCase):
+    def test_audio_input_device_identifier_and_resolution(self) -> None:
+        device = AudioInputDevice(
+            index=37,
+            name="Test Microphone",
+            hostapi="Windows WASAPI",
+            max_input_channels=1,
+        )
+
+        identifier = encode_audio_input_device(
+            device.name,
+            device.hostapi,
+        )
+
+        self.assertEqual(
+            decode_audio_input_device(identifier),
+            (device.name, device.hostapi),
+        )
+        with patch(
+            "tool.audio_devices._all_compatible_audio_input_devices",
+            return_value=[device],
+        ):
+            self.assertEqual(resolve_audio_input_device(identifier), 37)
+            with self.assertRaisesRegex(RuntimeError, "当前不可用"):
+                resolve_audio_input_device(
+                    encode_audio_input_device(
+                        "Missing Microphone",
+                        "Windows WASAPI",
+                    )
+                )
+
+    def test_audio_input_devices_prefer_supported_user_endpoints(self) -> None:
+        devices = [
+            AudioInputDevice(
+                0,
+                "Microsoft 声音映射器 - Input",
+                "MME",
+                2,
+            ),
+            AudioInputDevice(
+                1,
+                "麦克风 (Steam Streaming Microphone",
+                "MME",
+                8,
+            ),
+            AudioInputDevice(
+                15,
+                "麦克风 (Steam Streaming Microphone)",
+                "Windows DirectSound",
+                8,
+            ),
+            AudioInputDevice(
+                3,
+                "耳机 (EDIFIER FitBuds Pro)",
+                "MME",
+                1,
+            ),
+            AudioInputDevice(
+                39,
+                "耳机 (EDIFIER FitBuds Pro)",
+                "Windows WASAPI",
+                1,
+            ),
+            AudioInputDevice(
+                55,
+                "耳机 (EDIFIER FitBuds Pro)",
+                "Windows WDM-KS",
+                1,
+            ),
+        ]
+        with patch(
+            "tool.audio_devices._all_compatible_audio_input_devices",
+            return_value=devices,
+        ):
+            preferred = list_audio_input_devices()
+
+        self.assertEqual(
+            [(device.index, device.hostapi) for device in preferred],
+            [
+                (39, "Windows WASAPI"),
+                (15, "Windows DirectSound"),
+            ],
+        )
+
     def test_default_model_directory_is_inside_project(self) -> None:
         with patch.dict(
             "os.environ",

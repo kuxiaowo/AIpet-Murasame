@@ -20,6 +20,7 @@ from classes.download_manager import DownloadSnapshot, whisper_job_id
 from classes.murasame_class import Murasame, screen_local_mask_rect
 from classes.workers import ConversationResult
 from main import move_pet_to_configured_screen
+from tool.audio_devices import AudioInputDevice
 from tool.backends import ScreenAnalysis, parse_character_reply
 from tool.config import AppSettings
 from tool.portraits import layers_for
@@ -94,6 +95,43 @@ class UISmokeTests(unittest.TestCase):
                     self.assertTrue(pet.display_text.startswith("【丛雨】\n"))
                 finally:
                     pet.shutdown()
+
+    def test_recording_device_selection_round_trips(self) -> None:
+        selected = AudioInputDevice(
+            index=37,
+            name="Test Microphone",
+            hostapi="Windows WASAPI",
+            max_input_channels=1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            settings = AppSettings()
+            settings.stt.input_device = selected.identifier
+            with (
+                patch.dict(
+                    os.environ,
+                    {"AIPET_DATA_DIR": directory},
+                ),
+                patch(
+                    "ui.settings_dialog.list_audio_input_devices",
+                    return_value=[selected],
+                ),
+                patch(
+                    "ui.settings_dialog.default_audio_input_device",
+                    return_value=selected,
+                ),
+            ):
+                dialog = SettingsDialog(settings)
+                try:
+                    self.assertEqual(
+                        dialog.stt_input_device.currentData(),
+                        selected.identifier,
+                    )
+                    self.assertEqual(
+                        dialog._form_settings().stt.input_device,
+                        selected.identifier,
+                    )
+                finally:
+                    dialog.close()
 
     def test_disabled_screen_vision_is_inert(self) -> None:
         settings = AppSettings(mode="api")

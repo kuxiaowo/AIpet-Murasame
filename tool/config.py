@@ -229,6 +229,7 @@ class STTSettings(BaseModel):
     model: str = Field(default="large-v3", min_length=1)
     model_dir: str = Field(default_factory=default_whisper_model_dir)
     device: Literal["auto", "cuda", "cpu"] = "auto"
+    input_device: str = ""
 
     @model_validator(mode="after")
     def fill_default_path(self) -> "STTSettings":

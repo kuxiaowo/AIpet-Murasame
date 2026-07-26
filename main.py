@@ -178,6 +178,7 @@ def configure_voice_trigger(
         model_name=settings.stt.model,
         model_directory=settings.stt.model_dir,
         device=settings.stt.device,
+        input_device=settings.stt.input_device,
         on_error=bridge.error.emit,
     )
     try:

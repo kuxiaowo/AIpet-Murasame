@@ -36,6 +36,11 @@ from classes.download_manager import (
     DownloadSnapshot,
     whisper_job_id,
 )
+from tool.audio_devices import (
+    decode_audio_input_device,
+    default_audio_input_device,
+    list_audio_input_devices,
+)
 from tool.backends import create_backend, create_vision_backend
 from tool.config import (
     APISettings,
@@ -216,6 +221,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_enabled": "Hold Caps Lock for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
+        "stt_input_device": "Recording device",
+        "stt_input_default": "System default ({device})",
+        "stt_input_default_unknown": "System default input",
+        "stt_input_unavailable": "Unavailable: {device}",
         "stt_device": "STT device",
         "whisper_download": "Download model",
         "whisper_disabled": (
@@ -435,6 +444,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_enabled": "长按 Caps Lock 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
+        "stt_input_device": "录音设备",
+        "stt_input_default": "系统默认（{device}）",
+        "stt_input_default_unknown": "系统默认输入设备",
+        "stt_input_unavailable": "当前不可用：{device}",
         "stt_device": "语音识别设备",
         "whisper_download": "下载模型",
         "whisper_disabled": "启用语音输入后，将检查填写的模型下载目录。",
@@ -995,6 +1008,15 @@ class SettingsDialog(QDialog):
         )
         self.stt_device = QComboBox()
         self.stt_device.addItems(["auto", "cuda", "cpu"])
+        self.stt_input_device = QComboBox()
+        self._default_audio_input = default_audio_input_device()
+        self._missing_audio_input_identifier = ""
+        self.stt_input_device.addItem("", "")
+        for input_device in list_audio_input_devices():
+            self.stt_input_device.addItem(
+                input_device.display_name,
+                input_device.identifier,
+            )
         self.whisper_status = QLabel()
         self.whisper_status.setWordWrap(True)
         self.whisper_progress = QProgressBar()
@@ -1045,6 +1067,11 @@ class SettingsDialog(QDialog):
         whisper_form.addRow(self.whisper_status)
         whisper_form.addRow(self.whisper_progress)
         whisper_form.addRow(self.whisper_download_button)
+        self._add_row(
+            whisper_form,
+            "stt_input_device",
+            self.stt_input_device,
+        )
         self._add_row(whisper_form, "stt_device", self.stt_device)
         layout.addWidget(self.whisper_group)
         layout.addWidget(self.vision_group)
@@ -1297,6 +1324,7 @@ class SettingsDialog(QDialog):
         self.stt_enabled.setChecked(settings.stt.enabled)
         self._set_editable_combo(self.stt_model, settings.stt.model)
         self.whisper_model_dir.setText(settings.stt.model_dir)
+        self._set_audio_input_device(settings.stt.input_device)
         self.stt_device.setCurrentText(settings.stt.device)
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
@@ -1317,6 +1345,46 @@ class SettingsDialog(QDialog):
     def _text(self, key: str, **values: object) -> str:
         text = TRANSLATIONS[self._language()][key]
         return text.format(**values) if values else text
+
+    def _set_audio_input_device(self, identifier: str) -> None:
+        index = self.stt_input_device.findData(identifier)
+        if index < 0 and identifier:
+            name, hostapi = decode_audio_input_device(identifier)
+            description = f"{name} — {hostapi}" if hostapi else name
+            self.stt_input_device.addItem(description, identifier)
+            self._missing_audio_input_identifier = identifier
+            index = self.stt_input_device.count() - 1
+        self.stt_input_device.setCurrentIndex(max(index, 0))
+
+    def _retranslate_audio_input_devices(self) -> None:
+        default_name = (
+            self._default_audio_input.name
+            if self._default_audio_input is not None
+            else ""
+        )
+        default_text = (
+            self._text("stt_input_default", device=default_name)
+            if default_name
+            else self._text("stt_input_default_unknown")
+        )
+        self._set_combo_item_text(
+            self.stt_input_device,
+            "",
+            default_text,
+        )
+        if self._missing_audio_input_identifier:
+            name, hostapi = decode_audio_input_device(
+                self._missing_audio_input_identifier
+            )
+            description = f"{name} — {hostapi}" if hostapi else name
+            self._set_combo_item_text(
+                self.stt_input_device,
+                self._missing_audio_input_identifier,
+                self._text(
+                    "stt_input_unavailable",
+                    device=description,
+                ),
+            )
 
     def _on_language_changed(self) -> None:
         self._retranslate_ui()
@@ -1432,6 +1500,7 @@ class SettingsDialog(QDialog):
         self.tts_download_button.setText(self._text("tts_download"))
         self._render_tts_service_button()
         self.stt_enabled.setText(self._text("stt_enabled"))
+        self._retranslate_audio_input_devices()
         self.whisper_download_button.setText(
             self._text("whisper_download")
         )
@@ -1541,6 +1610,7 @@ class SettingsDialog(QDialog):
         self.whisper_model_dir.setEnabled(enabled and not downloading)
         self.whisper_model_browse.setEnabled(enabled and not downloading)
         self.stt_device.setEnabled(enabled)
+        self.stt_input_device.setEnabled(enabled)
         self.whisper_download_button.setEnabled(False)
         self._render_progress(self.whisper_progress, snapshot)
         if not enabled:
@@ -2409,6 +2479,7 @@ class SettingsDialog(QDialog):
                 model=self.stt_model.currentText().strip(),
                 model_dir=self.whisper_model_dir.text().strip(),
                 device=self.stt_device.currentText(),
+                input_device=self.stt_input_device.currentData() or "",
             ),
             character=CharacterSettings(
                 user_name=self.user_name.text().strip(),

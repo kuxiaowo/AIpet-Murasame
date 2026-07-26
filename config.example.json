@@ -36,7 +36,8 @@
     "enabled": false,
     "model": "large-v3",
     "model_dir": "C:/AIpet/models/whisper/large-v3",
-    "device": "auto"
+    "device": "auto",
+    "input_device": ""
   },
   "character": {
     "user_name": "主人",
