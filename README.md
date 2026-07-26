@@ -5,19 +5,20 @@
 <h1 align="center">AIpet · Murasame</h1>
 
 <p align="center">
-  <strong>An AI-powered desktop companion that can talk, listen, react, and keep you company.</strong>
+  <strong>A prompt-driven AI desktop companion with interchangeable local and cloud models.</strong>
 </p>
 
 <p align="center">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
+  <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
+  <img alt="Cloud APIs" src="https://img.shields.io/badge/API-DeepSeek%20%7C%20Alibaba%20%7C%20OpenAI-6246EA?style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/kuxiaowo/AIpet-Murasame/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/kuxiaowo/AIpet-Murasame?style=flat-square&logo=github"></a>
-  <a href="https://github.com/kuxiaowo/AIpet-Murasame/tags"><img alt="Latest tag" src="https://img.shields.io/github/v/tag/kuxiaowo/AIpet-Murasame?style=flat-square&label=version&sort=semver"></a>
   <a href="https://github.com/kuxiaowo/AIpet-Murasame/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/kuxiaowo/AIpet-Murasame?style=flat-square"></a>
   <a href="https://github.com/kuxiaowo/AIpet-Murasame/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/kuxiaowo/AIpet-Murasame?style=flat-square"></a>
 </p>
@@ -28,191 +29,271 @@
 
 <p align="center">
   <a href="#quick-start"><img alt="Quick start" src="https://img.shields.io/badge/Docs-Quick_Start-0969DA?style=for-the-badge&logo=readthedocs&logoColor=white"></a>
-  <a href="#configuration"><img alt="Configuration" src="https://img.shields.io/badge/Setup-Configuration-00897B?style=for-the-badge&logo=json&logoColor=white"></a>
-  <a href="https://www.bilibili.com/video/BV1oi4wzSEJJ"><img alt="Watch the demo" src="https://img.shields.io/badge/Demo-Watch_Now-FB7299?style=for-the-badge&logo=bilibili&logoColor=white"></a>
-  <a href="#troubleshooting"><img alt="Troubleshooting" src="https://img.shields.io/badge/Help-Troubleshooting-E67E22?style=for-the-badge&logo=bookstack&logoColor=white"></a>
+  <a href="#settings"><img alt="Settings" src="https://img.shields.io/badge/Setup-Settings-00897B?style=for-the-badge&logo=qt&logoColor=white"></a>
+  <a href="#architecture"><img alt="Architecture" src="https://img.shields.io/badge/Guide-Architecture-E67E22?style=for-the-badge&logo=diagramsdotnet&logoColor=white"></a>
 </p>
 
 ---
 
 ## Overview
 
-AIpet is a Windows desktop companion inspired by Murasame. It combines an always-on-top PyQt5 character window with cloud or local language models, expressive speech, optional voice input, screen awareness, and persistent conversation history.
+AIpet is an always-on-top Murasame desktop companion for Windows. The character is simulated entirely through a personality prompt—there is no bundled chat Transformer, LoRA adapter, PyTorch runtime, or model download script.
 
-This project is based in part on [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet) and adds rewritten components and new interaction features.
+You can run conversations through a local [Ollama](https://ollama.com/) service or an OpenAI-compatible cloud API. DeepSeek, Alibaba Cloud Model Studio, and OpenAI are built in. Chat and vision backends are configured independently, so a cloud chat model can use a local Ollama vision model.
 
 ## Highlights
 
-- **Cloud or local conversations** — use DeepSeek, Qwen, or a local Qwen model through Ollama.
-- **Expressive speech** — synthesize emotion-aware voice output with [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS).
-- **Voice input** — hold Caps Lock to talk when [faster-whisper](https://github.com/SYSTRAN/faster-whisper) input is enabled.
-- **Screen awareness** — optionally let a Qwen vision model respond to what is happening on a selected display.
-- **A companion that remembers** — conversation history, idle reactions, welcome-back messages, and two portrait sets.
-- **Native desktop interaction** — a transparent, frameless PyQt5 window with tray controls and Do Not Disturb mode.
+- **Two backend modes** — local Ollama or a cloud API.
+- **Selectable models** — configure chat and vision models independently.
+- **Built-in providers** — DeepSeek, Alibaba Cloud, OpenAI, and local Ollama.
+- **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
+- **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, one of six emotions, a safe `a`/`b` portrait pose, and one of four outfits.
+- **Deterministic portraits** — the model may switch between validated poses and outfits, while outfit, pose, and emotion map to known portrait layers in code; model changes cannot invent broken layer IDs.
+- **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
+- **Live diagnostic console** — optionally open a real-time command window with correlated request/response JSON, worker events, warnings, and exception details. UTF-8 logs are retained by day under `logs/YYYY-MM-DD.log`; API secrets are redacted and large base64 media is represented by length and SHA-256 metadata.
+- **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, the pet window is masked before analysis, and the vision model can identify likely on-screen characters including Murasame.
+- **Bounded screen memory** — only significant screen changes are retained as compact structured summaries for later conversations; raw screenshots are never added to conversation history.
+- **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
+- **Private user state** — configuration, keys, and conversation history live outside the Git repository.
 
-## Demo and tutorials
+## Supported backends
 
-| Type | Video |
-|---|---|
-| Demo | [Let Murasame stay by your side](https://www.bilibili.com/video/BV1oi4wzSEJJ) |
-| Latest tutorial | [V1.3.0 deployment tutorial](https://www.bilibili.com/video/BV1iw2XBREpd) |
-| Earlier tutorials | [V1.2.2](https://www.bilibili.com/video/BV1ghCMBjEKK) · [V1.2.0](https://www.bilibili.com/video/BV1F6ykBwEDu) |
+| Purpose | Provider | Default model |
+|---|---|---|
+| Chat | Ollama | `qwen3:14b` |
+| Chat | DeepSeek | `deepseek-v4-flash` |
+| Chat | Alibaba Cloud Model Studio | `qwen-plus` |
+| Chat | OpenAI | `gpt-5.6-luna` |
+| Vision | Ollama (local) | `qwen2.5vl:7b` |
+| Vision | Alibaba Cloud Model Studio | `qwen3-vl-plus` |
+| Vision | OpenAI | `gpt-5.6-luna` |
 
-## Tech stack
+Model fields are editable. The defaults are starting points, not hard-coded requirements.
 
-| Area | Technology |
-|---|---|
-| Desktop UI | Python, PyQt5 |
-| Language models | Qwen, DeepSeek, Ollama |
-| Speech synthesis | GPT-SoVITS |
-| Speech recognition | faster-whisper |
-| Screen understanding | Qwen VL |
-| Local service | FastAPI, Uvicorn |
+## Architecture
+
+```mermaid
+flowchart LR
+    UI["PyQt5 desktop pet<br>Settings"] --> C["Conversation worker"]
+    UI --> V["Vision worker"]
+    C --> CB{"Chat backend"}
+    V --> VB{"Independent vision backend"}
+    CB --> O["Ollama /api/chat"]
+    CB --> D["DeepSeek API"]
+    CB --> A["Alibaba Cloud API"]
+    CB --> OA["OpenAI API"]
+    VB --> VO["Local Ollama"]
+    VB --> A
+    VB --> OA
+    C --> R["Validated reply<br>zh + ja + emotion"]
+    R --> P["Deterministic portrait layers"]
+    R --> T["Optional GPT-SoVITS"]
+    P --> UI
+    T --> UI
+```
+
+The language model never controls files, Qt widgets, portrait layer IDs, or shell commands. Screen text is wrapped as untrusted event context before it reaches the character prompt.
 
 ## Requirements
 
-- Windows
-- Python 3.10 or newer; Python 3.10 is recommended if compatibility issues occur
-- [Conda](https://docs.conda.io/) or another Python environment manager
-- A DeepSeek/Qwen API key **or** a local Ollama model
-- GPT-SoVITS locally, or access to a configured remote TTS service
-- An NVIDIA GPU is recommended for local model and TTS workloads; cloud mode can avoid most local GPU requirements
+- Windows 10 or 11
+- Conda
+- Python 3.10 or newer
+- One of:
+  - [Ollama](https://ollama.com/) with a chat model
+  - a DeepSeek API key
+  - an Alibaba Cloud Model Studio API key
+- Optional: GPT-SoVITS for speech output; AIpet can manage the local service
+- Optional: microphone dependencies from `requirements-voice.txt`
 
-> [!IMPORTANT]
-> Extract or clone the project into a path without spaces, non-ASCII characters, parentheses, or other special symbols. Some bundled Windows tools are sensitive to such paths.
+A local NVIDIA GPU is not required by AIpet itself. Hardware needs depend on the Ollama and TTS models you choose.
 
 ## Quick start
 
-### 1. Download the project
-
-Download a ZIP from GitHub, or clone the repository:
+### 1. Clone the project
 
 ```bash
 git clone https://github.com/kuxiaowo/AIpet-Murasame.git
 cd AIpet-Murasame
 ```
 
-### 2. Create a Conda environment
+### 2. Create the Conda environment
+
+```bash
+conda env create -f environment.yml
+conda activate aipet
+```
+
+Or create it manually:
 
 ```bash
 conda create -n aipet python=3.10 -y
 conda activate aipet
+python -m pip install -r requirements.txt
 ```
 
-### 3. Choose a conversation backend
+For optional Caps Lock speech input:
 
-For a cloud backend, add your own key to the matching empty field in `config.json`, then set `model_type` to `deepseek` or `qwen`.
+```bash
+python -m pip install -r requirements-voice.txt
+```
 
-For local conversations, install [Ollama](https://ollama.com/download), set `model_type` to `local`, and download the required models:
+### 3. Prepare a backend
+
+For Ollama, install it and pull models of your choice. For example:
 
 ```bash
 ollama pull qwen3:14b
 ollama pull qwen2.5vl:7b
 ```
 
-The vision model is only needed for local screen awareness.
+For a cloud API, have a DeepSeek, Alibaba Cloud, or OpenAI key ready. Keys may also be provided through environment variables:
 
-### 4. Configure speech synthesis
-
-For local TTS, place a compatible [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) package in `GPT-SoVITS/` next to `main.py`, and set `tts_type` to `local`.
-
-An integrated-package guide is available [here](https://www.yuque.com/baicaigongchang1145haoyuangong/ib3g1e/dkxgpiy9zb96hob4). Choose a package compatible with your GPU.
-
-For remote TTS, set `tts_type` to `cloud` and configure the SSH host and API endpoints for your deployment. The [AutoDL guide](https://www.autodl.com/docs/ssh/) and the latest [deployment tutorial](https://www.bilibili.com/video/BV1iw2XBREpd) show the expected setup.
-
-### 5. Launch
-
-```bash
-python run.py
+```powershell
+$env:DEEPSEEK_API_KEY = "your-key"
+$env:DASHSCOPE_API_KEY = "your-key"
+$env:OPENAI_API_KEY = "your-key"
 ```
 
-`run.py` checks Python and hardware compatibility, installs the required Python packages, downloads local models when needed, starts the TTS service, and launches the desktop pet.
+### 4. Launch
 
-## Configuration
+```bash
+python main.py
+```
 
-The main options live in `config.json`.
+Settings opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages or modify CUDA. Model downloads start only after an explicit Whisper download action or approval of the TTS model prompt. A downloaded local GPT-SoVITS service starts on demand before the first TTS request, or from the manual control in Settings.
 
-| Key | Values | Purpose |
-|---|---|---|
-| `APIKEY.deepseek` | API key | DeepSeek cloud access |
-| `APIKEY.qwen` | API key | Qwen cloud and cloud vision access |
-| `model_type` | `deepseek`, `qwen`, `local` | Conversation backend |
-| `tts_type` | `local`, `cloud` | Speech synthesis backend |
-| `portrait` | `a`, `b` | Character outfit / portrait set |
-| `user_name` | text | Name used to address the user |
-| `screen_type` | `true`, `false` | Enable periodic screen awareness |
-| `voice_trigger` | `true`, `false` | Enable Caps Lock voice input |
-| `stt_model` | model name | faster-whisper model, such as `large-v3` |
-| `screen_interval` | seconds | Delay between screen captures |
-| `screen_index` | integer | Display used for the pet and screenshots |
-| `DEFAULT_PORTRAIT_SCREEN_RATIO` | decimal | Maximum pet height relative to the display |
-| `idle_thinking_minutes` | minutes | Short idle-reaction threshold |
-| `idle_away_minutes` | minutes | Away / welcome-back threshold |
+## Settings
 
-Keep API keys private. Do not commit real credentials to a public repository.
+Open **Settings…** from the tray menu at any time.
+
+### Models
+
+- Switch between Ollama and API mode.
+- Select DeepSeek, Alibaba Cloud, or OpenAI for chat.
+- Edit server URLs and timeout values.
+- Select an independent Ollama, Alibaba Cloud, or OpenAI vision backend.
+- Enable or disable DeepSeek V4 thinking mode.
+- Select a faster-whisper model or repository ID, an explicit download directory, and the recording input device. New Windows configurations default Whisper, GPT-SoVITS, and Murasame voice assets to separate directories under `C:\AIpet\models`; existing custom paths are preserved.
+- Switch the settings and tray UI between English and Simplified Chinese.
+- Limit Ollama's context window to avoid unexpectedly large model allocations.
+- Model lists for enabled features load automatically when Settings opens.
+  Disabled screen vision neither enables its controls nor contacts its provider.
+  Use the connection buttons to refresh after changing an address, provider,
+  or API key.
+
+The model loader calls Ollama's `GET /api/tags` or the cloud provider's
+`GET /models`. Chat and vision lists use their own configured endpoints.
+Every model selector remains editable, so custom IDs still work when an
+endpoint omits a model or model listing is unavailable.
+
+DeepSeek V4 uses the current `deepseek-v4-flash` and `deepseek-v4-pro` IDs. Retired `deepseek-chat` and `deepseek-reasoner` settings are migrated automatically. Existing combined chat/vision configurations are migrated to the new independent vision settings.
+
+### Character
+
+- Set the user name, default portrait set, and default outfit.
+- Create or edit the personality prompt visually.
+- Import a UTF-8 text or Markdown prompt.
+
+AIpet adds the structured response contract automatically. The personality file only needs to describe identity, tone, relationships, and boundaries.
+
+### Automation
+
+- Enable periodic screen vision and choose its interval.
+- Locate a local GPT-SoVITS installation, validate the Murasame voice weights and references, and check whether the service is online.
+- Download missing Murasame GPT/SoVITS weights with resumable in-card progress after accepting the model notice.
+- Configure optional faster-whisper input.
+- Select a display, portrait scale, idle thresholds, and history size.
+- Persist Do Not Disturb from either Settings or the tray, and clear saved conversation and screen-event memory from Settings with confirmation.
+
+## Data and API keys
+
+On Windows, user data is stored under:
+
+```text
+%APPDATA%\AIpet-Murasame\
+├── config.json
+├── history.json
+├── screen_memory.json
+└── personality.txt
+```
+
+Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`. New Whisper and TTS downloads use the directories entered in Settings and stop with a prompt when a required directory is blank. The repository's `models` directory, optionally overridden with `AIPET_MODEL_DIR`, is retained only for discovering assets downloaded by older versions and is ignored by Git.
+
+API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, or `OPENAI_API_KEY`. Runtime files and secrets are ignored by Git.
+
+Screen vision is disabled by default. When enabled, screenshots are sent only
+to the vision backend selected in Settings. AIpet retains at most 12 significant
+screen-event summaries and injects up to 8 recent entries under a character
+budget; consecutive duplicates are removed and raw screenshots are not
+persisted.
+
+## GPT-SoVITS
+
+AIpet calls a GPT-SoVITS-compatible endpoint directly; the default is:
+
+```text
+http://127.0.0.1:9880/tts
+```
+
+The six reference categories are `平静`, `高兴`, `害羞`, `生气`, `惊讶`, and `着急`. Reference audio is stored under `reference_voices` inside the configured voice model directory, so only one voice model path is required.
+
+For a loopback endpoint, the two path fields are also the exact download destinations: character weights and references go to the voice model directory, while the engine archive is extracted into the GPT-SoVITS directory. Downloading prompts for any required path left empty. AIpet no longer silently redirects a new download to the project model directory. If GPT-SoVITS is not detected, AIpet reads the NVIDIA GPU name and downloads the RTX 50-series package or the general Windows package as appropriate. The Settings card reports preparation, verification, download, extraction, installation, and cleanup separately. Extraction prefers native 7-Zip with multithreading enabled and falls back to Windows bsdtar; installation uses a same-volume atomic move instead of copying the extracted tree. Downloads do not open browser pages. Missing character weights come from `LemonQu/Murasame_SoVITS`, while reference voices come from `kuxiaowo/Murasame-tts-reference-voice`.
+
+When a local TTS request arrives and the API is offline, AIpet starts `api_v2.py` with the engine's bundled Python runtime, waits for its OpenAPI endpoint, loads the configured character weights, and then sends the synthesis request. Settings also provides manual start and stop controls with visible startup stages. Duplicate launches are serialized, and AIpet only stops a process it started itself. Remote endpoints are health-checked but never launched or stopped locally.
+
+TTS failures do not discard a model response: AIpet still displays the text and shows the speech error through the tray.
 
 ## Controls
 
 | Action | Control |
 |---|---|
-| Type a message | Left-click the lower part of Murasame, type, then press Enter |
+| Type a message | Left-click the lower part of the character, type, then press Enter |
+| Cancel input | Press Escape |
 | Pat her head | Hold the left mouse button over her head and move horizontally |
 | Move the pet | Drag with the middle mouse button |
-| Talk | Hold Caps Lock for two seconds when voice input is enabled |
-| Do Not Disturb, screenshots, history, exit | Use the system tray menu |
+| Talk | Hold Caps Lock for two seconds when optional speech input is enabled |
+| Settings, vision, DND, memory, exit | Use the system tray menu |
 
-## Troubleshooting
+## Development
 
-<details>
-<summary><strong>CUDA is unavailable</strong></summary>
+Run the test suite in the Conda environment:
 
-Update the NVIDIA driver and make sure the installed PyTorch build is compatible with the detected CUDA version. Cloud mode can be used without a local NVIDIA workload.
+```bash
+$env:QT_QPA_PLATFORM = "offscreen"
+python -m unittest discover -s tests -v
+```
 
-</details>
+The tests cover configuration validation, storage, structured responses, provider payloads, portrait composition, prompt-injection boundaries, and an offscreen Qt construction smoke test.
 
-<details>
-<summary><strong>GPT-SoVITS is very slow</strong></summary>
+Main modules:
 
-Use an integrated package that matches your GPU generation. The package used for newer NVIDIA cards may differ from the general build.
+```text
+classes/
+├── murasame_class.py   # Qt interaction, playback, idle and screen events
+└── workers.py          # Background conversation and vision work
+tool/
+├── backends.py         # Ollama and OpenAI-compatible API adapters
+├── config.py           # Validated user settings
+├── portraits.py        # Outfit/pose/emotion-to-layer mapping
+├── storage.py          # Conversation persistence
+├── tts.py              # GPT-SoVITS client
+└── tts_service.py      # Managed local GPT-SoVITS process
+ui/
+└── settings_dialog.py  # Visual configuration and prompt editor
+```
 
-</details>
+## Known limitations
 
-<details>
-<summary><strong>Conda says it must be initialized</strong></summary>
-
-Run `conda init`, restart the terminal, and activate the environment again.
-
-</details>
-
-<details>
-<summary><strong>An API key is rejected</strong></summary>
-
-Check that the key belongs to the selected `model_type`, is still valid, and has available quota. Save `config.json` as valid UTF-8 JSON.
-
-</details>
-
-<details>
-<summary><strong>The launcher closes immediately</strong></summary>
-
-Move the project to a simple path without spaces or special characters, open a terminal in that directory, activate the environment, and run `python run.py` so the error remains visible.
-
-</details>
-
-## Roadmap
-
-- [x] Persistent conversation history
-- [x] Configurable pet size and display
-- [x] One-command Python launcher
-- [x] Alternate portrait / outfit
-- [x] Cloud TTS experiment
-- [x] Qwen model support
-- [ ] More complete application logging
-- [ ] More reliable always-on-top behavior in games
+- Desktop behavior is designed and tested primarily for Windows.
+- Chat and vision credentials are configured separately; selecting OpenAI or Alibaba Cloud for both may therefore require entering the same key in both panels or using an environment variable.
+- Network cancellation is cooperative: an interrupted HTTP request may finish in the background, but stale results are ignored.
+- Character artwork and voice assets can have terms different from the source-code license.
 
 ## License and asset notice
 
-The source code is distributed under the [GNU Affero General Public License v3.0](LICENSE).
+Source code is distributed under the [GNU Affero General Public License v3.0](LICENSE).
 
-This is an unofficial fan project intended for study and technical exchange. Murasame and the included third-party character artwork, voice data, and related assets belong to their respective rights holders, including YUZUSOFT, and are not relicensed by the AGPL. Do not use this project or those assets commercially.
+This is an unofficial fan project for study and technical exchange. Murasame and the included third-party artwork, voice data, and related assets belong to their respective rights holders, including YUZUSOFT, and are not relicensed by the AGPL. Do not use those assets commercially without permission.
 
 If AIpet made your desktop a little less lonely, consider leaving a ⭐.

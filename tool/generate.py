@@ -1,52 +1,103 @@
+from __future__ import annotations
+
 import csv
+from pathlib import Path
 
 import cv2
 import numpy as np
 
-'''
-传入一个列表最多可以有4个参数
-'''
-def generate_fgimage(target, embeddings_layers):
-    assert target in ["ムラサメa", "ムラサメb"]
-    with open(f"./fgimages/{target}.txt", encoding='utf-16 le') as cf:
-        infos = list(csv.reader(cf, delimiter='\t'))
+from tool.config import PROJECT_ROOT
 
-    if target == "ムラサメa":
-        all_base = infos[57:65]
-    else:
-        all_base = infos[47:51]
 
-    all_positions = [(int(x[2]), int(x[3]), int(x[4]), int(x[5]))
-                     for name in embeddings_layers for x in infos if x[9] == str(name)]
-    all_base = [(int(x[2]), int(x[3]), int(x[4]), int(x[5]))
-                for x in all_base]
+PORTRAIT_TARGETS = {"ムラサメa", "ムラサメb"}
+BASE_LAYER_RANGES = {
+    "ムラサメa": slice(57, 65),
+    "ムラサメb": slice(47, 51),
+}
 
-    all_positions = [(pos[0] - min(pos[0] for pos in all_base), pos[1] - min(pos[1] for pos in all_base), pos[2], pos[3])
-                     for pos in all_positions]
 
-    canvas_scale = (max([(x[0] + x[2]) for x in all_positions]),
-                    max([(x[1] + x[3]) for x in all_positions]))
+def _read_metadata(target: str) -> list[list[str]]:
+    metadata_path = PROJECT_ROOT / "fgimages" / f"{target}.txt"
+    with metadata_path.open(encoding="utf-16-le", newline="") as file:
+        return list(csv.reader(file, delimiter="\t"))
 
-    canvas = np.zeros((canvas_scale[1], canvas_scale[0], 4), dtype=np.uint8)
 
-    for idx, pos in enumerate(all_positions):
-        path = f"./fgimages/{target}_{embeddings_layers[idx]}.png"
-        image = cv2.imdecode(np.fromfile(path, dtype=np.uint8), -1)
-        if image is not None:
-            x_offset = pos[0]
-            y_offset = pos[1]
-            h, w = image.shape[:2]
-            alpha_img = image[..., 3:] / 255.0
-            alpha_canvas = 1.0 - alpha_img
-            for c in range(3):
-                canvas[y_offset:y_offset + h, x_offset:x_offset + w, c] = (
-                    alpha_img[..., 0] * image[..., c] +
-                    alpha_canvas[..., 0] * canvas[y_offset:y_offset +
-                                                  h, x_offset:x_offset + w, c]
-                )
-            canvas[y_offset:y_offset + h, x_offset:x_offset + w, 3] = (
-                np.maximum(
-                    image[..., 3], canvas[y_offset:y_offset + h, x_offset:x_offset + w, 3])
-            )
+def generate_fgimage(target: str, layer_ids: list[int]) -> np.ndarray:
+    """Compose selected portrait layers into a BGRA image."""
+
+    if target not in PORTRAIT_TARGETS:
+        raise ValueError(f"Unknown portrait target: {target}")
+    if not layer_ids:
+        raise ValueError("At least one portrait layer is required")
+
+    metadata = _read_metadata(target)
+    base_rows = metadata[BASE_LAYER_RANGES[target]]
+    base_positions = [
+        (int(row[2]), int(row[3]), int(row[4]), int(row[5]))
+        for row in base_rows
+    ]
+    if not base_positions:
+        raise RuntimeError(f"No base metadata found for {target}")
+
+    rows_by_id = {
+        int(row[9]): row
+        for row in metadata
+        if len(row) > 9 and row[9].strip().isdigit()
+    }
+    missing = [layer_id for layer_id in layer_ids if layer_id not in rows_by_id]
+    if missing:
+        raise ValueError(f"Portrait layers do not exist: {missing}")
+
+    origin_x = min(position[0] for position in base_positions)
+    origin_y = min(position[1] for position in base_positions)
+    layers: list[tuple[Path, int, int]] = []
+    canvas_width = 0
+    canvas_height = 0
+
+    for layer_id in layer_ids:
+        row = rows_by_id[layer_id]
+        left, top, width, height = map(int, row[2:6])
+        x = left - origin_x
+        y = top - origin_y
+        image_path = (
+            PROJECT_ROOT / "fgimages" / f"{target}_{layer_id}.png"
+        )
+        if not image_path.exists():
+            raise FileNotFoundError(f"Portrait layer is missing: {image_path}")
+        layers.append((image_path, x, y))
+        canvas_width = max(canvas_width, x + width)
+        canvas_height = max(canvas_height, y + height)
+
+    canvas = np.zeros((canvas_height, canvas_width, 4), dtype=np.uint8)
+    for image_path, x, y in layers:
+        image = cv2.imdecode(
+            np.fromfile(str(image_path), dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+        if image is None or image.ndim != 3 or image.shape[2] != 4:
+            raise RuntimeError(f"Invalid portrait layer image: {image_path}")
+
+        height, width = image.shape[:2]
+        region = canvas[y : y + height, x : x + width]
+        source_alpha = image[..., 3:4].astype(np.float32) / 255.0
+        target_alpha = region[..., 3:4].astype(np.float32) / 255.0
+        output_alpha = source_alpha + target_alpha * (1.0 - source_alpha)
+
+        source_rgb = image[..., :3].astype(np.float32)
+        target_rgb = region[..., :3].astype(np.float32)
+        numerator = (
+            source_rgb * source_alpha
+            + target_rgb * target_alpha * (1.0 - source_alpha)
+        )
+        output_rgb = np.divide(
+            numerator,
+            output_alpha,
+            out=np.zeros_like(numerator),
+            where=output_alpha > 0,
+        )
+        region[..., :3] = np.clip(output_rgb, 0, 255).astype(np.uint8)
+        region[..., 3:4] = np.clip(output_alpha * 255, 0, 255).astype(
+            np.uint8
+        )
 
     return canvas

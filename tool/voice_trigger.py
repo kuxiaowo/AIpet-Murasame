@@ -1,45 +1,62 @@
-import os
 import threading
 import time
 import wave
-from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
+from uuid import uuid4
 
 import numpy as np
 import sounddevice as sd
 from pynput import keyboard
 
+from tool.audio_devices import resolve_audio_input_device
+from tool.config import get_cache_dir
+from tool.runtime_logging import get_logger
 from tool.stt import transcribe_full
+
+
+logger = get_logger("voice")
 
 
 class AudioRecorder:
     """简单的麦克风录音器，录制到内存后写入 WAV 文件。"""
 
-    def __init__(self, samplerate: int = 16000, channels: int = 1):
+    def __init__(
+        self,
+        samplerate: int = 16000,
+        channels: int = 1,
+        input_device: str = "",
+    ):
         self.samplerate = samplerate
         self.channels = channels
+        self.input_device = input_device
         self._stream: Optional[sd.InputStream] = None
         self._frames = []
         self._lock = threading.Lock()
 
     def _callback(self, indata, frames, time_info, status):
         if status:
-            print(f"[AIpet][voice] record status: {status}")
+            logger.warning("录音设备状态：%s", status)
         with self._lock:
             self._frames.append(indata.copy())
 
     def start(self) -> None:
         with self._lock:
             self._frames = []
+        device_index = resolve_audio_input_device(self.input_device)
         self._stream = sd.InputStream(
+            device=device_index,
             samplerate=self.samplerate,
             channels=self.channels,
             dtype="int16",
             callback=self._callback,
         )
         self._stream.start()
-        print("[AIpet][voice] 录音开始")
+        selected = sd.query_devices(
+            device_index,
+            kind="input",
+        )
+        logger.info("录音开始 | 输入设备=%s", selected["name"])
 
     def stop_and_save(self, wav_path: str) -> Optional[str]:
         if self._stream is None:
@@ -51,20 +68,20 @@ class AudioRecorder:
             self._stream = None
         with self._lock:
             if not self._frames:
-                print("[AIpet][voice] 没有录到有效音频")
+                logger.warning("没有录到有效音频")
                 return None
             data = np.concatenate(self._frames, axis=0)
         try:
-            os.makedirs(os.path.dirname(wav_path), exist_ok=True)
+            Path(wav_path).parent.mkdir(parents=True, exist_ok=True)
             with wave.open(wav_path, "wb") as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(2)  # int16
                 wf.setframerate(self.samplerate)
                 wf.writeframes(data.tobytes())
-            print(f"[AIpet][voice] 录音保存: {wav_path}")
+            logger.info("录音已保存到临时文件")
             return wav_path
         except Exception as exc:
-            print(f"[AIpet][voice] 保存 WAV 失败: {exc}")
+            logger.exception("保存 WAV 失败")
             return None
 
 
@@ -82,18 +99,28 @@ class CapslockVoiceTrigger:
         hold_seconds: float = 2.0,
         on_record_start: Optional[Callable[[], None]] = None,
         on_record_end: Optional[Callable[[], None]] = None,
+        model_name: str = "large-v3",
+        model_directory: str = "",
+        device: str = "auto",
+        input_device: str = "",
+        on_error: Optional[Callable[[str], None]] = None,
     ):
         self.on_text_ready = on_text_ready
         self.hold_seconds = hold_seconds
         self.on_record_start = on_record_start
         self.on_record_end = on_record_end
+        self.model_name = model_name
+        self.model_directory = model_directory
+        self.device = device
+        self.input_device = input_device
+        self.on_error = on_error
 
         self._caps_pressed = False
         self._press_time: Optional[float] = None
         self._recording = False
         self._hold_timer: Optional[threading.Timer] = None
 
-        self._recorder = AudioRecorder()
+        self._recorder = AudioRecorder(input_device=input_device)
         self._listener: Optional[keyboard.Listener] = None
 
     def start(self) -> None:
@@ -106,7 +133,7 @@ class CapslockVoiceTrigger:
             daemon=True,
         )
         self._listener.start()
-        print("[AIpet][voice] CapsLock 语音触发已启动")
+        logger.info("CapsLock 语音触发已启动")
 
     def stop(self) -> None:
         if self._listener is not None:
@@ -157,47 +184,54 @@ class CapslockVoiceTrigger:
                 try:
                     self.on_record_start()
                 except Exception as exc:
-                    print(f"[AIpet][voice] 录音开始回调失败: {exc}")
+                    logger.exception("录音开始回调失败")
         except Exception as exc:
             self._recording = False
-            print(f"[AIpet][voice] 启动录音失败: {exc}")
+            logger.exception("启动录音失败")
+            if self.on_error:
+                self.on_error(str(exc))
 
     # 录音结束 -> 保存 WAV -> STT -> 回调
     def _handle_record_done(self) -> None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        tmp_dir = Path("./tmp")
-        wav_path = str(tmp_dir / f"capslock_{timestamp}.wav")
+        recording_dir = get_cache_dir() / "recordings"
+        wav_path = str(recording_dir / f"{uuid4().hex}.wav")
 
         saved = self._recorder.stop_and_save(wav_path)
         if self.on_record_end:
             try:
                 self.on_record_end()
             except Exception as exc:
-                print(f"[AIpet][voice] 录音结束回调失败: {exc}")
+                logger.exception("录音结束回调失败")
         if not saved:
             return
 
         def _stt_and_callback():
             try:
-                text = transcribe_full(saved)
+                text = transcribe_full(
+                    saved,
+                    model_size=self.model_name,
+                    model_directory=self.model_directory,
+                    device=self.device,
+                )
                 text = (text or "").strip()
                 if not text:
-                    print("[AIpet][voice] 语音识别结果为空")
+                    logger.warning("语音识别结果为空")
                     return
-                print(f"[AIpet][voice] 识别文本: {text}")
+                logger.info("语音识别完成（内容不写入日志）")
                 try:
                     self.on_text_ready(text)
                 except Exception as exc:
-                    print(f"[AIpet][voice] 回调处理失败: {exc}")
+                    logger.exception("语音识别回调处理失败")
             except Exception as exc:
-                print(f"[AIpet][voice] 语音识别失败: {exc}")
+                logger.exception("语音识别失败")
+                if self.on_error:
+                    self.on_error(str(exc))
             finally:
                 try:
-                    if os.path.exists(saved):
-                        os.remove(saved)
-                        print(f"[AIpet][voice] 删除临时录音: {saved}")
+                    Path(saved).unlink(missing_ok=True)
+                    logger.info("语音临时文件已删除")
                 except Exception as exc:
-                    print(f"[AIpet][voice] 删除临时录音失败: {exc}")
+                    logger.warning("删除语音临时文件失败：%s", exc)
 
         t = threading.Thread(target=_stt_and_callback, daemon=True)
         t.start()
