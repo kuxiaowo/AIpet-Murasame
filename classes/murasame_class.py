@@ -8,7 +8,7 @@ import wave
 from pathlib import Path
 
 import cv2
-from PyQt5.QtCore import QRect, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QEvent, QRect, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (
     QColor,
     QFont,
@@ -32,12 +32,19 @@ from tool.backends import ScreenAnalysis
 from tool.config import AppSettings, PROJECT_ROOT, get_cache_dir
 from tool.generate import generate_fgimage
 from tool.portraits import default_layers, layers_for
+from tool.runtime_logging import get_logger
 from tool.storage import HistoryStore, ScreenMemoryEntry, ScreenMemoryStore
 from tool.time_utils import build_time_context
+from tool.windowing import (
+    ensure_window_topmost,
+    native_topmost_available,
+)
 
 
 SCREEN_PIXEL_CHANGE_THRESHOLD = 0.008
 PROACTIVE_COOLDOWN_SECONDS = 180
+TOPMOST_WATCHDOG_INTERVAL_MS = 2_000
+logger = get_logger("window")
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -118,6 +125,10 @@ class Murasame(QLabel):
         self._screen_resize_timer.timeout.connect(
             self._adapt_to_current_screen
         )
+        self._topmost_error_logged = False
+        self._topmost_timer = QTimer(self)
+        self._topmost_timer.setInterval(TOPMOST_WATCHDOG_INTERVAL_MS)
+        self._topmost_timer.timeout.connect(self._ensure_topmost)
 
         self.history_store = HistoryStore(limit=self.settings.history_limit)
         self.history = self.history_store.load()
@@ -242,6 +253,36 @@ class Murasame(QLabel):
             self._reset_screen_observation()
         self.settings.vision.enabled = bool(enabled)
         self._apply_automatic_behavior_settings()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if native_topmost_available():
+            self._topmost_timer.start()
+            QTimer.singleShot(0, self._ensure_topmost)
+
+    def hideEvent(self, event) -> None:
+        self._topmost_timer.stop()
+        super().hideEvent(event)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() in {
+            QEvent.ActivationChange,
+            QEvent.WindowStateChange,
+        }:
+            QTimer.singleShot(0, self._ensure_topmost)
+
+    def _ensure_topmost(self) -> None:
+        if not native_topmost_available() or not self.isVisible():
+            return
+        try:
+            ensure_window_topmost(int(self.winId()))
+        except OSError as exc:
+            if not self._topmost_error_logged:
+                logger.warning("无法重新确认桌宠窗口置顶状态：%s", exc)
+                self._topmost_error_logged = True
+        else:
+            self._topmost_error_logged = False
 
     def is_screenshot_enabled(self) -> bool:
         return self.settings.vision.enabled
@@ -1017,6 +1058,7 @@ class Murasame(QLabel):
         self.show_text("已经忘掉之前的对话和屏幕事件了。", typing=False)
 
     def shutdown(self) -> None:
+        self._topmost_timer.stop()
         self._screen_resize_timer.stop()
         self.screenshot_timer.stop()
         self.idle_timer.stop()

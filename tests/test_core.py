@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import tempfile
 import unittest
@@ -53,9 +54,27 @@ from tool.storage import (
 )
 from tool.tts import TTSClient
 from tool.tts_assets import TTSAssetState
+from tool.windowing import (
+    SWP_NOACTIVATE,
+    TOPMOST_FLAGS,
+    _set_windows_topmost,
+)
 
 
 class CoreTests(unittest.TestCase):
+    def test_windows_topmost_reassertion_does_not_activate_window(self) -> None:
+        user32 = Mock()
+        user32.SetWindowPos.return_value = 1
+
+        _set_windows_topmost(123, user32)
+
+        arguments = user32.SetWindowPos.call_args.args
+        self.assertEqual(arguments[0].value, 123)
+        self.assertEqual(arguments[1].value, ctypes.c_void_p(-1).value)
+        self.assertEqual(arguments[2:6], (0, 0, 0, 0))
+        self.assertEqual(arguments[6], TOPMOST_FLAGS)
+        self.assertTrue(arguments[6] & SWP_NOACTIVATE)
+
     def test_runtime_cache_clear_preserves_logs_and_other_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             cache_dir = Path(directory)

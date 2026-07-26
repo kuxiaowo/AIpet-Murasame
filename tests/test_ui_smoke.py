@@ -57,6 +57,32 @@ class UISmokeTests(unittest.TestCase):
                 finally:
                     pet.shutdown()
 
+    def test_topmost_watchdog_tracks_window_visibility(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"AIPET_DATA_DIR": directory}),
+            patch(
+                "classes.murasame_class.native_topmost_available",
+                return_value=True,
+            ),
+            patch(
+                "classes.murasame_class.ensure_window_topmost",
+                return_value=True,
+            ) as ensure_topmost,
+        ):
+            pet = Murasame(AppSettings())
+            try:
+                pet.show()
+                self.app.processEvents()
+                self.assertTrue(pet._topmost_timer.isActive())
+                ensure_topmost.assert_called()
+
+                pet.hide()
+                self.app.processEvents()
+                self.assertFalse(pet._topmost_timer.isActive())
+            finally:
+                pet.shutdown()
+
     def test_recording_device_selection_round_trips(self) -> None:
         selected = AudioInputDevice(
             index=37,
