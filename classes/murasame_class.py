@@ -18,6 +18,7 @@ from PyQt5.QtGui import (
     QImage,
     QPainter,
     QPixmap,
+    QScreen,
 )
 from PyQt5.QtMultimedia import QSound
 from PyQt5.QtWidgets import QLabel
@@ -27,11 +28,16 @@ from classes.workers import (
     ConversationWorker,
     VisionWorker,
 )
+from tool.backends import ScreenAnalysis
 from tool.config import AppSettings, PROJECT_ROOT, get_cache_dir
 from tool.generate import generate_fgimage
 from tool.portraits import default_layers, layers_for
 from tool.storage import HistoryStore
 from tool.time_utils import build_time_context
+
+
+SCREEN_PIXEL_CHANGE_THRESHOLD = 0.012
+SCREEN_REPLY_COOLDOWN_SECONDS = 300
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -102,14 +108,27 @@ class Murasame(QLabel):
         self._base_text_y_offset = -100
         self._base_border_size = 2
         self._current_scale = 1.0
+        self._source_portrait_pixmap: QPixmap | None = None
+        self._active_screen_key: tuple[object, ...] | None = None
         self._font_family = self._load_font()
         self._update_text_scaling()
+        self._screen_resize_timer = QTimer(self)
+        self._screen_resize_timer.setSingleShot(True)
+        self._screen_resize_timer.setInterval(120)
+        self._screen_resize_timer.timeout.connect(
+            self._adapt_to_current_screen
+        )
 
         self.history_store = HistoryStore(limit=self.settings.history_limit)
         self.history = self.history_store.load()
         self._generation = 0
         self._workers: dict[int, ConversationWorker] = {}
         self._vision_worker: VisionWorker | None = None
+        self._last_screen_thumbnail = None
+        self._last_screen_analysis: ScreenAnalysis | None = None
+        self._screen_baseline_ready = False
+        self._last_spoken_screen_event = ""
+        self._screen_reply_cooldown_until = 0.0
         self._playback_result: ConversationResult | None = None
         self._playback_index = 0
         self._sound: QSound | None = None
@@ -157,6 +176,7 @@ class Murasame(QLabel):
         self.history_store.limit = self.settings.history_limit
         self.history = self.history[-self.settings.history_limit :]
         self.history_store.save(self.history)
+        self._reset_screen_observation()
 
         if old_portrait != self.settings.character.portrait:
             self.update_portrait(default_layers(self.settings.character.portrait))
@@ -188,6 +208,8 @@ class Murasame(QLabel):
                 "DeepSeek mode is chat-only. Choose Alibaba Cloud or Ollama.",
             )
             return
+        if bool(enabled) != self.settings.vision.enabled:
+            self._reset_screen_observation()
         self.settings.vision.enabled = bool(enabled)
         self._apply_automatic_behavior_settings()
 
@@ -195,10 +217,13 @@ class Murasame(QLabel):
         return self.settings.vision.enabled
 
     def set_dnd_enabled(self, enabled: bool) -> None:
+        was_enabled = self._dnd_enabled
         self._dnd_enabled = bool(enabled)
         if self._dnd_enabled:
             self._cancel_active_jobs()
             self._reset_idle_state()
+        elif was_enabled:
+            self._reset_screen_observation()
         self._apply_automatic_behavior_settings()
 
     def is_dnd_enabled(self) -> bool:
@@ -208,6 +233,13 @@ class Murasame(QLabel):
         self.idle_thinking_triggered = False
         self.idle_away_triggered = False
         self.away_trigger_time = None
+
+    def _reset_screen_observation(self) -> None:
+        self._last_screen_thumbnail = None
+        self._last_screen_analysis = None
+        self._screen_baseline_ready = False
+        self._last_spoken_screen_event = ""
+        self._screen_reply_cooldown_until = 0.0
 
     def check_idle_state(self) -> None:
         if self._dnd_enabled:
@@ -282,13 +314,28 @@ class Murasame(QLabel):
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
 
+        thumbnail = self._load_screen_thumbnail(image_path)
+        if thumbnail is not None:
+            previous_thumbnail = self._last_screen_thumbnail
+            self._last_screen_thumbnail = thumbnail
+            if (
+                previous_thumbnail is not None
+                and not self._pixels_changed(
+                    previous_thumbnail,
+                    thumbnail,
+                )
+            ):
+                image_path.unlink(missing_ok=True)
+                return
+
         worker = VisionWorker(
             self.settings.model_copy(deep=True),
             image_path,
-            self,
+            previous_analysis=self._last_screen_analysis,
+            parent=self,
         )
         self._vision_worker = worker
-        worker.description_ready.connect(self._on_screen_description)
+        worker.analysis_ready.connect(self._on_screen_analysis)
         worker.error.connect(
             lambda message: self.notification.emit("屏幕分析失败", message)
         )
@@ -300,11 +347,81 @@ class Murasame(QLabel):
             self._vision_worker = None
         worker.deleteLater()
 
-    def _on_screen_description(self, description: str) -> None:
+    @staticmethod
+    def _load_screen_thumbnail(image_path: Path):
+        image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            return None
+        return cv2.resize(image, (96, 54), interpolation=cv2.INTER_AREA)
+
+    @staticmethod
+    def _pixels_changed(
+        previous,
+        current,
+        threshold: float = SCREEN_PIXEL_CHANGE_THRESHOLD,
+    ) -> bool:
+        if previous.shape != current.shape:
+            return True
+        difference = cv2.absdiff(previous, current)
+        return float(difference.mean()) / 255.0 >= threshold
+
+    @staticmethod
+    def _screen_event_key(analysis: ScreenAnalysis) -> str:
+        parts = (
+            analysis.change_type,
+            analysis.software,
+            analysis.activity,
+            analysis.topic,
+            analysis.change_summary,
+        )
+        return "|".join(" ".join(part.casefold().split()) for part in parts)
+
+    def _on_screen_analysis(self, analysis: ScreenAnalysis) -> None:
         if self._dnd_enabled:
             return
+
+        self._last_screen_analysis = analysis
+        if not self._screen_baseline_ready:
+            self._screen_baseline_ready = True
+            return
+        if (
+            not analysis.significant_change
+            or analysis.sensitive
+            or analysis.change_type == "none"
+            or not analysis.change_summary.strip()
+            or self.input_mode
+            or bool(self._workers)
+            or self._playback_result is not None
+        ):
+            return
+
+        event_key = self._screen_event_key(analysis)
+        if not event_key or event_key == self._last_spoken_screen_event:
+            return
+
+        now = time.monotonic()
+        if now < self._screen_reply_cooldown_until:
+            return
+
+        self._last_spoken_screen_event = event_key
+        self._screen_reply_cooldown_until = (
+            now + SCREEN_REPLY_COOLDOWN_SECONDS
+        )
+        details = [
+            "屏幕发生了明显变化。",
+            f"变化类型：{analysis.change_type}",
+        ]
+        if analysis.software:
+            details.append(f"软件：{analysis.software}")
+        if analysis.activity:
+            details.append(f"当前活动：{analysis.activity}")
+        if analysis.topic:
+            details.append(f"页面主题：{analysis.topic}")
+        if analysis.change_summary:
+            details.append(f"变化摘要：{analysis.change_summary}")
+        details.append(f"当前时间：{build_time_context()}")
         self.start_thread(
-            f"当前时间：{build_time_context()}\n屏幕内容：{description}",
+            "\n".join(details),
             role="system",
         )
 
@@ -460,34 +577,111 @@ class Murasame(QLabel):
             channels * width,
             QImage.Format_RGBA8888,
         ).copy()
-        pixmap = self._scale_portrait_pixmap(QPixmap.fromImage(image))
+        self._source_portrait_pixmap = QPixmap.fromImage(image)
+        pixmap = self._scale_portrait_pixmap(
+            self._source_portrait_pixmap,
+            self._configured_screen(),
+        )
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
         self.update()
 
-    def _scale_portrait_pixmap(self, pixmap: QPixmap) -> QPixmap:
+    def _configured_screen(self) -> QScreen | None:
         screens = QGuiApplication.screens()
         index = self.settings.display.screen_index
-        screen = (
+        return (
             screens[index]
             if 0 <= index < len(screens)
             else QGuiApplication.primaryScreen()
         )
+
+    def _scale_portrait_pixmap(
+        self,
+        pixmap: QPixmap,
+        screen: QScreen | None = None,
+    ) -> QPixmap:
+        screen = screen or self._configured_screen()
         available_height = (
             screen.availableGeometry().height() if screen is not None else 0
         )
-        target_height = (
-            int(
-                available_height
-                * self.settings.display.portrait_screen_ratio
-            )
-            if available_height
-            else pixmap.height()
+        target_height = self._target_portrait_height(
+            pixmap.height(),
+            available_height,
+            self.settings.display.portrait_screen_ratio,
         )
-        target_height = min(max(1, target_height), pixmap.height())
         self._current_scale = target_height / max(1, pixmap.height())
+        self._active_screen_key = self._screen_key(screen)
         self._update_text_scaling()
         return pixmap.scaledToHeight(target_height, Qt.SmoothTransformation)
+
+    @staticmethod
+    def _target_portrait_height(
+        source_height: int,
+        available_height: int,
+        ratio: float,
+    ) -> int:
+        if available_height <= 0:
+            return max(1, source_height)
+        return max(1, int(available_height * ratio))
+
+    @staticmethod
+    def _screen_key(screen: QScreen | None) -> tuple[object, ...] | None:
+        if screen is None:
+            return None
+        geometry = screen.availableGeometry()
+        return (
+            screen.name(),
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+        )
+
+    def _screen_at_current_position(self) -> QScreen | None:
+        screen = QGuiApplication.screenAt(self.frameGeometry().center())
+        if screen is not None:
+            return screen
+        handle = self.windowHandle()
+        if handle is not None and handle.screen() is not None:
+            return handle.screen()
+        return self._configured_screen()
+
+    def _adapt_to_current_screen(self) -> None:
+        source = self._source_portrait_pixmap
+        screen = self._screen_at_current_position()
+        if (
+            source is None
+            or source.isNull()
+            or screen is None
+            or self._screen_key(screen) == self._active_screen_key
+        ):
+            return
+
+        old_geometry = self.geometry()
+        scaled = self._scale_portrait_pixmap(source, screen)
+        self.setPixmap(scaled)
+        self.resize(scaled.size())
+
+        available = screen.availableGeometry()
+        x = old_geometry.center().x() - scaled.width() // 2
+        y = old_geometry.bottom() - scaled.height() + 1
+        x = max(
+            available.left(),
+            min(x, available.right() - scaled.width() + 1),
+        )
+        y = max(
+            available.top(),
+            min(y, available.bottom() - scaled.height() + 1),
+        )
+        self.move(x, y)
+
+        screens = QGuiApplication.screens()
+        screen_key = self._screen_key(screen)
+        for index, candidate in enumerate(screens):
+            if candidate is screen or self._screen_key(candidate) == screen_key:
+                self.settings.display.screen_index = index
+                break
+        self.update()
 
     def _update_text_scaling(self) -> None:
         scale = max(self._current_scale, 0.1)
@@ -622,6 +816,15 @@ class Murasame(QLabel):
         elif event.button() == Qt.MiddleButton:
             self.drag_offset = None
             self.setCursor(Qt.ArrowCursor)
+            self._adapt_to_current_screen()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        if (
+            hasattr(self, "_screen_resize_timer")
+            and self.drag_offset is None
+        ):
+            self._screen_resize_timer.start()
 
     def inputMethodQuery(self, query):
         if query in (Qt.ImMicroFocus, Qt.ImCursorRectangle):
@@ -695,6 +898,7 @@ class Murasame(QLabel):
         self.show_text("已经忘掉之前的对话了。", typing=False)
 
     def shutdown(self) -> None:
+        self._screen_resize_timer.stop()
         self.screenshot_timer.stop()
         self.idle_timer.stop()
         self._cancel_active_jobs(include_vision=True)

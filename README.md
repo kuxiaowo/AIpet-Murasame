@@ -49,6 +49,7 @@ You can run conversations through a local [Ollama](https://ollama.com/) service 
 - **Bilingual settings** — switch between English and Simplified Chinese instantly, choose backends, load model lists, edit the personality prompt, and configure behavior without hand-editing JSON.
 - **Stable character output** — each response uses validated structured JSON with Chinese text, Japanese TTS text, and one of six emotions.
 - **Deterministic portraits** — emotions map to known portrait layers in code; model changes cannot invent broken layer IDs.
+- **Adaptive multi-monitor sizing** — after middle-button dragging to another display, the portrait resizes to that screen's available height.
 - **Optional screen awareness** — screenshots are captured safely in the Qt GUI thread, then analyzed in the background.
 - **Optional speech** — GPT-SoVITS-compatible output and faster-whisper Caps Lock input.
 - **Private user state** — configuration, keys, and conversation history live outside the Git repository.
@@ -146,7 +147,7 @@ $env:DASHSCOPE_API_KEY = "your-key"
 ### 4. Launch
 
 ```bash
-python run.py
+python main.py
 ```
 
 Settings opens on first launch. Save a valid configuration and AIpet starts immediately. The launcher does not install packages or modify CUDA. Model downloads start only after an explicit Whisper download action or approval of the TTS model prompt. A downloaded local GPT-SoVITS service starts on demand before the first TTS request, or from the manual control in Settings.
@@ -198,7 +199,7 @@ On Windows, user data is stored under:
 └── personality.txt
 ```
 
-Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`; managed Whisper and TTS models use `%LOCALAPPDATA%\AIpet-Murasame\models`.
+Temporary audio and screenshots use `%LOCALAPPDATA%\AIpet-Murasame\cache`; managed Whisper and TTS models use the repository's `models` directory. Set `AIPET_MODEL_DIR` only when an explicit override is needed. The project-local model directory is ignored by Git.
 
 API keys entered in Settings are stored in the user configuration. For better separation, leave those fields blank and use `DEEPSEEK_API_KEY` or `DASHSCOPE_API_KEY`. Runtime files and secrets are ignored by Git.
 

@@ -42,12 +42,7 @@ def get_model_dir() -> Path:
     override = os.getenv("AIPET_MODEL_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    if os.getenv("AIPET_DATA_DIR"):
-        return get_user_data_dir() / "models"
-    if os.name == "nt":
-        base = Path(os.getenv("LOCALAPPDATA", get_user_data_dir()))
-        return base / APP_DIRECTORY_NAME / "models"
-    return get_user_data_dir() / "models"
+    return PROJECT_ROOT / "models"
 
 
 class OllamaSettings(BaseModel):

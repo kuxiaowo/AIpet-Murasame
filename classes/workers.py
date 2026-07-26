@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from tool.backends import CharacterReply, create_backend
+from tool.backends import CharacterReply, ScreenAnalysis, create_backend
 from tool.config import AppSettings
 from tool.tts import TTSClient, TTSError
 
@@ -102,18 +102,20 @@ class ConversationWorker(QThread):
 class VisionWorker(QThread):
     """Analyze a screenshot using the configured vision model."""
 
-    description_ready = pyqtSignal(str)
+    analysis_ready = pyqtSignal(object)
     error = pyqtSignal(str)
 
     def __init__(
         self,
         settings: AppSettings,
         image_path: Path,
+        previous_analysis: ScreenAnalysis | None = None,
         parent=None,
     ):
         super().__init__(parent)
         self.settings = settings
         self.image_path = image_path
+        self.previous_analysis = previous_analysis
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
@@ -122,11 +124,12 @@ class VisionWorker(QThread):
 
     def run(self) -> None:
         try:
-            description = create_backend(self.settings).describe_image(
-                self.image_path
+            analysis = create_backend(self.settings).describe_image(
+                self.image_path,
+                self.previous_analysis,
             )
-            if not self._cancelled.is_set() and description:
-                self.description_ready.emit(description)
+            if not self._cancelled.is_set():
+                self.analysis_ready.emit(analysis)
         except Exception as exc:
             if not self._cancelled.is_set():
                 self.error.emit(str(exc))

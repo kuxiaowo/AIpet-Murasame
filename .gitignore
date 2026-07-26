@@ -29,6 +29,7 @@ history.json
 .ssh/
 
 # Runtime output
+models/
 tmp/
 voices/*.wav
 cache/

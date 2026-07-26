@@ -78,9 +78,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "No local LoRA or chat Transformer is loaded."
         ),
         "language": "Language / 语言",
-        "tab_models": "Models",
+        "tab_models": "Language models",
+        "tab_extensions": "Extensions",
         "tab_character": "Character",
         "tab_automation": "Automation",
+        "tab_display": "Display",
         "backend_group": "Backend mode",
         "mode": "Mode",
         "mode_ollama": "Ollama (local service)",
@@ -123,16 +125,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "import_prompt": "Import prompt from text file…",
         "vision_group": "Screen vision",
-        "vision_enabled": "Analyze the selected screen periodically",
+        "vision_enabled": (
+            "Check the selected screen and react only to significant changes"
+        ),
         "interval": "Interval",
         "vision_supported": (
-            "The configured vision model will receive periodic screenshots."
+            "The first screenshot establishes a baseline. Near-identical "
+            "screens stay local; significant reactions have a 5-minute cooldown."
         ),
         "vision_unsupported": (
             "DeepSeek mode is chat-only. Choose Alibaba Cloud or Ollama "
             "to enable screen vision."
         ),
-        "speech_group": "Speech",
+        "tts_group": "Text-to-speech (GPT-SoVITS)",
+        "whisper_group": "Speech input (Whisper)",
         "tts_enabled": "Use GPT-SoVITS-compatible TTS",
         "tts_endpoint": "TTS endpoint",
         "tts_timeout": "TTS timeout",
@@ -220,7 +226,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_verifying": "Checking {model}: {detail}",
         "whisper_downloaded": "Download complete. Available locally: {path}",
         "whisper_download_failed": "Download failed: {message}",
-        "behavior_group": "Display and idle behavior",
+        "automation_group": "Idle behavior and memory",
+        "display_group": "Screen and portrait",
         "screen_index": "Screen index",
         "portrait_ratio": "Portrait height ratio",
         "thinking_reminder": "Thinking reminder",
@@ -272,9 +279,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "程序不会加载本地 LoRA 或聊天 Transformer。"
         ),
         "language": "界面语言 / Language",
-        "tab_models": "模型",
+        "tab_models": "语言模型",
+        "tab_extensions": "拓展功能",
         "tab_character": "角色",
         "tab_automation": "自动行为",
+        "tab_display": "显示",
         "backend_group": "后端模式",
         "mode": "模式",
         "mode_ollama": "Ollama（本地服务）",
@@ -314,13 +323,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "prompt_placeholder": "描述角色身份、说话风格、关系和行为边界……",
         "import_prompt": "从文本文件导入提示词…",
         "vision_group": "屏幕视觉",
-        "vision_enabled": "定期分析所选屏幕",
+        "vision_enabled": "检查所选屏幕，仅在明显变化时主动回应",
         "interval": "间隔",
-        "vision_supported": "配置的视觉模型将接收定期屏幕截图。",
+        "vision_supported": (
+            "首次截图只建立基线；近似相同的画面不会送入视觉模型，"
+            "明显变化的主动回应有 5 分钟冷却。"
+        ),
         "vision_unsupported": (
             "DeepSeek 模式当前只支持对话；请改用阿里云或 Ollama 启用屏幕视觉。"
         ),
-        "speech_group": "语音",
+        "tts_group": "语音合成（GPT-SoVITS）",
+        "whisper_group": "语音输入（Whisper）",
         "tts_enabled": "使用 GPT-SoVITS 兼容 TTS",
         "tts_endpoint": "TTS 地址",
         "tts_timeout": "TTS 超时",
@@ -391,7 +404,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_verifying": "正在校验 {model}：{detail}",
         "whisper_downloaded": "下载完成，本地路径：{path}",
         "whisper_download_failed": "下载失败：{message}",
-        "behavior_group": "显示与空闲行为",
+        "automation_group": "空闲行为与记忆",
+        "display_group": "屏幕与立绘",
         "screen_index": "屏幕编号",
         "portrait_ratio": "立绘高度比例",
         "thinking_reminder": "思考提醒",
@@ -573,8 +587,10 @@ class SettingsDialog(QDialog):
 
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_models_tab(), "")
+        self.tabs.addTab(self._build_extensions_tab(), "")
         self.tabs.addTab(self._build_character_tab(), "")
         self.tabs.addTab(self._build_automation_tab(), "")
+        self.tabs.addTab(self._build_display_tab(), "")
         root.addWidget(self.tabs, 1)
 
         self.status_label = QLabel()
@@ -747,7 +763,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.prompt_group, 1)
         return page
 
-    def _build_automation_tab(self) -> QWidget:
+    def _build_extensions_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
 
@@ -760,10 +776,9 @@ class SettingsDialog(QDialog):
         vision_form.addRow(self.vision_enabled)
         self._add_row(vision_form, "interval", self.vision_interval)
         vision_form.addRow(self.vision_compatibility)
-        layout.addWidget(self.vision_group)
 
-        self.speech_group = QGroupBox()
-        speech_form = QFormLayout(self.speech_group)
+        self.tts_group = QGroupBox()
+        tts_form = QFormLayout(self.tts_group)
         self.tts_enabled = QCheckBox()
         self.tts_url = QLineEdit()
         self.tts_timeout = self._spinbox(10, 900)
@@ -805,11 +820,11 @@ class SettingsDialog(QDialog):
         self.whisper_download_button.clicked.connect(
             self._download_whisper_model
         )
-        speech_form.addRow(self.tts_enabled)
-        self._add_row(speech_form, "tts_endpoint", self.tts_url)
-        self._add_row(speech_form, "tts_timeout", self.tts_timeout)
+        tts_form.addRow(self.tts_enabled)
+        self._add_row(tts_form, "tts_endpoint", self.tts_url)
+        self._add_row(tts_form, "tts_timeout", self.tts_timeout)
         self._add_row(
-            speech_form,
+            tts_form,
             "tts_engine_root",
             self._path_picker(
                 self.tts_engine_root,
@@ -817,42 +832,44 @@ class SettingsDialog(QDialog):
             ),
         )
         self._add_row(
-            speech_form,
+            tts_form,
             "tts_model_dir",
             self._path_picker(
                 self.tts_model_dir,
                 self.tts_model_browse,
             ),
         )
-        speech_form.addRow(self.tts_status)
-        speech_form.addRow(self.tts_service_button)
-        speech_form.addRow(self.tts_progress)
-        speech_form.addRow(self.tts_extract_progress)
-        speech_form.addRow(self.tts_download_button)
-        speech_form.addRow(self.stt_enabled)
-        self._add_row(speech_form, "whisper_model", self.stt_model)
-        speech_form.addRow(self.whisper_status)
-        speech_form.addRow(self.whisper_progress)
-        speech_form.addRow(self.whisper_download_button)
-        self._add_row(speech_form, "stt_device", self.stt_device)
-        layout.addWidget(self.speech_group)
+        tts_form.addRow(self.tts_status)
+        tts_form.addRow(self.tts_service_button)
+        tts_form.addRow(self.tts_progress)
+        tts_form.addRow(self.tts_extract_progress)
+        tts_form.addRow(self.tts_download_button)
+        layout.addWidget(self.tts_group)
 
-        self.behavior_group = QGroupBox()
-        behavior_form = QFormLayout(self.behavior_group)
-        self.screen_index = self._spinbox(0, 32)
-        self.portrait_ratio = QDoubleSpinBox()
-        self.portrait_ratio.setRange(0.2, 1.0)
-        self.portrait_ratio.setSingleStep(0.05)
-        self.portrait_ratio.setDecimals(2)
+        self.whisper_group = QGroupBox()
+        whisper_form = QFormLayout(self.whisper_group)
+        whisper_form.addRow(self.stt_enabled)
+        self._add_row(whisper_form, "whisper_model", self.stt_model)
+        whisper_form.addRow(self.whisper_status)
+        whisper_form.addRow(self.whisper_progress)
+        whisper_form.addRow(self.whisper_download_button)
+        self._add_row(whisper_form, "stt_device", self.stt_device)
+        layout.addWidget(self.whisper_group)
+        layout.addWidget(self.vision_group)
+        layout.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        return scroll
+
+    def _build_automation_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.automation_group = QGroupBox()
+        behavior_form = QFormLayout(self.automation_group)
         self.thinking_minutes = self._spinbox(1, 1_440)
         self.away_minutes = self._spinbox(2, 1_440)
         self.history_limit = self._spinbox(4, 200)
-        self._add_row(behavior_form, "screen_index", self.screen_index)
-        self._add_row(
-            behavior_form,
-            "portrait_ratio",
-            self.portrait_ratio,
-        )
         self._add_row(
             behavior_form,
             "thinking_reminder",
@@ -864,12 +881,29 @@ class SettingsDialog(QDialog):
             "conversation_memory",
             self.history_limit,
         )
-        layout.addWidget(self.behavior_group)
+        layout.addWidget(self.automation_group)
         layout.addStretch(1)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(page)
-        return scroll
+        return page
+
+    def _build_display_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.display_group = QGroupBox()
+        display_form = QFormLayout(self.display_group)
+        self.screen_index = self._spinbox(0, 32)
+        self.portrait_ratio = QDoubleSpinBox()
+        self.portrait_ratio.setRange(0.2, 1.0)
+        self.portrait_ratio.setSingleStep(0.05)
+        self.portrait_ratio.setDecimals(2)
+        self._add_row(display_form, "screen_index", self.screen_index)
+        self._add_row(
+            display_form,
+            "portrait_ratio",
+            self.portrait_ratio,
+        )
+        layout.addWidget(self.display_group)
+        layout.addStretch(1)
+        return page
 
     @staticmethod
     def _editable_combo() -> QComboBox:
@@ -999,8 +1033,10 @@ class SettingsDialog(QDialog):
         self.intro_label.setText(self._text("intro"))
         self.language_label.setText(self._text("language"))
         self.tabs.setTabText(0, self._text("tab_models"))
-        self.tabs.setTabText(1, self._text("tab_character"))
-        self.tabs.setTabText(2, self._text("tab_automation"))
+        self.tabs.setTabText(1, self._text("tab_extensions"))
+        self.tabs.setTabText(2, self._text("tab_character"))
+        self.tabs.setTabText(3, self._text("tab_automation"))
+        self.tabs.setTabText(4, self._text("tab_display"))
 
         self.backend_group.setTitle(self._text("backend_group"))
         self.ollama_group.setTitle(self._text("ollama_group"))
@@ -1008,8 +1044,10 @@ class SettingsDialog(QDialog):
         self.identity_group.setTitle(self._text("identity_group"))
         self.prompt_group.setTitle(self._text("prompt_group"))
         self.vision_group.setTitle(self._text("vision_group"))
-        self.speech_group.setTitle(self._text("speech_group"))
-        self.behavior_group.setTitle(self._text("behavior_group"))
+        self.tts_group.setTitle(self._text("tts_group"))
+        self.whisper_group.setTitle(self._text("whisper_group"))
+        self.automation_group.setTitle(self._text("automation_group"))
+        self.display_group.setTitle(self._text("display_group"))
 
         for key, labels in self._form_labels.items():
             for label in labels:

@@ -46,6 +46,7 @@ AIpet 是一个面向 Windows 的丛雨桌宠。人格完全由提示词模拟�
 - 在界面中直接创建、导入或修改人格提示词。
 - 模型只返回经过验证的中文、日语和情绪，不再生成立绘图层编号。
 - 情绪由程序映射为固定立绘图层，更换模型也不会随机“拆脸”。
+- 中键拖到另一块显示器后，立绘会按新屏幕的可用高度自动缩放。
 - 截图只在 Qt 主线程产生，网络分析放到后台。
 - 配置、API Key 和历史记录移出仓库目录。
 - GPT-SoVITS 失败时仍然显示文本，不会吞掉整次回答。
@@ -57,7 +58,7 @@ git clone https://github.com/kuxiaowo/AIpet-Murasame.git
 cd AIpet-Murasame
 conda env create -f environment.yml
 conda activate aipet
-python run.py
+python main.py
 ```
 
 也可以手动创建环境：
@@ -66,7 +67,7 @@ python run.py
 conda create -n aipet python=3.10 -y
 conda activate aipet
 python -m pip install -r requirements.txt
-python run.py
+python main.py
 ```
 
 首次运行会打开 **AIpet 初始设置**。这里可以选择 Ollama / API、填写服务地址或 Key、选择模型、编辑人格并设置屏幕感知和语音。
@@ -112,7 +113,7 @@ Windows 下的用户数据位于：
 └── personality.txt
 ```
 
-临时语音和截图位于 `%LOCALAPPDATA%\AIpet-Murasame\cache`，由 AIpet 管理的 Whisper 和 TTS 模型位于 `%LOCALAPPDATA%\AIpet-Murasame\models`。屏幕感知默认关闭；启用后，截图只会发送给当前配置的视觉模型。
+临时语音和截图仍位于 `%LOCALAPPDATA%\AIpet-Murasame\cache`；由 AIpet 管理的 Whisper 和 TTS 模型统一放在项目根目录的 `models` 文件夹中，并已被 Git 忽略。如需显式覆盖该位置，可以设置 `AIPET_MODEL_DIR`。屏幕感知默认关闭；启用后，截图只会发送给当前配置的视觉模型。
 
 通过设置窗口填写的 Key 会保存在用户配置中。如果希望进一步分离凭据，可以把 Key 字段留空并使用 `DEEPSEEK_API_KEY` 或 `DASHSCOPE_API_KEY` 环境变量。
 

@@ -11,15 +11,20 @@ from pydantic import ValidationError
 from tool.backends import (
     APIBackend,
     OllamaBackend,
+    ScreenAnalysis,
+    build_screen_analysis_prompt,
     build_messages,
     parse_character_reply,
+    parse_screen_analysis,
 )
 from tool.config import (
     APISettings,
     AppSettings,
     CharacterSettings,
     IdleSettings,
+    PROJECT_ROOT,
     TTSSettings,
+    get_model_dir,
     load_settings,
     save_settings,
 )
@@ -32,6 +37,13 @@ from tool.tts_assets import TTSAssetState
 
 
 class CoreTests(unittest.TestCase):
+    def test_default_model_directory_is_inside_project(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"AIPET_MODEL_DIR": ""},
+        ):
+            self.assertEqual(get_model_dir(), PROJECT_ROOT / "models")
+
     def test_character_reply_accepts_fenced_json(self) -> None:
         payload = {
             "sentences": [
@@ -43,6 +55,28 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(reply.chinese_text(), "你好。")
         self.assertEqual(reply.sentences[0].emotion, "高兴")
+
+    def test_screen_analysis_accepts_fenced_json_and_uses_previous_scene(
+        self,
+    ) -> None:
+        previous = ScreenAnalysis(
+            software="Visual Studio Code",
+            activity="编辑 Python 项目",
+            topic="AIpet",
+        )
+        prompt = build_screen_analysis_prompt(previous)
+        self.assertIn("Visual Studio Code", prompt)
+        self.assertIn("首次建立基线", prompt)
+
+        analysis = parse_screen_analysis(
+            "```json\n"
+            '{"software":"浏览器","activity":"查看文档","topic":"API",'
+            '"significant_change":true,"change_type":"app_switch",'
+            '"change_summary":"从编辑器切换到浏览器","sensitive":false}'
+            "\n```"
+        )
+        self.assertTrue(analysis.significant_change)
+        self.assertEqual(analysis.change_type, "app_switch")
 
     def test_settings_round_trip_and_idle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -142,6 +176,46 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(payload["options"]["num_ctx"], 8_192)
 
     @patch("requests.Session.request")
+    def test_ollama_vision_uses_schema_and_previous_scene(
+        self,
+        request: Mock,
+    ) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "message": {
+                "content": json.dumps(
+                    {
+                        "software": "浏览器",
+                        "activity": "查看文档",
+                        "topic": "API",
+                        "significant_change": True,
+                        "change_type": "app_switch",
+                        "change_summary": "从编辑器切换到浏览器",
+                        "sensitive": False,
+                    },
+                    ensure_ascii=False,
+                )
+            }
+        }
+        request.return_value = response
+        previous = ScreenAnalysis(
+            software="Visual Studio Code",
+            activity="编辑项目",
+        )
+        analysis = OllamaBackend(AppSettings()).describe_image(
+            Path("icon.png"),
+            previous,
+        )
+        self.assertTrue(analysis.significant_change)
+        payload = request.call_args.kwargs["json"]
+        self.assertIsInstance(payload["format"], dict)
+        self.assertIn(
+            "Visual Studio Code",
+            payload["messages"][0]["content"],
+        )
+
+    @patch("requests.Session.request")
     def test_api_chat_uses_selected_provider_and_json_mode(
         self,
         request: Mock,
@@ -189,7 +263,24 @@ class CoreTests(unittest.TestCase):
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {
-            "choices": [{"message": {"content": "一张角色图标"}}]
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "software": "图片查看器",
+                                "activity": "查看角色图标",
+                                "topic": "角色图片",
+                                "significant_change": False,
+                                "change_type": "none",
+                                "change_summary": "",
+                                "sensitive": False,
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
         }
         request.return_value = response
         settings = AppSettings(
@@ -200,10 +291,15 @@ class CoreTests(unittest.TestCase):
                 aliyun_vision_model="qwen-vl-test",
             ),
         )
-        description = APIBackend(settings).describe_image(Path("icon.png"))
-        self.assertEqual(description, "一张角色图标")
+        analysis = APIBackend(settings).describe_image(Path("icon.png"))
+        self.assertEqual(analysis.software, "图片查看器")
+        self.assertFalse(analysis.significant_change)
         payload = request.call_args.kwargs["json"]
         self.assertEqual(payload["model"], "qwen-vl-test")
+        self.assertEqual(
+            payload["response_format"],
+            {"type": "json_object"},
+        )
         image_url = payload["messages"][0]["content"][0]["image_url"]["url"]
         self.assertTrue(image_url.startswith("data:image/png;base64,"))
 
