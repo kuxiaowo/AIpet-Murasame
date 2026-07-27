@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+
+
+_AUDIO_BACKEND_LOCK = threading.RLock()
+_AUDIO_CAPTURE_ACTIVE = False
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,8 @@ def _all_compatible_audio_input_devices() -> list[AudioInputDevice]:
     except ImportError:
         return []
 
-    return _compatible_audio_input_devices(sd)
+    with _AUDIO_BACKEND_LOCK:
+        return _compatible_audio_input_devices(sd)
 
 
 def _compatible_audio_input_devices(sd) -> list[AudioInputDevice]:
@@ -152,6 +159,16 @@ def default_audio_input_device() -> AudioInputDevice | None:
     try:
         import sounddevice as sd
 
+        with _AUDIO_BACKEND_LOCK:
+            return _default_audio_input_device(sd)
+    except (ImportError, TypeError, ValueError):
+        return None
+    except Exception:
+        return None
+
+
+def _default_audio_input_device(sd) -> AudioInputDevice | None:
+    try:
         raw = sd.query_devices(kind="input")
         hostapi = sd.query_hostapis(int(raw["hostapi"]))
         default_index = int(sd.default.device[0])
@@ -165,6 +182,52 @@ def default_audio_input_device() -> AudioInputDevice | None:
         return None
     except Exception:
         return None
+
+
+def refresh_audio_input_devices(
+) -> tuple[AudioInputDevice | None, list[AudioInputDevice]]:
+    """Refresh PortAudio when safe, then return the current input devices."""
+
+    try:
+        import sounddevice as sd
+    except ImportError:
+        return None, []
+
+    with _AUDIO_BACKEND_LOCK:
+        if not _AUDIO_CAPTURE_ACTIVE:
+            _restart_portaudio(sd)
+        devices = _preferred_audio_input_devices(
+            _compatible_audio_input_devices(sd)
+        )
+        return _default_audio_input_device(sd), devices
+
+
+def _restart_portaudio(sd) -> None:
+    try:
+        if getattr(sd, "_initialized", 0) > 0:
+            sd._terminate()
+        sd._initialize()
+    except Exception:
+        # A failed refresh must not make the existing settings window unusable.
+        if getattr(sd, "_initialized", 0) <= 0:
+            try:
+                sd._initialize()
+            except Exception:
+                pass
+
+
+@contextmanager
+def audio_backend_access():
+    """Prevent PortAudio refresh while a stream is being opened or closed."""
+
+    with _AUDIO_BACKEND_LOCK:
+        yield
+
+
+def set_audio_capture_active(active: bool) -> None:
+    global _AUDIO_CAPTURE_ACTIVE
+    with _AUDIO_BACKEND_LOCK:
+        _AUDIO_CAPTURE_ACTIVE = active
 
 
 def resolve_audio_input_device(identifier: str) -> int | None:
@@ -193,9 +256,12 @@ def resolve_audio_input_device(identifier: str) -> int | None:
 
 __all__ = [
     "AudioInputDevice",
+    "audio_backend_access",
     "decode_audio_input_device",
     "default_audio_input_device",
     "encode_audio_input_device",
     "list_audio_input_devices",
+    "refresh_audio_input_devices",
     "resolve_audio_input_device",
+    "set_audio_capture_active",
 ]

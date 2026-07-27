@@ -90,21 +90,25 @@ class UISmokeTests(unittest.TestCase):
             hostapi="Windows WASAPI",
             max_input_channels=1,
         )
+        newly_connected = AudioInputDevice(
+            index=41,
+            name="New USB Microphone",
+            hostapi="Windows WASAPI",
+            max_input_channels=1,
+        )
         with tempfile.TemporaryDirectory() as directory:
             settings = AppSettings()
             settings.stt.input_device = selected.identifier
+            settings.stt.device = "cuda"
+            settings.ui_language = "zh-CN"
             with (
                 patch.dict(
                     os.environ,
                     {"AIPET_DATA_DIR": directory},
                 ),
                 patch(
-                    "ui.settings_dialog.list_audio_input_devices",
-                    return_value=[selected],
-                ),
-                patch(
-                    "ui.settings_dialog.default_audio_input_device",
-                    return_value=selected,
+                    "ui.settings_dialog.refresh_audio_input_devices",
+                    return_value=(selected, [selected]),
                 ),
             ):
                 dialog = SettingsDialog(settings)
@@ -116,6 +120,52 @@ class UISmokeTests(unittest.TestCase):
                     self.assertEqual(
                         dialog._form_settings().stt.input_device,
                         selected.identifier,
+                    )
+                    self.assertEqual(dialog.stt_device.currentData(), "cuda")
+                    self.assertEqual(
+                        dialog.stt_device.currentText(),
+                        "CUDA（请使用 AIpet-with-cuda 版本，否则无法使用）",
+                    )
+                    self.assertEqual(
+                        dialog._form_settings().stt.device,
+                        "cuda",
+                    )
+                    dialog._set_combo_data(dialog.language_combo, "en")
+                    self.assertEqual(
+                        dialog.stt_device.currentText(),
+                        (
+                            "CUDA (requires the AIpet-with-cuda build; "
+                            "unavailable otherwise)"
+                        ),
+                    )
+                    with (
+                        patch(
+                            "ui.settings_dialog.refresh_audio_input_devices",
+                            return_value=(selected, [selected, newly_connected]),
+                        ),
+                    ):
+                        dialog._refresh_audio_input_devices()
+                    self.assertEqual(
+                        dialog.stt_input_device.currentData(),
+                        selected.identifier,
+                    )
+                    self.assertGreaterEqual(
+                        dialog.stt_input_device.findData(
+                            newly_connected.identifier
+                        ),
+                        0,
+                    )
+
+                    with patch.object(dialog, "_auto_fetch_models"):
+                        dialog.show()
+                        self.app.processEvents()
+                    self.assertTrue(
+                        dialog._audio_device_refresh_timer.isActive()
+                    )
+                    dialog.hide()
+                    self.app.processEvents()
+                    self.assertFalse(
+                        dialog._audio_device_refresh_timer.isActive()
                     )
                 finally:
                     dialog.close()
@@ -182,6 +232,95 @@ class UISmokeTests(unittest.TestCase):
             for key in tts_label_keys:
                 for label in dialog._form_labels[key]:
                     self.assertFalse(label.isEnabled(), key)
+        finally:
+            dialog.close()
+
+    def test_tts_backend_hides_irrelevant_rows(self) -> None:
+        settings = AppSettings()
+        settings.tts.enabled = False
+        settings.tts.backend = "local"
+        dialog = SettingsDialog(settings)
+        try:
+            local_keys = (
+                "tts_endpoint",
+                "tts_engine_root",
+                "tts_model_dir",
+            )
+            autodl_keys = (
+                "tts_autodl_ssh_command",
+                "tts_autodl_password",
+                "tts_autodl_remote_command",
+                "tts_autodl_reference_root",
+            )
+            for key in local_keys:
+                self.assertFalse(
+                    dialog._form_fields[key][0].isHidden(),
+                    key,
+                )
+                self.assertFalse(
+                    dialog._form_labels[key][0].isHidden(),
+                    key,
+                )
+            for key in autodl_keys:
+                self.assertTrue(
+                    dialog._form_fields[key][0].isHidden(),
+                    key,
+                )
+                self.assertTrue(
+                    dialog._form_labels[key][0].isHidden(),
+                    key,
+                )
+            self.assertFalse(dialog.tts_download_button.isHidden())
+
+            dialog._set_combo_data(dialog.tts_backend, "autodl")
+            for key in local_keys:
+                self.assertTrue(
+                    dialog._form_fields[key][0].isHidden(),
+                    key,
+                )
+                self.assertTrue(
+                    dialog._form_labels[key][0].isHidden(),
+                    key,
+                )
+            for key in autodl_keys:
+                self.assertFalse(
+                    dialog._form_fields[key][0].isHidden(),
+                    key,
+                )
+                self.assertFalse(
+                    dialog._form_labels[key][0].isHidden(),
+                    key,
+                )
+            self.assertTrue(dialog.tts_download_button.isHidden())
+        finally:
+            dialog.close()
+
+    def test_settings_help_buttons_replace_empty_title_bar_help(
+        self,
+    ) -> None:
+        settings = AppSettings(ui_language="zh-CN")
+        with (
+            patch(
+                "ui.settings_dialog.refresh_audio_input_devices",
+                return_value=(None, []),
+            ),
+        ):
+            dialog = SettingsDialog(settings)
+        try:
+            self.assertFalse(
+                bool(dialog.windowFlags() & Qt.WindowContextHelpButtonHint)
+            )
+            with patch(
+                "ui.settings_dialog.QMessageBox.information"
+            ) as information:
+                dialog.automation_help_button.click()
+                information.assert_called_once()
+                self.assertIn("思考提醒", information.call_args.args[2])
+
+                information.reset_mock()
+                dialog.display_help_button.click()
+                information.assert_called_once()
+                self.assertIn("屏幕编号", information.call_args.args[2])
         finally:
             dialog.close()
 

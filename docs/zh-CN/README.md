@@ -164,18 +164,26 @@ $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
 ```
 
-构建 Windows 单文件 EXE：
+同时构建两个 Windows 单文件 EXE：
 
 ```powershell
 .\packaging\build_exe.ps1
 ```
 
-脚本会在需要时创建独立的 `aipet_build_whisper` Conda 环境，最终输出
-`dist\AIpet.exe`。构建环境未变化时可跳过依赖安装：
+脚本会在需要时创建独立的 `aipet_build_whisper` Conda 环境，并输出：
+
+- `dist\AIpet.exe`：标准 CPU 版本。
+- `dist\AIpet-with-cuda.exe`：附带 CUDA 12 cuBLAS、cuDNN 9 和 NVRTC
+  运行库，可用于本地 Whisper GPU 推理的 CUDA 版本。
+
+构建环境未变化时可跳过依赖安装：
 
 ```powershell
 .\packaging\build_exe.ps1 -SkipDependencyInstall
 ```
+
+跳过依赖安装时，构建环境中必须已有 `cublas64_12.dll` 和
+`cublasLt64_12.dll`；也可以通过 `-CudaDllDirectory` 指定它们所在的目录。
 
 主要目录：
 

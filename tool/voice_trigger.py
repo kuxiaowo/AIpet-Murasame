@@ -9,7 +9,11 @@ import numpy as np
 import sounddevice as sd
 from pynput import keyboard
 
-from tool.audio_devices import resolve_audio_input_device
+from tool.audio_devices import (
+    audio_backend_access,
+    resolve_audio_input_device,
+    set_audio_capture_active,
+)
 from tool.config import get_cache_dir
 from tool.runtime_logging import get_logger
 from tool.stt import transcribe_full
@@ -31,6 +35,7 @@ class AudioRecorder:
         self.channels = channels
         self.input_device = input_device
         self._stream: Optional[sd.InputStream] = None
+        self._stream_active = False
         self._frames = []
         self._lock = threading.Lock()
 
@@ -43,29 +48,33 @@ class AudioRecorder:
     def start(self) -> None:
         with self._lock:
             self._frames = []
-        device_index = resolve_audio_input_device(self.input_device)
-        self._stream = sd.InputStream(
-            device=device_index,
-            samplerate=self.samplerate,
-            channels=self.channels,
-            dtype="int16",
-            callback=self._callback,
-        )
-        self._stream.start()
-        selected = sd.query_devices(
-            device_index,
-            kind="input",
-        )
+        with audio_backend_access():
+            device_index = resolve_audio_input_device(self.input_device)
+            selected = sd.query_devices(
+                device_index,
+                kind="input",
+            )
+            stream = sd.InputStream(
+                device=device_index,
+                samplerate=self.samplerate,
+                channels=self.channels,
+                dtype="int16",
+                callback=self._callback,
+            )
+            try:
+                stream.start()
+            except Exception:
+                stream.close()
+                raise
+            self._stream = stream
+            self._stream_active = True
+            set_audio_capture_active(True)
         logger.info("录音开始 | 输入设备=%s", selected["name"])
 
     def stop_and_save(self, wav_path: str) -> Optional[str]:
         if self._stream is None:
             return None
-        try:
-            self._stream.stop()
-            self._stream.close()
-        finally:
-            self._stream = None
+        self.close()
         with self._lock:
             if not self._frames:
                 logger.warning("没有录到有效音频")
@@ -83,6 +92,22 @@ class AudioRecorder:
         except Exception as exc:
             logger.exception("保存 WAV 失败")
             return None
+
+    def close(self) -> None:
+        stream = self._stream
+        if stream is None:
+            return
+        with audio_backend_access():
+            try:
+                try:
+                    stream.stop()
+                finally:
+                    stream.close()
+            finally:
+                self._stream = None
+                if self._stream_active:
+                    self._stream_active = False
+                    set_audio_capture_active(False)
 
 
 class CapslockVoiceTrigger:
@@ -136,6 +161,12 @@ class CapslockVoiceTrigger:
         logger.info("CapsLock 语音触发已启动")
 
     def stop(self) -> None:
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
+        self._caps_pressed = False
+        self._recording = False
+        self._recorder.close()
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
