@@ -61,13 +61,27 @@ Windows 10 and Windows 11 are the primary supported systems.
 
 ### Run the Windows EXE
 
-1. Download `AIpet.exe` from a compatible version on the
-   [Releases page](https://github.com/kuxiaowo/AIpet-Murasame/releases).
-   If a release has no EXE asset, use the source installation below.
-2. Place it in a writable permanent directory such as `C:\AIpet\`.
-3. Double-click `AIpet.exe`.
+Choose one executable from the
+[Releases page](https://github.com/kuxiaowo/AIpet-Murasame/releases):
 
-The EXE includes the application and faster-whisper runtime, so Python, Conda,
+- **`AIpet.exe` (standard build, about 194 MiB):** does not bundle CUDA.
+  Use this build for CPU-based Whisper transcription or when local
+  speech-recognition GPU acceleration is not needed. This is the recommended
+  download if you are unsure which build to choose.
+- **`AIpet-with-cuda.exe` (CUDA build, about 1.06 GiB):** bundles CUDA 12
+  cuBLAS, cuDNN 9, and NVRTC for local faster-whisper acceleration on a
+  compatible NVIDIA GPU. A compatible NVIDIA graphics driver is still
+  required. If CUDA is selected in Settings, use this build.
+
+Both builds provide the same application features and settings interface.
+The CUDA build is larger only because it includes the GPU runtime libraries.
+
+1. Download the selected EXE. If a release has no EXE asset, use the source
+   installation below.
+2. Place it in a writable permanent directory such as `C:\AIpet\`.
+3. Double-click the downloaded EXE.
+
+The EXEs include the application and faster-whisper runtime, so Python, Conda,
 and Git are not required. Chat models, Whisper models, and GPT-SoVITS assets
 are not bundled; optional downloads begin only after confirmation in Settings.
 

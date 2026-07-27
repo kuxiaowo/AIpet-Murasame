@@ -59,15 +59,27 @@ AIpet 是一款面向 Windows 的丛雨 AI 桌宠。它将透明 PyQt5 角色窗
 
 ### 直接运行 Windows EXE
 
-1. 从项目 [Releases 页面](https://github.com/kuxiaowo/AIpet-Murasame/releases)
-   中提供 Windows 程序的版本下载 `AIpet.exe`。如果该版本没有 EXE，请使用
-   下方的源码方案。
-2. 把程序放到长期使用且可写的目录，例如 `C:\AIpet\`。
-3. 双击 `AIpet.exe`。
+从项目 [Releases 页面](https://github.com/kuxiaowo/AIpet-Murasame/releases)
+选择一个版本：
 
-EXE 已包含应用程序和 faster-whisper 运行依赖，不要求安装 Python、Conda
-或 Git。聊天模型、Whisper 模型及 GPT-SoVITS 资源不会打进 EXE；可选资源
-只会在设置界面确认后下载。
+- **`AIpet.exe`（标准版，约 194 MiB）：**不附带 CUDA，适合使用 CPU
+  进行 Whisper 语音识别，或不需要本地语音识别 GPU 加速的用户。不确定
+  应该下载哪个版本时，建议选择这个版本。
+- **`AIpet-with-cuda.exe`（CUDA 版，约 1.06 GiB）：**附带 CUDA 12
+  cuBLAS、cuDNN 9 和 NVRTC，可通过兼容的 NVIDIA 显卡加速本地
+  faster-whisper 语音识别；仍需安装兼容的 NVIDIA 显卡驱动。如果在设置中
+  选择 CUDA，请使用这个版本。
+
+两个版本拥有相同的应用功能和设置界面。CUDA 版体积较大，仅仅是因为其中
+附带了 GPU 运行库。
+
+1. 下载所选的 EXE。如果该版本没有 EXE，请使用下方的源码方案。
+2. 把程序放到长期使用且可写的目录，例如 `C:\AIpet\`。
+3. 双击下载的 EXE。
+
+两个 EXE 均已包含应用程序和 faster-whisper 运行依赖，不要求安装
+Python、Conda 或 Git。聊天模型、Whisper 模型及 GPT-SoVITS 资源不会打进
+EXE；可选资源只会在设置界面确认后下载。
 
 ### 从源码运行
 
