@@ -29,8 +29,7 @@
 ---
 
 如果你喜欢让丛雨陪在桌面上，就请给项目一颗
-[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers)，或去
-[B站](https://space.bilibili.com/1067030066)
+[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers)
 点个关注吧～丛雨会很开心，维护者也会更有动力继续更新的！
 
 ## 项目简介
