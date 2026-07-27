@@ -29,13 +29,9 @@ history.json
 .ssh/
 
 # Runtime output
-build/
-dist/
 models/
 tmp/
 voices/*.wav
 cache/
 *.log
-_tmp_*
 .native_overlay/
-.cache/
