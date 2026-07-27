@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import sys
-import subprocess
 from pathlib import Path
 
 from pydantic import ValidationError
-from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -28,7 +27,6 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QTabWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -41,10 +39,10 @@ from classes.download_manager import (
 )
 from tool.audio_devices import (
     decode_audio_input_device,
-    refresh_audio_input_devices,
+    default_audio_input_device,
+    list_audio_input_devices,
 )
 from tool.backends import create_backend, create_vision_backend
-from tool.cache import clear_runtime_cache
 from tool.config import (
     APISettings,
     AppSettings,
@@ -56,17 +54,14 @@ from tool.config import (
     TTSSettings,
     VisionSettings,
     get_user_data_dir,
-    PROJECT_ROOT,
     load_personality,
 )
-from tool.credentials import CredentialError, protect_secret
+from tool.network import is_loopback_url
 from tool.runtime_logging import get_logger
 from tool.tts_assets import (
     TTSAssetState,
     configure_local_tts_weights,
     locate_tts_assets,
-    managed_gpt_sovits_dir,
-    managed_tts_model_dir,
     tts_service_is_reachable,
 )
 from tool.tts_service import (
@@ -91,7 +86,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tab_character": "Character",
         "tab_automation": "Automation",
         "tab_display": "Display",
-        "tab_other": "Other",
         "backend_group": "Backend mode",
         "mode": "Mode",
         "mode_ollama": "Ollama (local service)",
@@ -162,32 +156,15 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_group": "Text-to-speech (GPT-SoVITS)",
         "whisper_group": "Speech input (Whisper)",
         "tts_enabled": "Use GPT-SoVITS-compatible TTS",
-        "tts_backend": "TTS location",
-        "tts_backend_local": "Local computer",
-        "tts_backend_autodl": "AutoDL cloud",
         "tts_endpoint": "TTS endpoint",
         "tts_timeout": "TTS timeout",
         "tts_engine_root": "GPT-SoVITS download/install directory",
         "tts_model_dir": "Voice model download directory (includes references)",
-        "tts_autodl_ssh_command": "AutoDL SSH login command",
-        "tts_autodl_password": "AutoDL SSH password",
-        "tts_autodl_remote_command": "Remote TTS start command",
-        "tts_autodl_reference_root": "Remote reference voice directory",
-        "tts_autodl_password_placeholder": (
-            "Leave blank to keep the password in the system credential store"
-        ),
         "browse": "Browse…",
         "tts_disabled": (
             "Enable TTS to check the engine, voice model, references, and service."
         ),
         "tts_invalid": "Enter a valid TTS endpoint before checking it.",
-        "tts_autodl_missing": (
-            "Enter the AutoDL SSH login command, password, remote start "
-            "command, and remote reference voice directory."
-        ),
-        "tts_password_store_failed": (
-            "The system could not save the AutoDL password securely: {message}"
-        ),
         "tts_checking": "Checking GPT-SoVITS components…",
         "tts_ready_online": "Voice model is ready and the TTS service is online.",
         "tts_ready_offline": (
@@ -198,9 +175,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_service_online": "TTS service online",
         "tts_service_locating": "Locating the GPT-SoVITS runtime…",
         "tts_service_starting": "Starting the GPT-SoVITS process…",
-        "tts_service_connecting_ssh": "Connecting to AutoDL over SSH…",
-        "tts_service_starting_remote": "Running the AutoDL TTS start command…",
-        "tts_service_starting_tunnel": "Opening the local SSH tunnel…",
         "tts_service_waiting": "Waiting for the TTS API to become ready…",
         "tts_service_waiting_existing": (
             "Another request is starting the TTS service; waiting…"
@@ -234,17 +208,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "additional free space while extracting. The assets are intended "
             "for non-commercial, educational use."
         ),
-        "tts_download_consent_body_macos": (
-            "Download the Murasame character weights and six reference voices "
-            "(about 231 MB) from ModelScope? On macOS, install GPT-SoVITS "
-            "separately, then select its directory in Settings."
-        ),
         "tts_download": "Download voice model",
-        "tts_macos_setup": "Install GPT-SoVITS for macOS",
-        "tts_macos_setup_opened": (
-            "The macOS GPT-SoVITS installer is running in Terminal. "
-            "After it finishes, download the Murasame voice model here."
-        ),
         "tts_preparing": "Preparing the TTS download: {detail}",
         "tts_downloading": "Downloading the Murasame voice model: {detail}",
         "tts_checking_files": "Checking downloaded files: {detail}",
@@ -256,7 +220,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "files",
         "download_steps": "steps",
         "stt_enabled": "Hold Caps Lock for speech input",
-        "stt_enabled_macos": "Hold Option + V for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
         "stt_input_device": "Recording device",
@@ -264,11 +227,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_input_default_unknown": "System default input",
         "stt_input_unavailable": "Unavailable: {device}",
         "stt_device": "STT device",
-        "stt_device_auto": "Auto",
-        "stt_device_cuda": (
-            "CUDA (requires the AIpet-with-cuda build; unavailable otherwise)"
-        ),
-        "stt_device_cpu": "CPU",
         "whisper_download": "Download model",
         "whisper_disabled": (
             "Enable speech input to check the selected download directory."
@@ -302,21 +260,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "download_path_invalid": "The selected directory cannot be used: {message}",
         "automation_group": "Idle behavior and memory",
-        "settings_help": "Explain these settings",
-        "automation_help_title": "Idle behavior and memory",
-        "automation_help_body": (
-            "Thinking reminder: after this much inactivity, the character may "
-            "gently check whether you are still there. It triggers at most "
-            "once per idle period.\n\n"
-            "Away reminder: after the longer inactivity threshold, the "
-            "character treats you as away. When you return, she may welcome "
-            "you back. This value must be greater than the thinking reminder."
-            "\n\n"
-            "Conversation memory: the maximum number of recent messages kept "
-            "and supplied as conversation context.\n\n"
-            "Do not disturb: disables proactive idle and return messages; "
-            "manual conversation still works."
-        ),
         "do_not_disturb": "Do not disturb",
         "clear_history": "Clear conversation history…",
         "clear_history_confirm_title": "Clear conversation history?",
@@ -328,33 +271,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "history_unavailable_first_run": (
             "Conversation history is not available during initial setup."
         ),
-        "data_group": "Data management",
-        "conversation_history_data": "Conversation history",
-        "runtime_cache_data": "Temporary screenshots, speech, and recordings",
-        "clear_cache": "Clear cache…",
-        "clear_cache_confirm_title": "Clear cached files?",
-        "clear_cache_confirm_body": (
-            "This removes temporary screenshots, generated speech, and "
-            "recordings. Settings, conversation history, models, and logs "
-            "are not affected."
-        ),
-        "cache_cleared": "Cleared {files} cached files, freeing {size}.",
-        "cache_empty": "The cache is already empty.",
-        "cache_clear_partial": (
-            "Cleared {files} cached files ({size}), but {failed} files or "
-            "folders are still in use or could not be removed."
-        ),
         "display_group": "Screen and portrait",
-        "display_help_title": "Screen and portrait",
-        "display_help_body": (
-            "Screen index: the zero-based position in Windows' current screen "
-            "list. If the index is unavailable, the primary screen is used."
-            "\n\n"
-            "Portrait height ratio: the character's target height as a share "
-            "of the selected screen's available height.\n\n"
-            "Live diagnostic console: opens a live log window for diagnosing "
-            "model, TTS, recording, and other runtime problems."
-        ),
         "screen_index": "Screen index",
         "portrait_ratio": "Portrait height ratio",
         "show_log_console": "Open live diagnostic console",
@@ -408,7 +325,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tab_character": "角色",
         "tab_automation": "自动行为",
         "tab_display": "显示",
-        "tab_other": "其他",
         "backend_group": "后端模式",
         "mode": "模式",
         "mode_ollama": "Ollama（本地服务）",
@@ -474,29 +390,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_group": "语音合成（GPT-SoVITS）",
         "whisper_group": "语音输入（Whisper）",
         "tts_enabled": "使用 GPT-SoVITS 兼容 TTS",
-        "tts_backend": "TTS 位置",
-        "tts_backend_local": "本机",
-        "tts_backend_autodl": "AutoDL 云端",
         "tts_endpoint": "TTS 地址",
         "tts_timeout": "TTS 超时",
         "tts_engine_root": "GPT-SoVITS 下载及安装目录",
         "tts_model_dir": "角色语音模型下载目录（含参考音频）",
-        "tts_autodl_ssh_command": "AutoDL SSH 登录命令",
-        "tts_autodl_password": "AutoDL SSH 密码",
-        "tts_autodl_remote_command": "远程 TTS 启动命令",
-        "tts_autodl_reference_root": "服务器参考音频目录",
-        "tts_autodl_password_placeholder": (
-            "留空则继续使用系统凭据存储中保存的密码"
-        ),
         "browse": "浏览…",
         "tts_disabled": "启用 TTS 后，将检查引擎、角色模型、参考音频和服务。",
         "tts_invalid": "请先填写有效的 TTS 地址。",
-        "tts_autodl_missing": (
-            "请填写 AutoDL SSH 登录命令、密码、远程启动命令和服务器参考音频目录。"
-        ),
-        "tts_password_store_failed": (
-            "系统无法安全保存 AutoDL 密码：{message}"
-        ),
         "tts_checking": "正在检查 GPT-SoVITS 组件……",
         "tts_ready_online": "角色语音模型完整，TTS 服务在线。",
         "tts_ready_offline": "角色语音模型完整，但 TTS 服务尚未运行。",
@@ -505,9 +405,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_service_online": "TTS 服务在线",
         "tts_service_locating": "正在定位 GPT-SoVITS 运行环境……",
         "tts_service_starting": "正在启动 GPT-SoVITS 进程……",
-        "tts_service_connecting_ssh": "正在通过 SSH 连接 AutoDL……",
-        "tts_service_starting_remote": "正在执行 AutoDL TTS 启动命令……",
-        "tts_service_starting_tunnel": "正在建立本机 SSH 隧道……",
         "tts_service_waiting": "正在等待 TTS API 就绪……",
         "tts_service_waiting_existing": "已有请求正在启动 TTS 服务，正在等待……",
         "tts_service_loading_weights": "正在加载角色语音权重……",
@@ -534,17 +431,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "完整引擎，同时下载角色权重和参考音频？下载量约 8～9 GB，"
             "解压时还需要额外可用空间。这些资源仅用于非商业和学习用途。"
         ),
-        "tts_download_consent_body_macos": (
-            "是否从 ModelScope 下载丛雨角色权重及六组参考音频（约 231 MB）？"
-            "macOS 不下载 Windows 整合引擎；请另行安装 GPT-SoVITS，"
-            "再在设置中选择其目录。"
-        ),
         "tts_download": "下载角色语音模型",
-        "tts_macos_setup": "安装 macOS GPT-SoVITS",
-        "tts_macos_setup_opened": (
-            "macOS GPT-SoVITS 安装程序已在终端运行。安装完成后，"
-            "请在这里下载丛雨角色语音模型。"
-        ),
         "tts_preparing": "正在准备 TTS 下载：{detail}",
         "tts_downloading": "正在下载丛雨语音模型：{detail}",
         "tts_checking_files": "正在校验已下载文件：{detail}",
@@ -556,7 +443,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "个文件",
         "download_steps": "个步骤",
         "stt_enabled": "长按 Caps Lock 进行语音输入",
-        "stt_enabled_macos": "长按 Option + V 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
         "stt_input_device": "录音设备",
@@ -564,11 +450,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_input_default_unknown": "系统默认输入设备",
         "stt_input_unavailable": "当前不可用：{device}",
         "stt_device": "语音识别设备",
-        "stt_device_auto": "自动",
-        "stt_device_cuda": (
-            "CUDA（请使用 AIpet-with-cuda 版本，否则无法使用）"
-        ),
-        "stt_device_cpu": "CPU",
         "whisper_download": "下载模型",
         "whisper_disabled": "启用语音输入后，将检查填写的模型下载目录。",
         "whisper_checking": "正在检查填写的模型目录……",
@@ -589,16 +470,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_path_required": "请先选择 Whisper 模型下载目录。",
         "download_path_invalid": "无法使用所选目录：{message}",
         "automation_group": "空闲行为与记忆",
-        "settings_help": "解释这些设置",
-        "automation_help_title": "空闲行为与记忆说明",
-        "automation_help_body": (
-            "思考提醒：持续无操作达到该时间后，角色可能会温和地询问你是否还在。"
-            "每段空闲期间最多触发一次。\n\n"
-            "离开提醒：持续无操作达到更长的时间后，角色会认为你暂时离开；"
-            "检测到你回来后，可能会欢迎你。该时间必须大于思考提醒。\n\n"
-            "对话记忆：最多保留并作为对话上下文发送的最近消息数量。\n\n"
-            "勿扰模式：停止主动的空闲提醒和回来问候，但手动对话仍可正常使用。"
-        ),
         "do_not_disturb": "勿扰模式",
         "clear_history": "清除历史对话…",
         "clear_history_confirm_title": "确定清除历史对话？",
@@ -608,30 +479,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "history_cleared": "历史对话已清除。",
         "history_unavailable_first_run": "首次设置时没有可清除的历史对话。",
-        "data_group": "数据管理",
-        "conversation_history_data": "历史对话",
-        "runtime_cache_data": "临时截图、合成语音与录音",
-        "clear_cache": "清除缓存…",
-        "clear_cache_confirm_title": "确定清除缓存文件？",
-        "clear_cache_confirm_body": (
-            "这会删除临时截图、合成语音和录音。"
-            "设置、历史对话、模型与日志不会受到影响。"
-        ),
-        "cache_cleared": "已清除 {files} 个缓存文件，释放 {size}。",
-        "cache_empty": "缓存已经是空的。",
-        "cache_clear_partial": (
-            "已清除 {files} 个缓存文件（{size}），但仍有 {failed} 个"
-            "正在使用或无法删除的文件或文件夹。"
-        ),
         "display_group": "屏幕与立绘",
-        "display_help_title": "屏幕与立绘说明",
-        "display_help_body": (
-            "屏幕编号：当前 Windows 屏幕列表中从 0 开始的序号。"
-            "序号不可用时会回退到主屏幕。\n\n"
-            "立绘高度比例：角色立绘相对于所选屏幕可用高度的目标比例。\n\n"
-            "实时日志命令行：打开实时日志窗口，用于排查模型、TTS、录音及"
-            "其他运行问题。"
-        ),
         "screen_index": "屏幕编号",
         "portrait_ratio": "立绘高度比例",
         "show_log_console": "打开实时日志命令行",
@@ -751,13 +599,11 @@ class TTSServiceWorker(QThread):
         self,
         settings: TTSSettings,
         action: str,
-        password: str = "",
         parent=None,
     ):
         super().__init__(parent)
         self.settings = settings.model_copy(deep=True)
         self.action = action
-        self.password = password
 
     def run(self) -> None:
         manager = get_tts_service_manager()
@@ -771,30 +617,21 @@ class TTSServiceWorker(QThread):
                 configured_engine_root=self.settings.engine_root,
                 configured_model_dir=self.settings.model_dir,
             )
-            if not self.settings.uses_autodl() and not state.model_ready:
+            if not state.model_ready:
                 raise TTSServiceError(
                     "The Murasame voice weights are incomplete."
-                )
-            if (
-                not self.settings.uses_autodl()
-                and not state.reference_voices_ready
-            ):
-                raise TTSServiceError(
-                    "The Murasame reference voices are incomplete."
                 )
             manager.ensure_running(
                 self.settings,
                 state=state,
                 progress=self.stage_changed.emit,
-                password=self.password,
             )
-            if not self.settings.uses_autodl():
-                self.stage_changed.emit("loading_weights")
-                configure_local_tts_weights(
-                    self.settings.base_url,
-                    state,
-                    self.settings.timeout_seconds,
-                )
+            self.stage_changed.emit("loading_weights")
+            configure_local_tts_weights(
+                self.settings.base_url,
+                state,
+                self.settings.timeout_seconds,
+            )
             self.succeeded.emit("started")
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -814,7 +651,6 @@ class SettingsDialog(QDialog):
         parent=None,
     ):
         super().__init__(parent)
-        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self._original = settings.model_copy(deep=True)
         self._first_run = first_run
         self._model_worker: ModelListWorker | None = None
@@ -836,8 +672,6 @@ class SettingsDialog(QDialog):
             QApplication.instance()
         )
         self._form_labels: dict[str, list[QLabel]] = {}
-        self._form_fields: dict[str, list[QWidget]] = {}
-        self._audio_device_signature: tuple[object, ...] | None = None
         self._status_key: str | None = None
         self._status_values: dict[str, object] = {}
         self._whisper_status_key = "whisper_disabled"
@@ -863,7 +697,6 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._build_character_tab(), "")
         self.tabs.addTab(self._build_automation_tab(), "")
         self.tabs.addTab(self._build_display_tab(), "")
-        self.tabs.addTab(self._build_other_tab(), "")
         root.addWidget(self.tabs, 1)
 
         self.status_label = QLabel()
@@ -877,11 +710,6 @@ class SettingsDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         root.addWidget(self.buttons)
 
-        self._audio_device_refresh_timer = QTimer(self)
-        self._audio_device_refresh_timer.setInterval(2_000)
-        self._audio_device_refresh_timer.timeout.connect(
-            self._refresh_audio_input_devices
-        )
         self._load_values(settings)
         self.language_combo.currentIndexChanged.connect(
             self._on_language_changed
@@ -893,24 +721,9 @@ class SettingsDialog(QDialog):
         )
         self.vision_enabled.toggled.connect(self._update_vision_state)
         self.tts_enabled.toggled.connect(self._update_tts_state)
-        self.tts_backend.currentIndexChanged.connect(
-            self._on_tts_backend_changed
-        )
         self.tts_url.editingFinished.connect(self._update_tts_state)
         self.tts_engine_root.editingFinished.connect(self._update_tts_state)
         self.tts_model_dir.editingFinished.connect(self._update_tts_state)
-        self.tts_autodl_ssh_command.editingFinished.connect(
-            self._update_tts_state
-        )
-        self.tts_autodl_password.editingFinished.connect(
-            self._update_tts_state
-        )
-        self.tts_autodl_remote_command.editingFinished.connect(
-            self._update_tts_state
-        )
-        self.tts_autodl_reference_root.editingFinished.connect(
-            self._update_tts_state
-        )
         self.download_manager.changed.connect(self._on_download_changed)
         self._update_backend_visibility()
         self._retranslate_ui()
@@ -920,16 +733,10 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        self._refresh_audio_input_devices()
-        self._audio_device_refresh_timer.start()
         if self._auto_models_requested:
             return
         self._auto_models_requested = True
         QTimer.singleShot(0, self._auto_fetch_models)
-
-    def hideEvent(self, event) -> None:
-        self._audio_device_refresh_timer.stop()
-        super().hideEvent(event)
 
     def _add_row(
         self,
@@ -941,49 +748,6 @@ class SettingsDialog(QDialog):
         label.setWordWrap(True)
         form.addRow(label, field)
         self._form_labels.setdefault(key, []).append(label)
-        self._form_fields.setdefault(key, []).append(field)
-
-    def _set_form_labels_enabled(
-        self,
-        keys: tuple[str, ...],
-        enabled: bool,
-    ) -> None:
-        for key in keys:
-            for label in self._form_labels.get(key, ()):
-                label.setEnabled(enabled)
-
-    def _set_form_rows_visible(
-        self,
-        keys: tuple[str, ...],
-        visible: bool,
-    ) -> None:
-        for key in keys:
-            for label in self._form_labels.get(key, ()):
-                label.setVisible(visible)
-            for field in self._form_fields.get(key, ()):
-                field.setVisible(visible)
-
-    def _help_button(self, title_key: str, body_key: str) -> QToolButton:
-        button = QToolButton()
-        button.setText("?")
-        button.setFixedSize(24, 24)
-        button.clicked.connect(
-            lambda: QMessageBox.information(
-                self,
-                self._text(title_key),
-                self._text(body_key),
-            )
-        )
-        return button
-
-    @staticmethod
-    def _right_aligned_widget(widget: QWidget) -> QWidget:
-        container = QWidget()
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addStretch(1)
-        layout.addWidget(widget)
-        return container
 
     def _build_models_tab(self) -> QWidget:
         page = QWidget()
@@ -1209,9 +973,6 @@ class SettingsDialog(QDialog):
         self.tts_group = QGroupBox()
         tts_form = QFormLayout(self.tts_group)
         self.tts_enabled = QCheckBox()
-        self.tts_backend = QComboBox()
-        self.tts_backend.addItem("", "local")
-        self.tts_backend.addItem("", "autodl")
         self.tts_url = QLineEdit()
         self.tts_timeout = self._spinbox(10, 900)
         self.tts_engine_root = QLineEdit()
@@ -1220,10 +981,6 @@ class SettingsDialog(QDialog):
         self.tts_model_dir = QLineEdit()
         self.tts_model_browse = QPushButton()
         self.tts_model_browse.clicked.connect(self._browse_tts_model)
-        self.tts_autodl_ssh_command = QLineEdit()
-        self.tts_autodl_password = self._password_field()
-        self.tts_autodl_remote_command = QLineEdit()
-        self.tts_autodl_reference_root = QLineEdit()
         self.tts_status = QLabel()
         self.tts_status.setWordWrap(True)
         self.tts_progress = QProgressBar()
@@ -1236,10 +993,6 @@ class SettingsDialog(QDialog):
         self.tts_download_button.setEnabled(False)
         self.tts_download_button.clicked.connect(
             self._request_tts_download
-        )
-        self.tts_macos_setup_button = QPushButton()
-        self.tts_macos_setup_button.clicked.connect(
-            self._setup_macos_tts
         )
         self.tts_service_button = QPushButton()
         self.tts_service_button.setEnabled(False)
@@ -1255,14 +1008,16 @@ class SettingsDialog(QDialog):
             self._browse_whisper_model
         )
         self.stt_device = QComboBox()
-        self.stt_device.addItem("", "auto")
-        self.stt_device.addItem("", "cuda")
-        self.stt_device.addItem("", "cpu")
+        self.stt_device.addItems(["auto", "cuda", "cpu"])
         self.stt_input_device = QComboBox()
-        self._default_audio_input = None
+        self._default_audio_input = default_audio_input_device()
         self._missing_audio_input_identifier = ""
         self.stt_input_device.addItem("", "")
-        self._refresh_audio_input_devices(force=True)
+        for input_device in list_audio_input_devices():
+            self.stt_input_device.addItem(
+                input_device.display_name,
+                input_device.identifier,
+            )
         self.whisper_status = QLabel()
         self.whisper_status.setWordWrap(True)
         self.whisper_progress = QProgressBar()
@@ -1273,7 +1028,6 @@ class SettingsDialog(QDialog):
             self._download_whisper_model
         )
         tts_form.addRow(self.tts_enabled)
-        self._add_row(tts_form, "tts_backend", self.tts_backend)
         self._add_row(tts_form, "tts_endpoint", self.tts_url)
         self._add_row(tts_form, "tts_timeout", self.tts_timeout)
         self._add_row(
@@ -1292,28 +1046,7 @@ class SettingsDialog(QDialog):
                 self.tts_model_browse,
             ),
         )
-        self._add_row(
-            tts_form,
-            "tts_autodl_ssh_command",
-            self.tts_autodl_ssh_command,
-        )
-        self._add_row(
-            tts_form,
-            "tts_autodl_password",
-            self.tts_autodl_password,
-        )
-        self._add_row(
-            tts_form,
-            "tts_autodl_remote_command",
-            self.tts_autodl_remote_command,
-        )
-        self._add_row(
-            tts_form,
-            "tts_autodl_reference_root",
-            self.tts_autodl_reference_root,
-        )
         tts_form.addRow(self.tts_status)
-        tts_form.addRow(self.tts_macos_setup_button)
         tts_form.addRow(self.tts_service_button)
         tts_form.addRow(self.tts_progress)
         tts_form.addRow(self.tts_extract_progress)
@@ -1412,17 +1145,11 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(page)
         self.automation_group = QGroupBox()
         behavior_form = QFormLayout(self.automation_group)
-        self.automation_help_button = self._help_button(
-            "automation_help_title",
-            "automation_help_body",
-        )
-        behavior_form.addRow(
-            self._right_aligned_widget(self.automation_help_button)
-        )
         self.thinking_minutes = self._spinbox(1, 1_440)
         self.away_minutes = self._spinbox(2, 1_440)
         self.history_limit = self._spinbox(4, 200)
         self.do_not_disturb = QCheckBox()
+        self.clear_history_button = QPushButton()
         self._add_row(
             behavior_form,
             "thinking_reminder",
@@ -1435,6 +1162,11 @@ class SettingsDialog(QDialog):
             self.history_limit,
         )
         behavior_form.addRow(self.do_not_disturb)
+        behavior_form.addRow(self.clear_history_button)
+        self.clear_history_button.setEnabled(not self._first_run)
+        self.clear_history_button.clicked.connect(
+            self._confirm_clear_history
+        )
         layout.addWidget(self.automation_group)
         layout.addStretch(1)
         return page
@@ -1444,13 +1176,6 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(page)
         self.display_group = QGroupBox()
         display_form = QFormLayout(self.display_group)
-        self.display_help_button = self._help_button(
-            "display_help_title",
-            "display_help_body",
-        )
-        display_form.addRow(
-            self._right_aligned_widget(self.display_help_button)
-        )
         self.screen_index = self._spinbox(0, 32)
         self.portrait_ratio = QDoubleSpinBox()
         self.portrait_ratio.setRange(0.2, 1.0)
@@ -1465,32 +1190,6 @@ class SettingsDialog(QDialog):
         )
         display_form.addRow(self.show_log_console)
         layout.addWidget(self.display_group)
-        layout.addStretch(1)
-        return page
-
-    def _build_other_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        self.data_group = QGroupBox()
-        data_form = QFormLayout(self.data_group)
-        self.clear_history_button = QPushButton()
-        self.clear_history_button.setEnabled(not self._first_run)
-        self.clear_history_button.clicked.connect(
-            self._confirm_clear_history
-        )
-        self.clear_cache_button = QPushButton()
-        self.clear_cache_button.clicked.connect(self._confirm_clear_cache)
-        self._add_row(
-            data_form,
-            "conversation_history_data",
-            self.clear_history_button,
-        )
-        self._add_row(
-            data_form,
-            "runtime_cache_data",
-            self.clear_cache_button,
-        )
-        layout.addWidget(self.data_group)
         layout.addStretch(1)
         return page
 
@@ -1619,25 +1318,15 @@ class SettingsDialog(QDialog):
             settings.vision.openai_model,
         )
         self.tts_enabled.setChecked(settings.tts.enabled)
-        self._set_combo_data(self.tts_backend, settings.tts.backend)
         self.tts_url.setText(settings.tts.base_url)
         self.tts_timeout.setValue(settings.tts.timeout_seconds)
         self.tts_engine_root.setText(settings.tts.engine_root)
         self.tts_model_dir.setText(settings.tts.model_dir)
-        self.tts_autodl_ssh_command.setText(
-            settings.tts.autodl_ssh_command
-        )
-        self.tts_autodl_remote_command.setText(
-            settings.tts.autodl_remote_command
-        )
-        self.tts_autodl_reference_root.setText(
-            settings.tts.autodl_remote_reference_root
-        )
         self.stt_enabled.setChecked(settings.stt.enabled)
         self._set_editable_combo(self.stt_model, settings.stt.model)
         self.whisper_model_dir.setText(settings.stt.model_dir)
         self._set_audio_input_device(settings.stt.input_device)
-        self._set_combo_data(self.stt_device, settings.stt.device)
+        self.stt_device.setCurrentText(settings.stt.device)
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
             settings.display.portrait_screen_ratio
@@ -1667,43 +1356,6 @@ class SettingsDialog(QDialog):
             self._missing_audio_input_identifier = identifier
             index = self.stt_input_device.count() - 1
         self.stt_input_device.setCurrentIndex(max(index, 0))
-
-    def _refresh_audio_input_devices(self, force: bool = False) -> None:
-        if not hasattr(self, "stt_input_device"):
-            return
-        default_device, input_devices = refresh_audio_input_devices()
-        signature: tuple[object, ...] = (
-            (
-                default_device.identifier,
-                default_device.display_name,
-            )
-            if default_device is not None
-            else None,
-            tuple(
-                (device.identifier, device.display_name)
-                for device in input_devices
-            ),
-        )
-        if not force and signature == self._audio_device_signature:
-            return
-
-        selected = self.stt_input_device.currentData() or ""
-        self._audio_device_signature = signature
-        self._default_audio_input = default_device
-        self._missing_audio_input_identifier = ""
-        self.stt_input_device.blockSignals(True)
-        try:
-            self.stt_input_device.clear()
-            self.stt_input_device.addItem("", "")
-            for input_device in input_devices:
-                self.stt_input_device.addItem(
-                    input_device.display_name,
-                    input_device.identifier,
-                )
-            self._set_audio_input_device(selected)
-            self._retranslate_audio_input_devices()
-        finally:
-            self.stt_input_device.blockSignals(False)
 
     def _retranslate_audio_input_devices(self) -> None:
         default_name = (
@@ -1747,7 +1399,6 @@ class SettingsDialog(QDialog):
         self.tabs.setTabText(2, self._text("tab_character"))
         self.tabs.setTabText(3, self._text("tab_automation"))
         self.tabs.setTabText(4, self._text("tab_display"))
-        self.tabs.setTabText(5, self._text("tab_other"))
 
         self.backend_group.setTitle(self._text("backend_group"))
         self.ollama_group.setTitle(self._text("ollama_group"))
@@ -1759,7 +1410,6 @@ class SettingsDialog(QDialog):
         self.whisper_group.setTitle(self._text("whisper_group"))
         self.automation_group.setTitle(self._text("automation_group"))
         self.display_group.setTitle(self._text("display_group"))
-        self.data_group.setTitle(self._text("data_group"))
 
         for key, labels in self._form_labels.items():
             for label in labels:
@@ -1801,16 +1451,6 @@ class SettingsDialog(QDialog):
             self._text("vision_provider_openai"),
         )
         self._set_combo_item_text(
-            self.tts_backend,
-            "local",
-            self._text("tts_backend_local"),
-        )
-        self._set_combo_item_text(
-            self.tts_backend,
-            "autodl",
-            self._text("tts_backend_autodl"),
-        )
-        self._set_combo_item_text(
             self.portrait,
             "a",
             self._text("portrait_a"),
@@ -1829,14 +1469,6 @@ class SettingsDialog(QDialog):
 
         self.deepseek_thinking.setText(self._text("deepseek_thinking"))
         self.do_not_disturb.setText(self._text("do_not_disturb"))
-        self.automation_help_button.setToolTip(self._text("settings_help"))
-        self.automation_help_button.setAccessibleName(
-            self._text("settings_help")
-        )
-        self.display_help_button.setToolTip(self._text("settings_help"))
-        self.display_help_button.setAccessibleName(
-            self._text("settings_help")
-        )
         self.clear_history_button.setText(self._text("clear_history"))
         self.clear_history_button.setToolTip(
             (
@@ -1845,7 +1477,6 @@ class SettingsDialog(QDialog):
                 else self._text("history_unavailable_first_run")
             )
         )
-        self.clear_cache_button.setText(self._text("clear_cache"))
         self.deepseek_note.setText(self._text("deepseek_note"))
         self.fetch_models_button.setText(self._text("load_models"))
         self.model_list_help.setText(self._text("model_list_help"))
@@ -1865,35 +1496,12 @@ class SettingsDialog(QDialog):
             self._text("show_log_console")
         )
         self.tts_enabled.setText(self._text("tts_enabled"))
-        self.tts_autodl_password.setPlaceholderText(
-            self._text("tts_autodl_password_placeholder")
-        )
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
         self.tts_download_button.setText(self._text("tts_download"))
-        self.tts_macos_setup_button.setText(self._text("tts_macos_setup"))
         self._render_tts_service_button()
-        self.stt_enabled.setText(
-            self._text(
-                "stt_enabled_macos" if sys.platform == "darwin" else "stt_enabled"
-            )
-        )
+        self.stt_enabled.setText(self._text("stt_enabled"))
         self._retranslate_audio_input_devices()
-        self._set_combo_item_text(
-            self.stt_device,
-            "auto",
-            self._text("stt_device_auto"),
-        )
-        self._set_combo_item_text(
-            self.stt_device,
-            "cuda",
-            self._text("stt_device_cuda"),
-        )
-        self._set_combo_item_text(
-            self.stt_device,
-            "cpu",
-            self._text("stt_device_cpu"),
-        )
         self.whisper_download_button.setText(
             self._text("whisper_download")
         )
@@ -2161,106 +1769,23 @@ class SettingsDialog(QDialog):
             detail=detail,
         )
 
-    def _on_tts_backend_changed(self) -> None:
-        manager = get_tts_service_manager()
-        if manager.owns_running_process():
-            manager.stop()
-        if self.tts_backend.currentData() == "autodl":
-            self.tts_url.setText("http://127.0.0.1:9880/tts")
-        self._update_tts_state()
-
-    def _current_tts_settings(
-        self,
-        *,
-        enabled: bool | None = None,
-    ) -> TTSSettings:
-        return TTSSettings(
-            enabled=(
-                self.tts_enabled.isChecked()
-                if enabled is None
-                else enabled
-            ),
-            backend=self.tts_backend.currentData() or "local",
-            base_url=self.tts_url.text().strip(),
-            engine_root=self.tts_engine_root.text().strip(),
-            model_dir=self.tts_model_dir.text().strip(),
-            autodl_ssh_command=(
-                self.tts_autodl_ssh_command.text().strip()
-            ),
-            autodl_remote_command=(
-                self.tts_autodl_remote_command.text().strip()
-            ),
-            autodl_remote_reference_root=(
-                self.tts_autodl_reference_root.text().strip()
-            ),
-            autodl_password_encrypted=(
-                self._original.tts.autodl_password_encrypted
-            ),
-            timeout_seconds=self.tts_timeout.value(),
-        )
-
     def _set_tts_path_controls(self, *, downloading: bool) -> None:
         enabled = self.tts_enabled.isChecked()
-        autodl = self.tts_backend.currentData() == "autodl"
-        controls_enabled = enabled and not downloading
-        local_enabled = controls_enabled and not autodl
-        autodl_enabled = controls_enabled and autodl
-        local_keys = (
-            "tts_endpoint",
-            "tts_engine_root",
-            "tts_model_dir",
+        local_endpoint = is_loopback_url(self.tts_url.text().strip())
+        self.tts_engine_root.setEnabled(
+            enabled and local_endpoint and not downloading
         )
-        autodl_keys = (
-            "tts_autodl_ssh_command",
-            "tts_autodl_password",
-            "tts_autodl_remote_command",
-            "tts_autodl_reference_root",
+        self.tts_engine_browse.setEnabled(
+            enabled and local_endpoint and not downloading
         )
-
-        self.tts_backend.setEnabled(controls_enabled)
-        self.tts_timeout.setEnabled(controls_enabled)
-        self.tts_url.setEnabled(local_enabled)
-        self.tts_engine_root.setEnabled(local_enabled)
-        self.tts_engine_browse.setEnabled(local_enabled)
-        self.tts_model_dir.setEnabled(local_enabled)
-        self.tts_model_browse.setEnabled(local_enabled)
-        for field in (
-            self.tts_autodl_ssh_command,
-            self.tts_autodl_password,
-            self.tts_autodl_remote_command,
-            self.tts_autodl_reference_root,
-        ):
-            field.setEnabled(autodl_enabled)
-
-        self._set_form_rows_visible(local_keys, not autodl)
-        self._set_form_rows_visible(autodl_keys, autodl)
-        self.tts_download_button.setVisible(not autodl)
-        self.tts_macos_setup_button.setVisible(
-            sys.platform == "darwin" and not autodl
-        )
-        self.tts_macos_setup_button.setEnabled(local_enabled)
-        if autodl:
-            self.tts_progress.hide()
-            self.tts_extract_progress.hide()
-
-        self._set_form_labels_enabled(
-            ("tts_backend", "tts_timeout"),
-            controls_enabled,
-        )
-        self._set_form_labels_enabled(
-            local_keys,
-            local_enabled,
-        )
-        self._set_form_labels_enabled(
-            autodl_keys,
-            autodl_enabled,
-        )
+        self.tts_model_dir.setEnabled(enabled and not downloading)
+        self.tts_model_browse.setEnabled(enabled and not downloading)
 
     def _update_tts_state(self) -> None:
         if not hasattr(self, "tts_status"):
             return
         enabled = self.tts_enabled.isChecked()
-        autodl = self.tts_backend.currentData() == "autodl"
+        local_endpoint = is_loopback_url(self.tts_url.text().strip())
         snapshot = self.download_manager.snapshot(TTS_JOB_ID)
         downloading = snapshot.status in {
             "preparing",
@@ -2272,7 +1797,7 @@ class SettingsDialog(QDialog):
         }
         self._set_tts_path_controls(downloading=downloading)
         self.tts_download_button.setEnabled(False)
-        self.tts_service_button.setVisible(True)
+        self.tts_service_button.setVisible(local_endpoint)
         self._set_tts_service_button("start", False)
         if (
             self._tts_service_worker is not None
@@ -2295,7 +1820,13 @@ class SettingsDialog(QDialog):
             self._set_tts_status("tts_checking")
             return
         try:
-            settings = self._current_tts_settings(enabled=True)
+            settings = TTSSettings(
+                enabled=True,
+                base_url=self.tts_url.text().strip(),
+                engine_root=self.tts_engine_root.text().strip(),
+                model_dir=self.tts_model_dir.text().strip(),
+                timeout_seconds=self.tts_timeout.value(),
+            )
         except ValidationError:
             self._set_tts_status("tts_invalid")
             return
@@ -2313,27 +1844,10 @@ class SettingsDialog(QDialog):
     ) -> None:
         if self._closing or not self.tts_enabled.isChecked():
             return
-        autodl = self.tts_backend.currentData() == "autodl"
-        if autodl:
-            self._tts_engine_download_needed = False
-            if reachable:
-                if get_tts_service_manager().owns_running_process():
-                    self._set_tts_service_button("stop", True)
-                else:
-                    self._set_tts_service_button("online", False)
-                self._set_tts_status("tts_external_online")
-            else:
-                has_password = bool(
-                    self.tts_autodl_password.text()
-                    or self._original.tts.autodl_password_encrypted
-                )
-                can_start = bool(
-                    self.tts_autodl_ssh_command.text().strip()
-                    and self.tts_autodl_remote_command.text().strip()
-                    and has_password
-                )
-                self._set_tts_service_button("start", can_start)
-                self._set_tts_status("tts_external_offline")
+        local_endpoint = is_loopback_url(self.tts_url.text().strip())
+        if not local_endpoint:
+            key = "tts_external_online" if reachable else "tts_external_offline"
+            self._set_tts_status(key)
             return
 
         configured_engine = self.tts_engine_root.text().strip()
@@ -2382,7 +1896,6 @@ class SettingsDialog(QDialog):
                 self._set_tts_status("tts_ready_offline")
             if (
                 self._tts_engine_download_needed
-                and sys.platform != "darwin"
                 and not self._tts_download_prompted
             ):
                 self._tts_download_prompted = True
@@ -2422,7 +1935,13 @@ class SettingsDialog(QDialog):
         ):
             return
         try:
-            settings = self._current_tts_settings(enabled=True)
+            settings = TTSSettings(
+                enabled=True,
+                base_url=self.tts_url.text().strip(),
+                engine_root=self.tts_engine_root.text().strip(),
+                model_dir=self.tts_model_dir.text().strip(),
+                timeout_seconds=self.tts_timeout.value(),
+            )
         except ValidationError:
             self._set_tts_status("tts_invalid")
             return
@@ -2437,18 +1956,9 @@ class SettingsDialog(QDialog):
         self._set_tts_status(
             "tts_service_stopping"
             if action == "stop"
-            else (
-                "tts_service_connecting_ssh"
-                if settings.uses_autodl()
-                else "tts_service_locating"
-            )
+            else "tts_service_locating"
         )
-        worker = TTSServiceWorker(
-            settings,
-            action,
-            self.tts_autodl_password.text(),
-            self,
-        )
+        worker = TTSServiceWorker(settings, action, self)
         self._tts_service_worker = worker
         worker.stage_changed.connect(self._on_tts_service_stage)
         worker.succeeded.connect(self._on_tts_service_succeeded)
@@ -2462,37 +1972,12 @@ class SettingsDialog(QDialog):
         key = {
             "locating_engine": "tts_service_locating",
             "starting_process": "tts_service_starting",
-            "connecting_ssh": "tts_service_connecting_ssh",
-            "starting_remote": "tts_service_starting_remote",
-            "starting_tunnel": "tts_service_starting_tunnel",
             "waiting_for_api": "tts_service_waiting",
             "waiting_for_existing_start": "tts_service_waiting_existing",
             "loading_weights": "tts_service_loading_weights",
         }.get(stage)
         if key is not None:
             self._set_tts_status(key)
-
-    def _setup_macos_tts(self) -> None:
-        if sys.platform != "darwin":
-            return
-        script = PROJECT_ROOT / "install_macos_tts.command"
-        if not script.is_file():
-            self._set_tts_status(
-                "tts_service_failed",
-                message="install_macos_tts.command was not found.",
-            )
-            return
-        self.tts_engine_root.setText(str(managed_gpt_sovits_dir()))
-        self.tts_model_dir.setText(str(managed_tts_model_dir()))
-        try:
-            subprocess.Popen(
-                ["open", "-a", "Terminal", str(script)],
-                cwd=str(PROJECT_ROOT),
-            )
-        except OSError as exc:
-            self._set_tts_status("tts_service_failed", message=str(exc))
-            return
-        self._set_tts_status("tts_macos_setup_opened")
 
     def _on_tts_service_succeeded(self, action: str) -> None:
         self._set_tts_status(
@@ -2522,18 +2007,23 @@ class SettingsDialog(QDialog):
     def _request_tts_download(self) -> None:
         if not self.tts_enabled.isChecked():
             return
-        if self.tts_backend.currentData() == "autodl":
-            return
         model_destination = self._require_download_directory(
             self.tts_model_dir,
             "tts_model_path_required",
         )
         if model_destination is None:
             return
-        include_engine = (
-            self._tts_engine_download_needed and sys.platform != "darwin"
-        )
+        include_engine = self._tts_engine_download_needed
         engine_destination = None
+        if sys.platform == "darwin" and include_engine:
+            QMessageBox.information(
+                self,
+                "GPT-SoVITS",
+                "macOS 不使用项目提供的 Windows GPT-SoVITS 整合包。"
+                "请按 GPT-SoVITS 官方说明准备本地引擎，再在此处选择目录；"
+                "本次只下载丛雨语音模型和参考音频。",
+            )
+            include_engine = False
         if include_engine:
             engine_destination = self._require_download_directory(
                 self.tts_engine_root,
@@ -2545,16 +2035,9 @@ class SettingsDialog(QDialog):
             self,
             self._text("tts_download_consent_title"),
             self._text(
-                "tts_download_consent_body_macos"
-                if (
-                    sys.platform == "darwin"
-                    and self._tts_engine_download_needed
-                )
-                else (
-                    "tts_download_consent_body_with_engine"
-                    if include_engine
-                    else "tts_download_consent_body"
-                )
+                "tts_download_consent_body_with_engine"
+                if include_engine
+                else "tts_download_consent_body"
             ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
@@ -2660,6 +2143,7 @@ class SettingsDialog(QDialog):
                 self._set_tts_path_controls(downloading=False)
                 self.tts_download_button.setEnabled(
                     self.tts_enabled.isChecked()
+                    and is_loopback_url(self.tts_url.text().strip())
                 )
                 self._render_progress(self.tts_progress, snapshot)
                 self.tts_extract_progress.hide()
@@ -2934,44 +2418,6 @@ class SettingsDialog(QDialog):
         self.clear_history_requested.emit()
         self._set_status("history_cleared")
 
-    def _confirm_clear_cache(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            self._text("clear_cache_confirm_title"),
-            self._text("clear_cache_confirm_body"),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if answer != QMessageBox.Yes:
-            return
-
-        result = clear_runtime_cache()
-        values = {
-            "files": result.removed_files,
-            "size": self._format_byte_count(result.removed_bytes),
-        }
-        if result.failed_paths:
-            self._set_status(
-                "cache_clear_partial",
-                failed=len(result.failed_paths),
-                **values,
-            )
-        elif result.removed_files:
-            self._set_status("cache_cleared", **values)
-        else:
-            self._set_status("cache_empty")
-
-    @staticmethod
-    def _format_byte_count(byte_count: int) -> str:
-        size = float(max(0, byte_count))
-        for unit in ("B", "KiB", "MiB", "GiB"):
-            if size < 1024 or unit == "GiB":
-                if unit == "B":
-                    return f"{int(size)} {unit}"
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} GiB"
-
     def _form_settings(self) -> AppSettings:
         personality_path = get_user_data_dir() / "personality.txt"
         screen_index = self.screen_index.value()
@@ -3032,12 +2478,18 @@ class SettingsDialog(QDialog):
                 ),
                 timeout_seconds=self.vision_timeout.value(),
             ),
-            tts=self._current_tts_settings(),
+            tts=TTSSettings(
+                enabled=self.tts_enabled.isChecked(),
+                base_url=self.tts_url.text().strip(),
+                engine_root=self.tts_engine_root.text().strip(),
+                model_dir=self.tts_model_dir.text().strip(),
+                timeout_seconds=self.tts_timeout.value(),
+            ),
             stt=STTSettings(
                 enabled=self.stt_enabled.isChecked(),
                 model=self.stt_model.currentText().strip(),
                 model_dir=self.whisper_model_dir.text().strip(),
-                device=self.stt_device.currentData(),
+                device=self.stt_device.currentText(),
                 input_device=self.stt_input_device.currentData() or "",
             ),
             character=CharacterSettings(
@@ -3243,40 +2695,6 @@ class SettingsDialog(QDialog):
                 self._text("missing_key_body"),
             )
             return
-        if settings.tts.enabled and settings.tts.uses_autodl():
-            has_password = bool(
-                self.tts_autodl_password.text()
-                or settings.tts.autodl_password_encrypted
-            )
-            if not all(
-                (
-                    settings.tts.autodl_ssh_command.strip(),
-                    settings.tts.autodl_remote_command.strip(),
-                    settings.tts.autodl_remote_reference_root.strip(),
-                    has_password,
-                )
-            ):
-                QMessageBox.warning(
-                    self,
-                    self._text("invalid_settings"),
-                    self._text("tts_autodl_missing"),
-                )
-                return
-            if self.tts_autodl_password.text():
-                try:
-                    settings.tts.autodl_password_encrypted = protect_secret(
-                        self.tts_autodl_password.text()
-                    )
-                except CredentialError as exc:
-                    QMessageBox.warning(
-                        self,
-                        self._text("invalid_settings"),
-                        self._text(
-                            "tts_password_store_failed",
-                            message=exc,
-                        ),
-                    )
-                    return
 
         personality_path = settings.personality_path()
         try:
