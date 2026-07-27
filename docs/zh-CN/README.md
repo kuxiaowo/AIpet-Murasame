@@ -41,7 +41,7 @@ AIpet 是一款支持 Windows 与 Apple Silicon macOS 的丛雨 AI 桌宠。它�
 
 项目基于
 [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
-继续开发。演示、部署视频和项目动态见
+继续开发。win版的演示、部署视频和项目动态见
 [哔哩哔哩主页](https://space.bilibili.com/1067030066)。
 
 ## 主要功能
