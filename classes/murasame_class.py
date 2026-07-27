@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import sys
 import textwrap
 import time
@@ -8,7 +9,7 @@ import wave
 from pathlib import Path
 
 import cv2
-from PyQt5.QtCore import QEvent, QRect, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QRect, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import (
     QColor,
     QFont,
@@ -32,20 +33,29 @@ from tool.backends import ScreenAnalysis
 from tool.config import AppSettings, PROJECT_ROOT, get_cache_dir
 from tool.generate import generate_fgimage
 from tool.portraits import default_layers, layers_for
-from tool.runtime_logging import get_logger
 from tool.storage import HistoryStore, ScreenMemoryEntry, ScreenMemoryStore
 from tool.time_utils import build_time_context
-from tool.windowing import (
-    ensure_window_topmost,
-    get_system_idle_seconds,
-    native_topmost_available,
-)
 
 
-SCREEN_PIXEL_CHANGE_THRESHOLD = 0.008
+SCREEN_PIXEL_CHANGE_THRESHOLD = 0.012
+SCREEN_PET_MASK_MARGIN = 8
 PROACTIVE_COOLDOWN_SECONDS = 180
-TOPMOST_WATCHDOG_INTERVAL_MS = 2_000
-logger = get_logger("window")
+
+
+def screen_local_mask_rect(
+    screen_geometry: QRect,
+    window_geometry: QRect,
+    margin: int = SCREEN_PET_MASK_MARGIN,
+) -> QRect:
+    """Return the visible pet window bounds in screen-local coordinates."""
+    expanded = window_geometry.adjusted(-margin, -margin, margin, margin)
+    visible = expanded.intersected(screen_geometry)
+    if visible.isEmpty():
+        return QRect()
+    return visible.translated(
+        -screen_geometry.x(),
+        -screen_geometry.y(),
+    )
 
 
 def wrap_text(text: str, width: int = 10) -> str:
@@ -59,8 +69,29 @@ def wrap_text(text: str, width: int = 10) -> str:
     )
 
 
+class LastInputInfo(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.c_uint),
+        ("dwTime", ctypes.c_uint),
+    ]
+
+
 def get_idle_seconds() -> float:
-    return get_system_idle_seconds()
+    """Return global input idle time on Windows; return zero elsewhere."""
+
+    try:
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+    except AttributeError:
+        return 0.0
+
+    info = LastInputInfo()
+    info.cbSize = ctypes.sizeof(LastInputInfo)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+
+    idle_milliseconds = (kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF
+    return idle_milliseconds / 1000.0
 
 
 class Murasame(QLabel):
@@ -106,10 +137,6 @@ class Murasame(QLabel):
         self._screen_resize_timer.timeout.connect(
             self._adapt_to_current_screen
         )
-        self._topmost_error_logged = False
-        self._topmost_timer = QTimer(self)
-        self._topmost_timer.setInterval(TOPMOST_WATCHDOG_INTERVAL_MS)
-        self._topmost_timer.timeout.connect(self._ensure_topmost)
 
         self.history_store = HistoryStore(limit=self.settings.history_limit)
         self.history = self.history_store.load()
@@ -237,36 +264,6 @@ class Murasame(QLabel):
         self.settings.vision.enabled = bool(enabled)
         self._apply_automatic_behavior_settings()
 
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        if native_topmost_available():
-            self._topmost_timer.start()
-            QTimer.singleShot(0, self._ensure_topmost)
-
-    def hideEvent(self, event) -> None:
-        self._topmost_timer.stop()
-        super().hideEvent(event)
-
-    def changeEvent(self, event) -> None:
-        super().changeEvent(event)
-        if event.type() in {
-            QEvent.ActivationChange,
-            QEvent.WindowStateChange,
-        }:
-            QTimer.singleShot(0, self._ensure_topmost)
-
-    def _ensure_topmost(self) -> None:
-        if not native_topmost_available() or not self.isVisible():
-            return
-        try:
-            ensure_window_topmost(int(self.winId()))
-        except OSError as exc:
-            if not self._topmost_error_logged:
-                logger.warning("无法重新确认桌宠窗口置顶状态：%s", exc)
-                self._topmost_error_logged = True
-        else:
-            self._topmost_error_logged = False
-
     def is_screenshot_enabled(self) -> bool:
         return self.settings.vision.enabled
 
@@ -381,6 +378,7 @@ class Murasame(QLabel):
         if pixmap.isNull():
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
+        self._mask_pet_from_screenshot(pixmap, screen)
         if not pixmap.save(str(image_path), "PNG"):
             self.notification.emit("屏幕分析", "屏幕截图失败")
             return
@@ -413,6 +411,23 @@ class Murasame(QLabel):
         worker.finished.connect(lambda: self._finish_vision_worker(worker))
         worker.start()
 
+    def _mask_pet_from_screenshot(
+        self,
+        pixmap: QPixmap,
+        screen: QScreen,
+    ) -> None:
+        mask = screen_local_mask_rect(
+            screen.geometry(),
+            self.frameGeometry(),
+        )
+        if mask.isEmpty():
+            return
+        painter = QPainter(pixmap)
+        try:
+            painter.fillRect(mask, QColor(0, 0, 0))
+        finally:
+            painter.end()
+
     def _finish_vision_worker(self, worker: VisionWorker) -> None:
         if self._vision_worker is worker:
             self._vision_worker = None
@@ -439,9 +454,12 @@ class Murasame(QLabel):
     @staticmethod
     def _screen_event_key(analysis: ScreenAnalysis) -> str:
         parts = (
+            analysis.change_type,
             analysis.software,
             analysis.activity,
             analysis.topic,
+            ",".join(analysis.recognized_characters),
+            str(analysis.murasame_visible),
             analysis.change_summary,
         )
         return "|".join(" ".join(part.casefold().split()) for part in parts)
@@ -456,6 +474,7 @@ class Murasame(QLabel):
             return
         if (
             not analysis.significant_change
+            or analysis.change_type == "none"
             or not analysis.change_summary.strip()
         ):
             return
@@ -465,22 +484,38 @@ class Murasame(QLabel):
             return
         self.screen_memory_store.remember(
             ScreenMemoryEntry.now(
+                change_type=analysis.change_type,
                 software=analysis.software,
                 activity=analysis.activity,
                 topic=analysis.topic,
+                recognized_characters=analysis.recognized_characters,
+                murasame_visible=analysis.murasame_visible,
                 change_summary=analysis.change_summary,
             )
         )
         if event_key == self._last_spoken_screen_event:
             return
 
-        details = ["屏幕发生了明显变化。"]
+        details = [
+            "屏幕发生了明显变化。",
+            f"变化类型：{analysis.change_type}",
+        ]
         if analysis.software:
             details.append(f"软件：{analysis.software}")
         if analysis.activity:
             details.append(f"当前活动：{analysis.activity}")
         if analysis.topic:
             details.append(f"页面主题：{analysis.topic}")
+        if analysis.recognized_characters:
+            details.append(
+                "识别到的角色："
+                + "、".join(analysis.recognized_characters)
+            )
+        if analysis.murasame_visible:
+            details.append(
+                "画面中出现丛雨的角色形象；这是你自己的形象或作品画面，"
+                "不是另一个对话者。"
+            )
         if analysis.change_summary:
             details.append(f"变化摘要：{analysis.change_summary}")
         details.append(f"当前时间：{build_time_context()}")
@@ -1077,7 +1112,6 @@ class Murasame(QLabel):
         self.show_text("已经忘掉之前的对话和屏幕事件了。", typing=False)
 
     def shutdown(self) -> None:
-        self._topmost_timer.stop()
         self._screen_resize_timer.stop()
         self.screenshot_timer.stop()
         self.idle_timer.stop()
