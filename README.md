@@ -18,7 +18,6 @@
 
 <p align="center">
   <a href="https://github.com/kuxiaowo/AIpet-Murasame/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/kuxiaowo/AIpet-Murasame?style=flat-square&logo=github"></a>
-  <a href="https://space.bilibili.com/1067030066"><img alt="Bilibili" src="https://img.shields.io/badge/Bilibili-Video%20guides-00A1D6?style=flat-square&logo=bilibili&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -32,8 +31,7 @@
 > Spaces compatibility, macOS input-method support, and local macOS TTS setup.
 
 If you enjoy having Murasame on your desktop, please leave a
-[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers) or follow the
-project on [Bilibili](https://space.bilibili.com/1067030066). It would make
+[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers). It would make
 her—and the maintainer—very happy.
 
 ## Overview
@@ -45,8 +43,6 @@ input. It keeps the upstream V2 interface and behavior while adding native
 macOS integration.
 
 Based on [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet).
-Videos and project updates are available on
-[Bilibili](https://space.bilibili.com/1067030066).
 
 ## Features
 

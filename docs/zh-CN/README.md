@@ -18,7 +18,6 @@
 
 <p align="center">
   <a href="https://github.com/kuxiaowo/AIpet-Murasame/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/kuxiaowo/AIpet-Murasame?style=flat-square&logo=github"></a>
-  <a href="https://space.bilibili.com/1067030066"><img alt="哔哩哔哩" src="https://img.shields.io/badge/Bilibili-视频教程-00A1D6?style=flat-square&logo=bilibili&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -43,8 +42,7 @@ faster-whisper 语音输入组合在一起，保留原作者 V2 的界面和操�
 
 项目基于
 [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
-继续开发。macOS 版的演示、部署视频和项目动态见
-[哔哩哔哩主页](https://space.bilibili.com/1067030066)。
+继续开发。
 
 ## 主要功能
 
