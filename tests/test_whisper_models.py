@@ -8,7 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from tool.stt import clear_model_cache, transcribe_full
+from tool.stt import (
+    WHISPER_INITIAL_PROMPT,
+    clear_model_cache,
+    transcribe_full,
+)
 from tool.whisper_models import (
     WHISPER_MODELS,
     find_local_model,
@@ -173,6 +177,10 @@ class WhisperModelTests(unittest.TestCase):
             compute_type="float16",
         )
         self.assertEqual(model.transcribe.call_count, 2)
+        self.assertEqual(
+            model.transcribe.call_args.kwargs["initial_prompt"],
+            WHISPER_INITIAL_PROMPT,
+        )
 
 
 if __name__ == "__main__":

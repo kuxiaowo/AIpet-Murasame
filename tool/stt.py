@@ -10,6 +10,10 @@ from tool.whisper_models import find_local_model
 
 
 logger = get_logger("voice")
+WHISPER_INITIAL_PROMPT = (
+    "简体中文口语。常见专有名词：丛雨、AIpet、GPT-SoVITS、"
+    "Whisper、DeepSeek、AutoDL、CUDA、Python。"
+)
 
 
 @dataclass
@@ -98,6 +102,7 @@ def transcribe_full(
                 audio_path,
                 language="zh",
                 beam_size=5,
+                initial_prompt=WHISPER_INITIAL_PROMPT,
             )
             return "".join(segment.text for segment in segments).strip()
 
@@ -125,4 +130,8 @@ def transcribe_full(
         return result
 
 
-__all__ = ["clear_model_cache", "transcribe_full"]
+__all__ = [
+    "WHISPER_INITIAL_PROMPT",
+    "clear_model_cache",
+    "transcribe_full",
+]

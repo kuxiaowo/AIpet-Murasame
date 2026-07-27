@@ -166,7 +166,9 @@ def configure_voice_trigger(
         return None
 
     bridge = VoiceBridge(pet)
-    bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
+    bridge.text_ready.connect(
+        lambda text: pet.start_thread(text, role="user", source="voice")
+    )
     bridge.record_start.connect(
         lambda: pet.show_text(
             ui_text(settings, "recording"),

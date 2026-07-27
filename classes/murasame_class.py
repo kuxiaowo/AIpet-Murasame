@@ -504,7 +504,13 @@ class Murasame(QLabel):
         if self._try_start_proactive_event("\n".join(details)):
             self._last_spoken_screen_event = event_key
 
-    def start_thread(self, text: str, role: str = "user", t: bool = False) -> None:
+    def start_thread(
+        self,
+        text: str,
+        role: str = "user",
+        t: bool = False,
+        source: str = "typed",
+    ) -> None:
         del t  # Kept for compatibility with previous call sites.
         clean_text = text.strip()
         if not clean_text:
@@ -525,6 +531,7 @@ class Murasame(QLabel):
             clean_text if role == "user" else "",
             event_context=event_context,
             screen_memory=screen_memory,
+            user_source=source if role == "user" else "typed",
             parent=self,
         )
         self._workers[generation] = worker
@@ -576,7 +583,13 @@ class Murasame(QLabel):
         outfit = result.reply.outfit or self.settings.character.outfit
         self.settings.character.outfit = outfit
         if result.is_user_message:
-            self.history.append({"role": "user", "content": result.user_text})
+            user_message = {
+                "role": "user",
+                "content": result.user_text,
+            }
+            if result.user_source == "voice":
+                user_message["source"] = "voice"
+            self.history.append(user_message)
         self.history.append(
             {
                 "role": "assistant",

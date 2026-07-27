@@ -530,6 +530,7 @@ class UISmokeTests(unittest.TestCase):
                             audio_paths=[None],
                             user_text="换上睡衣",
                             is_user_message=True,
+                            user_source="voice",
                         ),
                     )
                 self.assertEqual(
@@ -540,6 +541,7 @@ class UISmokeTests(unittest.TestCase):
                     json.loads(pet.history[-1]["content"])["outfit"],
                     "sleepwear",
                 )
+                self.assertEqual(pet.history[-2]["source"], "voice")
                 play_next.assert_called_once()
 
                 pet.history = [

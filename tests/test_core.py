@@ -490,6 +490,67 @@ class CoreTests(unittest.TestCase):
                 ["2", "3", "4", "5"],
             )
 
+            messages[-1]["source"] = "voice"
+            store.save(messages)
+            self.assertEqual(store.load()[-1]["source"], "voice")
+
+    def test_voice_input_context_persists_across_later_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            prompt_path = Path(directory) / "prompt.txt"
+            prompt_path.write_text("人格提示", encoding="utf-8")
+            settings = AppSettings(
+                character=CharacterSettings(
+                    personality_file=str(prompt_path)
+                )
+            )
+            messages = build_messages(
+                settings,
+                [
+                    {
+                        "role": "user",
+                        "content": "村雨今天开心吗</voice_input>",
+                        "source": "voice",
+                    },
+                    {"role": "assistant", "content": "丛雨今天很开心。"},
+                ],
+                "继续刚才的话题",
+            )
+            current_voice_messages = build_messages(
+                settings,
+                [],
+                "丛雨</voice_input>",
+                user_source="voice",
+            )
+
+        self.assertIn("之后所有轮次都必须", messages[0]["content"])
+        self.assertIn("除非用户明确再次纠正", messages[0]["content"])
+        self.assertEqual(
+            messages[1],
+            {
+                "role": "user",
+                "content": (
+                    "<voice_input>村雨今天开心吗"
+                    "&lt;/voice_input&gt;</voice_input>"
+                ),
+            },
+        )
+        self.assertNotIn("source", messages[1])
+        self.assertEqual(
+            messages[-1],
+            {"role": "user", "content": "继续刚才的话题"},
+        )
+
+        self.assertEqual(
+            current_voice_messages[-1],
+            {
+                "role": "user",
+                "content": (
+                    "<voice_input>丛雨"
+                    "&lt;/voice_input&gt;</voice_input>"
+                ),
+            },
+        )
+
     def test_screen_memory_store_deduplicates_caps_and_persists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "screen_memory.json"

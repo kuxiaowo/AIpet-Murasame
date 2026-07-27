@@ -26,6 +26,7 @@ class ConversationResult:
     audio_paths: list[Path | None]
     user_text: str
     is_user_message: bool
+    user_source: str = "typed"
 
 
 class ConversationWorker(QThread):
@@ -43,6 +44,7 @@ class ConversationWorker(QThread):
         *,
         event_context: str | None = None,
         screen_memory: str | None = None,
+        user_source: str = "typed",
         parent=None,
     ):
         super().__init__(parent)
@@ -51,6 +53,7 @@ class ConversationWorker(QThread):
         self.user_text = user_text
         self.event_context = event_context
         self.screen_memory = screen_memory
+        self.user_source = user_source
         self._cancelled = threading.Event()
 
     def cancel(self) -> None:
@@ -66,7 +69,7 @@ class ConversationWorker(QThread):
                 source=(
                     "proactive_event"
                     if self.event_context is not None
-                    else "user"
+                    else self.user_source
                 ),
                 history_messages=len(self.history),
                 tts_enabled=self.settings.tts.enabled,
@@ -77,6 +80,7 @@ class ConversationWorker(QThread):
                 self.user_text,
                 self.event_context,
                 self.screen_memory,
+                self.user_source,
             )
             if self._cancelled.is_set():
                 log_event(logger, "conversation.cancelled")
@@ -110,6 +114,7 @@ class ConversationWorker(QThread):
                     audio_paths=audio_paths,
                     user_text=self.user_text,
                     is_user_message=self.event_context is None,
+                    user_source=self.user_source,
                 )
             )
             log_event(
