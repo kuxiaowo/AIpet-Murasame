@@ -2,15 +2,14 @@
   <img src="../../icon.png" width="112" alt="AIpet 图标">
 </p>
 
-<h1 align="center">AIpet · 丛雨桌宠</h1>
+<h1 align="center">AIpet · 丛雨桌宠 for macOS</h1>
 
 <p align="center">
-  <strong>使用提示词塑造人格，可自由切换本地与云端模型的 AI 桌面伴侣。</strong>
+  <strong>面向 Apple Silicon macOS 的丛雨桌宠适配版。</strong>
 </p>
 
 <p align="center">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
-  <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
   <img alt="macOS" src="https://img.shields.io/badge/Platform-macOS-000000?style=flat-square&logo=apple&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
   <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
@@ -28,6 +27,9 @@
 
 ---
 
+> 本 Fork 是 AIpet-Murasame 的 macOS 版本，保留原项目的界面和操作方式，
+> 并补充 Apple Silicon、全屏 Space、macOS 输入法和本地 TTS 等原生适配。
+
 如果你喜欢让丛雨陪在桌面上，就请给项目一颗
 [Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers)，或去
 [B站](https://space.bilibili.com/1067030066)
@@ -35,10 +37,10 @@
 
 ## 项目简介
 
-AIpet 是一款支持 Windows 与 Apple Silicon macOS 的丛雨 AI 桌宠。它将
-透明 PyQt5 角色窗口、本地或云端对话、可选的屏幕感知、GPT-SoVITS 语音
-输出和 faster-whisper 语音输入组合在一起。本版本保留原作者 V2 的界面和
-操作方式，仅补充 macOS 原生适配。
+本项目是 AIpet-Murasame 的 Apple Silicon macOS 适配版。它将透明 PyQt5
+角色窗口、本地或云端对话、可选的屏幕感知、GPT-SoVITS 语音输出和
+faster-whisper 语音输入组合在一起，保留原作者 V2 的界面和操作方式，
+并补充 macOS 原生适配。
 
 项目基于
 [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
@@ -53,55 +55,13 @@ AIpet 是一款支持 Windows 与 Apple Silicon macOS 的丛雨 AI 桌宠。它�
 - 本地或 AutoDL 云端 GPT-SoVITS 语音合成
 - 基于 faster-whisper 的按键语音输入
 - 对话记忆、屏幕事件摘要、主动提醒和持久化勿扰模式
-- 透明多屏窗口、Windows 置顶守护、macOS 全屏 Space 与原生输入法兼容、
+- 透明多屏窗口、macOS 菜单栏集成、全屏 Space 与原生输入法兼容、
   中英双语设置和结构化诊断日志
 
 ## 快速开始
 
-项目支持 Windows 10/11 与 Apple Silicon macOS。
-
-### 直接运行 Windows EXE
-
-从项目 [Releases 页面](https://github.com/kuxiaowo/AIpet-Murasame/releases)
-选择一个版本：
-
-- **`AIpet.exe`（标准版，约 194 MiB）：**不附带 CUDA，适合使用 CPU
-  进行 Whisper 语音识别，或不需要本地语音识别 GPU 加速的用户。不确定
-  应该下载哪个版本时，建议选择这个版本。
-- **`AIpet-with-cuda.exe`（CUDA 版，约 1.06 GiB）：**附带 CUDA 12
-  cuBLAS、cuDNN 9 和 NVRTC，可通过兼容的 NVIDIA 显卡加速本地
-  faster-whisper 语音识别；仍需安装兼容的 NVIDIA 显卡驱动。如果在设置中
-  选择 CUDA，请使用这个版本。
-
-两个版本拥有相同的应用功能和设置界面。CUDA 版体积较大，仅仅是因为其中
-附带了 GPU 运行库。
-
-1. 下载所选的 EXE。如果该版本没有 EXE，请使用下方的源码方案。
-2. 把程序放到长期使用且可写的目录，例如 `C:\AIpet\`。
-3. 双击下载的 EXE。
-
-两个 EXE 均已包含应用程序和 faster-whisper 运行依赖，不要求安装
-Python、Conda 或 Git。聊天模型、Whisper 模型及 GPT-SoVITS 资源不会打进
-EXE；可选资源只会在设置界面确认后下载。
-
-### 从源码运行
-
-先安装 [Git](https://git-scm.com/) 和
-[Conda 或 Miniconda](https://docs.conda.io/)，然后执行：
-
-```powershell
-git clone https://github.com/kuxiaowo/AIpet-Murasame.git
-cd AIpet-Murasame
-conda env create -f environment.yml
-conda activate aipet
-python main.py
-```
-
-源码版如需语音输入，再安装附加依赖：
-
-```powershell
-python -m pip install -r requirements-voice.txt
-```
+本 Fork 面向 Apple Silicon macOS。Windows EXE 和构建说明属于原作者项目，
+这里不作为本版本的安装方式。
 
 ### 在 macOS 上运行
 
@@ -133,17 +93,17 @@ AIpet 至少需要本地 Ollama 或一种云端 API。
 
 使用 Ollama 时，启动服务并拉取对话模型；视觉模型可选：
 
-```powershell
+```zsh
 ollama pull qwen3:14b
 ollama pull qwen2.5vl:7b
 ```
 
 使用云端服务时，可以在设置中填写密钥，也可以使用环境变量：
 
-```powershell
-$env:DEEPSEEK_API_KEY = "your-key"
-$env:DASHSCOPE_API_KEY = "your-key"
-$env:OPENAI_API_KEY = "your-key"
+```zsh
+export DEEPSEEK_API_KEY="your-key"
+export DASHSCOPE_API_KEY="your-key"
+export OPENAI_API_KEY="your-key"
 ```
 
 macOS 终端中请使用对应的 `export NAME="value"` 写法。
@@ -158,7 +118,7 @@ macOS 终端中请使用对应的 `export NAME="value"` 写法。
 | 屏幕感知 | 启用“屏幕视觉”，选择 Ollama、阿里云百炼或 OpenAI 兼容视觉模型。截图仅作临时处理，不写入对话历史。 |
 | 本地 TTS | 启用“TTS → 本地计算机”，在设置中点击“安装 macOS GPT-SoVITS”；安装程序会把官方引擎和基础模型放在项目目录内，并将 Conda 环境放在 `~/.local/share/AIpet-Murasame/`。完成后点击“下载角色语音模型”，获取丛雨权重和参考音频。 |
 | AutoDL TTS | 启用“TTS → AutoDL 云端”，填写 SSH 登录信息、远程命令和参考音频目录。远程实例需已在 `9880` 端口提供 GPT-SoVITS 服务。 |
-| 语音输入 | Windows 上可启用语音输入，选择麦克风、计算设备和 faster-whisper 模型，长按 Caps Lock 两秒开始录音；macOS 上改为长按 Option+V 两秒。 |
+| 语音输入 | 启用语音输入，选择麦克风和 faster-whisper 模型，长按 Option+V 两秒开始录音。 |
 
 TTS 失败不会丢弃文字回复。临时截图、录音和合成语音会自动清理，也可以在
 设置中手动清除。
@@ -174,27 +134,13 @@ TTS 失败不会丢弃文字回复。临时截图、录音和合成语音会自�
 | 取消输入 | 按 Escape |
 | 摸头 | 在头部按住鼠标左键并横向移动 |
 | 移动桌宠 | 按住鼠标中键拖动 |
-| 语音对话 | Windows 上启用语音输入后长按 Caps Lock 两秒；macOS 上长按 Option+V 两秒 |
+| 语音对话 | 长按 Option+V 两秒 |
 | 设置、视觉、勿扰、记忆、退出 | 使用系统托盘菜单 |
 
 把桌宠拖到另一台显示器后，程序会自动更新显示器和立绘比例。
 macOS 原生全屏窗口保持相同的操作方式。
 
 ## 数据与隐私
-
-Windows 上的设置和持久化数据保存在：
-
-```text
-%APPDATA%\AIpet-Murasame\
-├── config.json
-├── history.json
-├── screen_memory.json
-├── personality.txt
-└── logs\
-```
-
-临时运行数据保存在 `%LOCALAPPDATA%\AIpet-Murasame\cache\`。下载模型默认
-保存在 `C:\AIpet\models\`；可以通过 `AIPET_MODEL_DIR` 修改模型目录。
 
 macOS 上的持久化数据及日志位于 `~/.config/AIpet-Murasame/`，运行缓存位于
 其 `cache/` 子目录，下载模型默认位于项目的 `models/` 目录。AutoDL 密码
@@ -206,45 +152,10 @@ Base64 媒体替换成元数据。
 
 ## 开发
 
-在 `aipet` Conda 环境中运行测试：
-
-```powershell
-$env:QT_QPA_PLATFORM = "offscreen"
-python -m unittest discover -s tests -v
-```
-
 macOS 上运行：
 
 ```zsh
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v
-```
-
-同时构建两个 Windows 单文件 EXE：
-
-```powershell
-.\packaging\build_exe.ps1
-```
-
-脚本会在需要时创建独立的 `aipet_build_whisper` Conda 环境，并输出：
-
-- `dist\AIpet.exe`：标准 CPU 版本。
-- `dist\AIpet-with-cuda.exe`：附带 CUDA 12 cuBLAS、cuDNN 9 和 NVRTC
-  运行库，可用于本地 Whisper GPU 推理的 CUDA 版本。
-
-构建环境未变化时可跳过依赖安装：
-
-```powershell
-.\packaging\build_exe.ps1 -SkipDependencyInstall
-```
-
-跳过依赖安装时，构建环境中必须已有 CUDA 12 cuBLAS、cuDNN 9 和 NVRTC
-运行库。如果它们不在构建环境的 `Library\bin` 中，可以分别指定目录：
-
-```powershell
-.\packaging\build_exe.ps1 -SkipDependencyInstall `
-  -CudaDllDirectory C:\path\to\cublas\bin `
-  -CudnnDllDirectory C:\path\to\cudnn\bin `
-  -CudaNvrtcDllDirectory C:\path\to\nvrtc\bin
 ```
 
 主要目录：
@@ -262,8 +173,7 @@ tests\      单元测试和 UI 冒烟测试
 
 - 独占全屏或受反作弊保护的画面仍可能覆盖桌宠。
 - macOS 辅助组件面向 Apple Silicon，并在首次启动时于本机编译。
-- Apple Silicon 上的 faster-whisper 使用 CPU；CUDA 模式适用于兼容的
-  Windows/NVIDIA 环境。
+- Apple Silicon 上的 faster-whisper 使用 CPU。
 - 本地对话、视觉与 TTS 的速度取决于模型和硬件。
 - 角色立绘与语音素材的使用条款可能不同于源代码许可证。
 
@@ -271,7 +181,7 @@ tests\      单元测试和 UI 冒烟测试
 
 - 原作桌宠项目：
   [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
-- AIpet V2 原项目及 Windows 实现：
+- AIpet V2 原项目：
   [kuxiaowo/AIpet-Murasame](https://github.com/kuxiaowo/AIpet-Murasame)
 - 语音合成项目：
   [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
