@@ -1,4 +1,8 @@
-<p align="center">
+
+
+## macOS（Apple Silicon）
+
+macOS Apple Silicon 适配版请前往[Releases 页面](../../releases)下载；从源码运行时，请在项目目录执行 `start_macos.command`。<p align="center">
   <img src="../../icon.png" width="112" alt="AIpet 图标">
 </p>
 
