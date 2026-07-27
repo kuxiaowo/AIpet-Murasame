@@ -84,17 +84,26 @@ def get_logger(component: str | None = None) -> logging.Logger:
 
 
 def configure_console_logging(enabled: bool) -> bool:
-    """Enable or disable AIpet's independent live diagnostic window."""
-    global _file_handler
+    """Configure the optional viewer while keeping file logging enabled."""
+    _ensure_file_logging()
 
     if not enabled:
         _stop_viewer()
-        if _file_handler is not None:
-            _base_logger.removeHandler(_file_handler)
-            _file_handler.close()
-            _file_handler = None
-        sys.excepthook = _original_excepthook
         return False
+
+    viewer_started = _ensure_viewer()
+    get_logger("startup").info(
+        "实时日志查看器已启用 | Python %s | PID %s | 日志=%s",
+        sys.version.split()[0],
+        os.getpid(),
+        LOG_DIRECTORY / f"{date.today().isoformat()}.log",
+    )
+    return viewer_started
+
+
+def _ensure_file_logging() -> None:
+    """Start persistent daily file logging once for this process."""
+    global _file_handler
 
     LOG_DIRECTORY.mkdir(parents=True, exist_ok=True)
     _migrate_legacy_log()
@@ -106,19 +115,18 @@ def configure_console_logging(enabled: bool) -> bool:
         _file_handler = handler
         sys.excepthook = _log_unhandled_exception
 
-    viewer_started = _ensure_viewer()
-    get_logger("startup").info(
-        "实时日志已启用 | Python %s | PID %s | 日志=%s",
-        sys.version.split()[0],
-        os.getpid(),
-        LOG_DIRECTORY / f"{date.today().isoformat()}.log",
-    )
-    return viewer_started
-
 
 def shutdown_console_logging() -> None:
-    get_logger("startup").info("实时日志查看器即将关闭")
-    configure_console_logging(False)
+    """Stop the viewer and close the persistent log file cleanly."""
+    global _file_handler
+
+    get_logger("startup").info("日志系统即将关闭")
+    _stop_viewer()
+    if _file_handler is not None:
+        _base_logger.removeHandler(_file_handler)
+        _file_handler.close()
+        _file_handler = None
+    sys.excepthook = _original_excepthook
 
 
 def log_request(

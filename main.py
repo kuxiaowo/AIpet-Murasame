@@ -157,6 +157,7 @@ def configure_voice_trigger(
     try:
         from tool.voice_trigger import CapslockVoiceTrigger
     except ImportError as exc:
+        logger.exception("语音输入模块加载失败")
         tray_icon.showMessage(
             ui_text(settings, "speech_unavailable"),
             ui_text(settings, "install_voice", error=exc),
@@ -202,6 +203,7 @@ def configure_voice_trigger(
     try:
         trigger.start()
     except Exception as exc:
+        logger.exception("语音触发器启动失败")
         tray_icon.showMessage(
             ui_text(settings, "speech_failed"),
             str(exc),

@@ -16,11 +16,38 @@ from tool.runtime_logging import (
     DailyFileHandler,
     _console_python_executable,
     _viewer_command,
+    configure_console_logging,
     format_json_for_log,
+    get_logger,
+    shutdown_console_logging,
 )
 
 
 class RuntimeLoggingTests(unittest.TestCase):
+    def test_file_logging_stays_enabled_without_console_viewer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_directory = Path(directory)
+            with (
+                patch.object(runtime_logging, "LOG_DIRECTORY", log_directory),
+                patch.object(
+                    runtime_logging,
+                    "LEGACY_LOG_PATH",
+                    log_directory / "missing-legacy.log",
+                ),
+            ):
+                try:
+                    viewer_started = configure_console_logging(False)
+                    get_logger("test").info("persistent log entry")
+                finally:
+                    shutdown_console_logging()
+
+            path = log_directory / f"{date.today().isoformat()}.log"
+            self.assertFalse(viewer_started)
+            self.assertIn(
+                "persistent log entry",
+                path.read_text(encoding="utf-8"),
+            )
+
     def test_daily_handler_writes_to_current_date_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             handler = DailyFileHandler(Path(directory))
