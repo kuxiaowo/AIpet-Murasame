@@ -100,6 +100,38 @@ class WhisperModelTests(unittest.TestCase):
             transcribe_full("audio.wav", model_size="large-v3")
         whisper_model.assert_not_called()
 
+    def test_auto_device_falls_back_when_lazy_cuda_inference_fails(
+        self,
+    ) -> None:
+        def failing_segments():
+            raise RuntimeError("cublas64_12.dll is missing")
+            yield
+
+        cuda_model = Mock()
+        cuda_model.transcribe.return_value = (failing_segments(), None)
+        cpu_model = Mock()
+        cpu_model.transcribe.return_value = (
+            iter([SimpleNamespace(text="识别成功")]),
+            None,
+        )
+        whisper_model = Mock(side_effect=[cuda_model, cpu_model])
+        module = SimpleNamespace(WhisperModel=whisper_model)
+
+        with (
+            patch.dict(sys.modules, {"faster_whisper": module}),
+            patch(
+                "tool.stt.find_local_model",
+                return_value="C:/models/whisper",
+            ),
+        ):
+            result = transcribe_full("audio.wav", device="auto")
+
+        self.assertEqual(result, "识别成功")
+        self.assertEqual(
+            [call.kwargs["device"] for call in whisper_model.call_args_list],
+            ["cuda", "cpu"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,18 +171,28 @@ $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
 ```
 
-Build the single-file Windows executable with:
+Build both single-file Windows executables with:
 
 ```powershell
 .\packaging\build_exe.ps1
 ```
 
 The script creates an isolated `aipet_build_whisper` Conda environment when
-needed and writes `dist\AIpet.exe`. Reuse the installed build dependencies with:
+needed and writes:
+
+- `dist\AIpet.exe`: standard CPU build.
+- `dist\AIpet-with-cuda.exe`: CUDA build with the CUDA 12 cuBLAS, cuDNN 9,
+  and NVRTC runtime bundled for local Whisper GPU inference.
+
+Reuse the installed build dependencies with:
 
 ```powershell
 .\packaging\build_exe.ps1 -SkipDependencyInstall
 ```
+
+When skipping dependency installation, the build environment must already
+contain `cublas64_12.dll` and `cublasLt64_12.dll`. Alternatively, provide their
+directory with `-CudaDllDirectory`.
 
 Main project areas:
 

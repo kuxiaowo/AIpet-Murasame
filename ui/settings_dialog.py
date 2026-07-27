@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pydantic import ValidationError
-from PyQt5.QtCore import QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -38,8 +39,7 @@ from classes.download_manager import (
 )
 from tool.audio_devices import (
     decode_audio_input_device,
-    default_audio_input_device,
-    list_audio_input_devices,
+    refresh_audio_input_devices,
 )
 from tool.backends import create_backend, create_vision_backend
 from tool.cache import clear_runtime_cache
@@ -248,6 +248,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_input_default_unknown": "System default input",
         "stt_input_unavailable": "Unavailable: {device}",
         "stt_device": "STT device",
+        "stt_device_auto": "Auto",
+        "stt_device_cuda": (
+            "CUDA (requires the AIpet-with-cuda build; unavailable otherwise)"
+        ),
+        "stt_device_cpu": "CPU",
         "whisper_download": "Download model",
         "whisper_disabled": (
             "Enable speech input to check the selected download directory."
@@ -281,6 +286,21 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "download_path_invalid": "The selected directory cannot be used: {message}",
         "automation_group": "Idle behavior and memory",
+        "settings_help": "Explain these settings",
+        "automation_help_title": "Idle behavior and memory",
+        "automation_help_body": (
+            "Thinking reminder: after this much inactivity, the character may "
+            "gently check whether you are still there. It triggers at most "
+            "once per idle period.\n\n"
+            "Away reminder: after the longer inactivity threshold, the "
+            "character treats you as away. When you return, she may welcome "
+            "you back. This value must be greater than the thinking reminder."
+            "\n\n"
+            "Conversation memory: the maximum number of recent messages kept "
+            "and supplied as conversation context.\n\n"
+            "Do not disturb: disables proactive idle and return messages; "
+            "manual conversation still works."
+        ),
         "do_not_disturb": "Do not disturb",
         "clear_history": "Clear conversation history…",
         "clear_history_confirm_title": "Clear conversation history?",
@@ -309,6 +329,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "folders are still in use or could not be removed."
         ),
         "display_group": "Screen and portrait",
+        "display_help_title": "Screen and portrait",
+        "display_help_body": (
+            "Screen index: the zero-based position in Windows' current screen "
+            "list. If the index is unavailable, the primary screen is used."
+            "\n\n"
+            "Portrait height ratio: the character's target height as a share "
+            "of the selected screen's available height.\n\n"
+            "Live diagnostic console: opens a live log window for diagnosing "
+            "model, TTS, recording, and other runtime problems."
+        ),
         "screen_index": "Screen index",
         "portrait_ratio": "Portrait height ratio",
         "show_log_console": "Open live diagnostic console",
@@ -507,6 +537,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_input_default_unknown": "系统默认输入设备",
         "stt_input_unavailable": "当前不可用：{device}",
         "stt_device": "语音识别设备",
+        "stt_device_auto": "自动",
+        "stt_device_cuda": (
+            "CUDA（请使用 AIpet-with-cuda 版本，否则无法使用）"
+        ),
+        "stt_device_cpu": "CPU",
         "whisper_download": "下载模型",
         "whisper_disabled": "启用语音输入后，将检查填写的模型下载目录。",
         "whisper_checking": "正在检查填写的模型目录……",
@@ -527,6 +562,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_path_required": "请先选择 Whisper 模型下载目录。",
         "download_path_invalid": "无法使用所选目录：{message}",
         "automation_group": "空闲行为与记忆",
+        "settings_help": "解释这些设置",
+        "automation_help_title": "空闲行为与记忆说明",
+        "automation_help_body": (
+            "思考提醒：持续无操作达到该时间后，角色可能会温和地询问你是否还在。"
+            "每段空闲期间最多触发一次。\n\n"
+            "离开提醒：持续无操作达到更长的时间后，角色会认为你暂时离开；"
+            "检测到你回来后，可能会欢迎你。该时间必须大于思考提醒。\n\n"
+            "对话记忆：最多保留并作为对话上下文发送的最近消息数量。\n\n"
+            "勿扰模式：停止主动的空闲提醒和回来问候，但手动对话仍可正常使用。"
+        ),
         "do_not_disturb": "勿扰模式",
         "clear_history": "清除历史对话…",
         "clear_history_confirm_title": "确定清除历史对话？",
@@ -552,6 +597,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "正在使用或无法删除的文件或文件夹。"
         ),
         "display_group": "屏幕与立绘",
+        "display_help_title": "屏幕与立绘说明",
+        "display_help_body": (
+            "屏幕编号：当前 Windows 屏幕列表中从 0 开始的序号。"
+            "序号不可用时会回退到主屏幕。\n\n"
+            "立绘高度比例：角色立绘相对于所选屏幕可用高度的目标比例。\n\n"
+            "实时日志命令行：打开实时日志窗口，用于排查模型、TTS、录音及"
+            "其他运行问题。"
+        ),
         "screen_index": "屏幕编号",
         "portrait_ratio": "立绘高度比例",
         "show_log_console": "打开实时日志命令行",
@@ -734,6 +787,7 @@ class SettingsDialog(QDialog):
         parent=None,
     ):
         super().__init__(parent)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self._original = settings.model_copy(deep=True)
         self._first_run = first_run
         self._model_worker: ModelListWorker | None = None
@@ -755,6 +809,8 @@ class SettingsDialog(QDialog):
             QApplication.instance()
         )
         self._form_labels: dict[str, list[QLabel]] = {}
+        self._form_fields: dict[str, list[QWidget]] = {}
+        self._audio_device_signature: tuple[object, ...] | None = None
         self._status_key: str | None = None
         self._status_values: dict[str, object] = {}
         self._whisper_status_key = "whisper_disabled"
@@ -794,6 +850,11 @@ class SettingsDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         root.addWidget(self.buttons)
 
+        self._audio_device_refresh_timer = QTimer(self)
+        self._audio_device_refresh_timer.setInterval(2_000)
+        self._audio_device_refresh_timer.timeout.connect(
+            self._refresh_audio_input_devices
+        )
         self._load_values(settings)
         self.language_combo.currentIndexChanged.connect(
             self._on_language_changed
@@ -832,10 +893,16 @@ class SettingsDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        self._refresh_audio_input_devices()
+        self._audio_device_refresh_timer.start()
         if self._auto_models_requested:
             return
         self._auto_models_requested = True
         QTimer.singleShot(0, self._auto_fetch_models)
+
+    def hideEvent(self, event) -> None:
+        self._audio_device_refresh_timer.stop()
+        super().hideEvent(event)
 
     def _add_row(
         self,
@@ -847,6 +914,49 @@ class SettingsDialog(QDialog):
         label.setWordWrap(True)
         form.addRow(label, field)
         self._form_labels.setdefault(key, []).append(label)
+        self._form_fields.setdefault(key, []).append(field)
+
+    def _set_form_labels_enabled(
+        self,
+        keys: tuple[str, ...],
+        enabled: bool,
+    ) -> None:
+        for key in keys:
+            for label in self._form_labels.get(key, ()):
+                label.setEnabled(enabled)
+
+    def _set_form_rows_visible(
+        self,
+        keys: tuple[str, ...],
+        visible: bool,
+    ) -> None:
+        for key in keys:
+            for label in self._form_labels.get(key, ()):
+                label.setVisible(visible)
+            for field in self._form_fields.get(key, ()):
+                field.setVisible(visible)
+
+    def _help_button(self, title_key: str, body_key: str) -> QToolButton:
+        button = QToolButton()
+        button.setText("?")
+        button.setFixedSize(24, 24)
+        button.clicked.connect(
+            lambda: QMessageBox.information(
+                self,
+                self._text(title_key),
+                self._text(body_key),
+            )
+        )
+        return button
+
+    @staticmethod
+    def _right_aligned_widget(widget: QWidget) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addStretch(1)
+        layout.addWidget(widget)
+        return container
 
     def _build_models_tab(self) -> QWidget:
         page = QWidget()
@@ -1114,16 +1224,14 @@ class SettingsDialog(QDialog):
             self._browse_whisper_model
         )
         self.stt_device = QComboBox()
-        self.stt_device.addItems(["auto", "cuda", "cpu"])
+        self.stt_device.addItem("", "auto")
+        self.stt_device.addItem("", "cuda")
+        self.stt_device.addItem("", "cpu")
         self.stt_input_device = QComboBox()
-        self._default_audio_input = default_audio_input_device()
+        self._default_audio_input = None
         self._missing_audio_input_identifier = ""
         self.stt_input_device.addItem("", "")
-        for input_device in list_audio_input_devices():
-            self.stt_input_device.addItem(
-                input_device.display_name,
-                input_device.identifier,
-            )
+        self._refresh_audio_input_devices(force=True)
         self.whisper_status = QLabel()
         self.whisper_status.setWordWrap(True)
         self.whisper_progress = QProgressBar()
@@ -1272,6 +1380,13 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(page)
         self.automation_group = QGroupBox()
         behavior_form = QFormLayout(self.automation_group)
+        self.automation_help_button = self._help_button(
+            "automation_help_title",
+            "automation_help_body",
+        )
+        behavior_form.addRow(
+            self._right_aligned_widget(self.automation_help_button)
+        )
         self.thinking_minutes = self._spinbox(1, 1_440)
         self.away_minutes = self._spinbox(2, 1_440)
         self.history_limit = self._spinbox(4, 200)
@@ -1297,6 +1412,13 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(page)
         self.display_group = QGroupBox()
         display_form = QFormLayout(self.display_group)
+        self.display_help_button = self._help_button(
+            "display_help_title",
+            "display_help_body",
+        )
+        display_form.addRow(
+            self._right_aligned_widget(self.display_help_button)
+        )
         self.screen_index = self._spinbox(0, 32)
         self.portrait_ratio = QDoubleSpinBox()
         self.portrait_ratio.setRange(0.2, 1.0)
@@ -1483,7 +1605,7 @@ class SettingsDialog(QDialog):
         self._set_editable_combo(self.stt_model, settings.stt.model)
         self.whisper_model_dir.setText(settings.stt.model_dir)
         self._set_audio_input_device(settings.stt.input_device)
-        self.stt_device.setCurrentText(settings.stt.device)
+        self._set_combo_data(self.stt_device, settings.stt.device)
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
             settings.display.portrait_screen_ratio
@@ -1513,6 +1635,43 @@ class SettingsDialog(QDialog):
             self._missing_audio_input_identifier = identifier
             index = self.stt_input_device.count() - 1
         self.stt_input_device.setCurrentIndex(max(index, 0))
+
+    def _refresh_audio_input_devices(self, force: bool = False) -> None:
+        if not hasattr(self, "stt_input_device"):
+            return
+        default_device, input_devices = refresh_audio_input_devices()
+        signature: tuple[object, ...] = (
+            (
+                default_device.identifier,
+                default_device.display_name,
+            )
+            if default_device is not None
+            else None,
+            tuple(
+                (device.identifier, device.display_name)
+                for device in input_devices
+            ),
+        )
+        if not force and signature == self._audio_device_signature:
+            return
+
+        selected = self.stt_input_device.currentData() or ""
+        self._audio_device_signature = signature
+        self._default_audio_input = default_device
+        self._missing_audio_input_identifier = ""
+        self.stt_input_device.blockSignals(True)
+        try:
+            self.stt_input_device.clear()
+            self.stt_input_device.addItem("", "")
+            for input_device in input_devices:
+                self.stt_input_device.addItem(
+                    input_device.display_name,
+                    input_device.identifier,
+                )
+            self._set_audio_input_device(selected)
+            self._retranslate_audio_input_devices()
+        finally:
+            self.stt_input_device.blockSignals(False)
 
     def _retranslate_audio_input_devices(self) -> None:
         default_name = (
@@ -1638,6 +1797,14 @@ class SettingsDialog(QDialog):
 
         self.deepseek_thinking.setText(self._text("deepseek_thinking"))
         self.do_not_disturb.setText(self._text("do_not_disturb"))
+        self.automation_help_button.setToolTip(self._text("settings_help"))
+        self.automation_help_button.setAccessibleName(
+            self._text("settings_help")
+        )
+        self.display_help_button.setToolTip(self._text("settings_help"))
+        self.display_help_button.setAccessibleName(
+            self._text("settings_help")
+        )
         self.clear_history_button.setText(self._text("clear_history"))
         self.clear_history_button.setToolTip(
             (
@@ -1675,6 +1842,21 @@ class SettingsDialog(QDialog):
         self._render_tts_service_button()
         self.stt_enabled.setText(self._text("stt_enabled"))
         self._retranslate_audio_input_devices()
+        self._set_combo_item_text(
+            self.stt_device,
+            "auto",
+            self._text("stt_device_auto"),
+        )
+        self._set_combo_item_text(
+            self.stt_device,
+            "cuda",
+            self._text("stt_device_cuda"),
+        )
+        self._set_combo_item_text(
+            self.stt_device,
+            "cpu",
+            self._text("stt_device_cpu"),
+        )
         self.whisper_download_button.setText(
             self._text("whisper_download")
         )
@@ -1983,27 +2165,55 @@ class SettingsDialog(QDialog):
     def _set_tts_path_controls(self, *, downloading: bool) -> None:
         enabled = self.tts_enabled.isChecked()
         autodl = self.tts_backend.currentData() == "autodl"
-        self.tts_backend.setEnabled(enabled and not downloading)
-        self.tts_url.setEnabled(enabled and not autodl and not downloading)
-        self.tts_engine_root.setEnabled(
-            enabled and not autodl and not downloading
+        controls_enabled = enabled and not downloading
+        local_enabled = controls_enabled and not autodl
+        autodl_enabled = controls_enabled and autodl
+        local_keys = (
+            "tts_endpoint",
+            "tts_engine_root",
+            "tts_model_dir",
         )
-        self.tts_engine_browse.setEnabled(
-            enabled and not autodl and not downloading
+        autodl_keys = (
+            "tts_autodl_ssh_command",
+            "tts_autodl_password",
+            "tts_autodl_remote_command",
+            "tts_autodl_reference_root",
         )
-        self.tts_model_dir.setEnabled(
-            enabled and not autodl and not downloading
-        )
-        self.tts_model_browse.setEnabled(
-            enabled and not autodl and not downloading
-        )
+
+        self.tts_backend.setEnabled(controls_enabled)
+        self.tts_timeout.setEnabled(controls_enabled)
+        self.tts_url.setEnabled(local_enabled)
+        self.tts_engine_root.setEnabled(local_enabled)
+        self.tts_engine_browse.setEnabled(local_enabled)
+        self.tts_model_dir.setEnabled(local_enabled)
+        self.tts_model_browse.setEnabled(local_enabled)
         for field in (
             self.tts_autodl_ssh_command,
             self.tts_autodl_password,
             self.tts_autodl_remote_command,
             self.tts_autodl_reference_root,
         ):
-            field.setEnabled(enabled and autodl and not downloading)
+            field.setEnabled(autodl_enabled)
+
+        self._set_form_rows_visible(local_keys, not autodl)
+        self._set_form_rows_visible(autodl_keys, autodl)
+        self.tts_download_button.setVisible(not autodl)
+        if autodl:
+            self.tts_progress.hide()
+            self.tts_extract_progress.hide()
+
+        self._set_form_labels_enabled(
+            ("tts_backend", "tts_timeout"),
+            controls_enabled,
+        )
+        self._set_form_labels_enabled(
+            local_keys,
+            local_enabled,
+        )
+        self._set_form_labels_enabled(
+            autodl_keys,
+            autodl_enabled,
+        )
 
     def _update_tts_state(self) -> None:
         if not hasattr(self, "tts_status"):
@@ -2753,7 +2963,7 @@ class SettingsDialog(QDialog):
                 enabled=self.stt_enabled.isChecked(),
                 model=self.stt_model.currentText().strip(),
                 model_dir=self.whisper_model_dir.text().strip(),
-                device=self.stt_device.currentText(),
+                device=self.stt_device.currentData(),
                 input_device=self.stt_input_device.currentData() or "",
             ),
             character=CharacterSettings(

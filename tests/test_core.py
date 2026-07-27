@@ -14,7 +14,9 @@ from tool.audio_devices import (
     decode_audio_input_device,
     encode_audio_input_device,
     list_audio_input_devices,
+    refresh_audio_input_devices,
     resolve_audio_input_device,
+    set_audio_capture_active,
 )
 from tool.backends import (
     APIBackend,
@@ -184,6 +186,41 @@ class CoreTests(unittest.TestCase):
                 (15, "Windows DirectSound"),
             ],
         )
+
+    def test_audio_input_device_refresh_restarts_backend_only_when_idle(
+        self,
+    ) -> None:
+        device = AudioInputDevice(
+            index=7,
+            name="USB Microphone",
+            hostapi="Windows WASAPI",
+            max_input_channels=1,
+        )
+        sounddevice = Mock()
+        try:
+            with (
+                patch.dict("sys.modules", {"sounddevice": sounddevice}),
+                patch("tool.audio_devices._restart_portaudio") as restart,
+                patch(
+                    "tool.audio_devices._compatible_audio_input_devices",
+                    return_value=[device],
+                ),
+                patch(
+                    "tool.audio_devices._default_audio_input_device",
+                    return_value=device,
+                ),
+            ):
+                set_audio_capture_active(False)
+                default_device, devices = refresh_audio_input_devices()
+                self.assertEqual(default_device, device)
+                self.assertEqual(devices, [device])
+                restart.assert_called_once_with(sounddevice)
+
+                set_audio_capture_active(True)
+                refresh_audio_input_devices()
+                restart.assert_called_once_with(sounddevice)
+        finally:
+            set_audio_capture_active(False)
 
     def test_default_model_directory_is_inside_project(self) -> None:
         with patch.dict(

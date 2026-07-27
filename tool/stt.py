@@ -20,29 +20,28 @@ def transcribe_full(
             "Whisper model was not found in the configured model directory. "
             "Select a download directory and download the model in Settings."
         )
-    selected_device = device
-    if selected_device == "auto":
-        selected_device = "cuda"
 
-    compute_type = "float16" if selected_device == "cuda" else "int8"
-    try:
+    def transcribe_with(selected_device: str) -> str:
+        compute_type = "float16" if selected_device == "cuda" else "int8"
         model = WhisperModel(
             selected_model,
             device=selected_device,
             compute_type=compute_type,
         )
-    except Exception:
-        if device != "auto":
-            raise
-        model = WhisperModel(
-            selected_model,
-            device="cpu",
-            compute_type="int8",
+        segments, _ = model.transcribe(
+            audio_path,
+            language="zh",
+            beam_size=5,
         )
+        return "".join(segment.text for segment in segments).strip()
 
-    segments, _ = model.transcribe(
-        audio_path,
-        language="zh",
-        beam_size=5,
-    )
-    return "".join(segment.text for segment in segments).strip()
+    if device != "auto":
+        return transcribe_with(device)
+
+    try:
+        return transcribe_with("cuda")
+    except Exception:
+        # CTranslate2 may load CUDA successfully but fail only when the lazy
+        # segment iterator performs its first inference. Keep that work inside
+        # the fallback boundary so the standard build remains CPU-capable.
+        return transcribe_with("cpu")
