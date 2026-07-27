@@ -59,9 +59,9 @@ Videos and project updates are available on
 
 Windows 10 and Windows 11 are the primary supported systems.
 
-### macOS (Apple Silicon)
+### macOS (for Macs with Apple Silicon / M-series chips)
 
-A macOS Apple Silicon adaptation is available on the
+A macOS adaptation for Macs with Apple Silicon (M-series chips) is available on the
 [Releases page](../../releases). For a source installation, run
 `start_macos.command` from the project directory.
 
