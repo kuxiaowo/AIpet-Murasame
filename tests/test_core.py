@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -417,6 +418,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(migrated.vision.aliyun_model, "legacy-vl")
         self.assertEqual(migrated.vision.timeout_seconds, 90)
 
+    @unittest.skipUnless(os.name == "nt", "Windows path migration")
     def test_legacy_managed_tts_paths_move_to_project_models(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -138,7 +138,7 @@ class RuntimeLoggingTests(unittest.TestCase):
             [
                 "python.exe",
                 str(runtime_logging.LOG_VIEWER),
-                "C:\\logs",
+                str(Path("C:/logs")),
                 "123",
             ],
         )
@@ -157,7 +157,7 @@ class RuntimeLoggingTests(unittest.TestCase):
 
         self.assertEqual(
             command,
-            ["AIpet.exe", "--log-viewer", "C:\\logs", "123"],
+            ["AIpet.exe", "--log-viewer", str(Path("C:/logs")), "123"],
         )
 
     def test_main_dispatches_log_viewer_special_mode(self) -> None:

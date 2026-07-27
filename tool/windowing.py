@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.util
 import os
 from ctypes import wintypes
 from functools import lru_cache
@@ -32,9 +33,60 @@ def ensure_window_topmost(window_id: int) -> bool:
     return True
 
 
+def get_system_idle_seconds() -> float:
+    if os.name == "nt":
+        return _windows_idle_seconds()
+    if sys_platform_is_macos():
+        return _macos_idle_seconds()
+    return 0.0
+
+
+def sys_platform_is_macos() -> bool:
+    return os.uname().sysname == "Darwin" if hasattr(os, "uname") else False
+
+
+def _windows_idle_seconds() -> float:
+    class LastInputInfo(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.UINT),
+            ("dwTime", wintypes.DWORD),
+        ]
+
+    info = LastInputInfo()
+    info.cbSize = ctypes.sizeof(LastInputInfo)
+    user32 = _windows_user32()
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        return 0.0
+    milliseconds = (
+        ctypes.windll.kernel32.GetTickCount() - info.dwTime
+    ) & 0xFFFFFFFF
+    return milliseconds / 1000.0
+
+
+@lru_cache(maxsize=1)
+def _macos_application_services():
+    path = ctypes.util.find_library("ApplicationServices")
+    if not path:
+        return None
+    library = ctypes.CDLL(path)
+    function = library.CGEventSourceSecondsSinceLastEventType
+    function.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    function.restype = ctypes.c_double
+    return function
+
+
+def _macos_idle_seconds() -> float:
+    function = _macos_application_services()
+    if function is None:
+        return 0.0
+    return max(0.0, float(function(0, 0xFFFFFFFF)))
+
+
 @lru_cache(maxsize=1)
 def _windows_user32():
     user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetLastInputInfo.argtypes = [ctypes.c_void_p]
+    user32.GetLastInputInfo.restype = wintypes.BOOL
     user32.SetWindowPos.argtypes = [
         wintypes.HWND,
         wintypes.HWND,

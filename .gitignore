@@ -37,3 +37,5 @@ voices/*.wav
 cache/
 *.log
 _tmp_*
+.native_overlay/
+.cache/

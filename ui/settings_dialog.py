@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import subprocess
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -54,6 +56,7 @@ from tool.config import (
     TTSSettings,
     VisionSettings,
     get_user_data_dir,
+    PROJECT_ROOT,
     load_personality,
 )
 from tool.credentials import CredentialError, protect_secret
@@ -62,6 +65,8 @@ from tool.tts_assets import (
     TTSAssetState,
     configure_local_tts_weights,
     locate_tts_assets,
+    managed_gpt_sovits_dir,
+    managed_tts_model_dir,
     tts_service_is_reachable,
 )
 from tool.tts_service import (
@@ -169,7 +174,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_autodl_remote_command": "Remote TTS start command",
         "tts_autodl_reference_root": "Remote reference voice directory",
         "tts_autodl_password_placeholder": (
-            "Leave blank to keep the password saved with Windows encryption"
+            "Leave blank to keep the password in the system credential store"
         ),
         "browse": "Browse…",
         "tts_disabled": (
@@ -181,7 +186,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "command, and remote reference voice directory."
         ),
         "tts_password_store_failed": (
-            "Windows could not save the AutoDL password securely: {message}"
+            "The system could not save the AutoDL password securely: {message}"
         ),
         "tts_checking": "Checking GPT-SoVITS components…",
         "tts_ready_online": "Voice model is ready and the TTS service is online.",
@@ -229,7 +234,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "additional free space while extracting. The assets are intended "
             "for non-commercial, educational use."
         ),
+        "tts_download_consent_body_macos": (
+            "Download the Murasame character weights and six reference voices "
+            "(about 231 MB) from ModelScope? On macOS, install GPT-SoVITS "
+            "separately, then select its directory in Settings."
+        ),
         "tts_download": "Download voice model",
+        "tts_macos_setup": "Install GPT-SoVITS for macOS",
+        "tts_macos_setup_opened": (
+            "The macOS GPT-SoVITS installer is running in Terminal. "
+            "After it finishes, download the Murasame voice model here."
+        ),
         "tts_preparing": "Preparing the TTS download: {detail}",
         "tts_downloading": "Downloading the Murasame voice model: {detail}",
         "tts_checking_files": "Checking downloaded files: {detail}",
@@ -241,6 +256,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "files",
         "download_steps": "steps",
         "stt_enabled": "Hold Caps Lock for speech input",
+        "stt_enabled_macos": "Hold Option + V for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
         "stt_input_device": "Recording device",
@@ -470,7 +486,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_autodl_remote_command": "远程 TTS 启动命令",
         "tts_autodl_reference_root": "服务器参考音频目录",
         "tts_autodl_password_placeholder": (
-            "留空则继续使用 Windows 当前用户加密保存的密码"
+            "留空则继续使用系统凭据存储中保存的密码"
         ),
         "browse": "浏览…",
         "tts_disabled": "启用 TTS 后，将检查引擎、角色模型、参考音频和服务。",
@@ -479,7 +495,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "请填写 AutoDL SSH 登录命令、密码、远程启动命令和服务器参考音频目录。"
         ),
         "tts_password_store_failed": (
-            "Windows 无法安全保存 AutoDL 密码：{message}"
+            "系统无法安全保存 AutoDL 密码：{message}"
         ),
         "tts_checking": "正在检查 GPT-SoVITS 组件……",
         "tts_ready_online": "角色语音模型完整，TTS 服务在线。",
@@ -518,7 +534,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "完整引擎，同时下载角色权重和参考音频？下载量约 8～9 GB，"
             "解压时还需要额外可用空间。这些资源仅用于非商业和学习用途。"
         ),
+        "tts_download_consent_body_macos": (
+            "是否从 ModelScope 下载丛雨角色权重及六组参考音频（约 231 MB）？"
+            "macOS 不下载 Windows 整合引擎；请另行安装 GPT-SoVITS，"
+            "再在设置中选择其目录。"
+        ),
         "tts_download": "下载角色语音模型",
+        "tts_macos_setup": "安装 macOS GPT-SoVITS",
+        "tts_macos_setup_opened": (
+            "macOS GPT-SoVITS 安装程序已在终端运行。安装完成后，"
+            "请在这里下载丛雨角色语音模型。"
+        ),
         "tts_preparing": "正在准备 TTS 下载：{detail}",
         "tts_downloading": "正在下载丛雨语音模型：{detail}",
         "tts_checking_files": "正在校验已下载文件：{detail}",
@@ -530,6 +556,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "download_files": "个文件",
         "download_steps": "个步骤",
         "stt_enabled": "长按 Caps Lock 进行语音输入",
+        "stt_enabled_macos": "长按 Option + V 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
         "stt_input_device": "录音设备",
@@ -1210,6 +1237,10 @@ class SettingsDialog(QDialog):
         self.tts_download_button.clicked.connect(
             self._request_tts_download
         )
+        self.tts_macos_setup_button = QPushButton()
+        self.tts_macos_setup_button.clicked.connect(
+            self._setup_macos_tts
+        )
         self.tts_service_button = QPushButton()
         self.tts_service_button.setEnabled(False)
         self.tts_service_button.clicked.connect(
@@ -1282,6 +1313,7 @@ class SettingsDialog(QDialog):
             self.tts_autodl_reference_root,
         )
         tts_form.addRow(self.tts_status)
+        tts_form.addRow(self.tts_macos_setup_button)
         tts_form.addRow(self.tts_service_button)
         tts_form.addRow(self.tts_progress)
         tts_form.addRow(self.tts_extract_progress)
@@ -1839,8 +1871,13 @@ class SettingsDialog(QDialog):
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
         self.tts_download_button.setText(self._text("tts_download"))
+        self.tts_macos_setup_button.setText(self._text("tts_macos_setup"))
         self._render_tts_service_button()
-        self.stt_enabled.setText(self._text("stt_enabled"))
+        self.stt_enabled.setText(
+            self._text(
+                "stt_enabled_macos" if sys.platform == "darwin" else "stt_enabled"
+            )
+        )
         self._retranslate_audio_input_devices()
         self._set_combo_item_text(
             self.stt_device,
@@ -2198,6 +2235,10 @@ class SettingsDialog(QDialog):
         self._set_form_rows_visible(local_keys, not autodl)
         self._set_form_rows_visible(autodl_keys, autodl)
         self.tts_download_button.setVisible(not autodl)
+        self.tts_macos_setup_button.setVisible(
+            sys.platform == "darwin" and not autodl
+        )
+        self.tts_macos_setup_button.setEnabled(local_enabled)
         if autodl:
             self.tts_progress.hide()
             self.tts_extract_progress.hide()
@@ -2341,6 +2382,7 @@ class SettingsDialog(QDialog):
                 self._set_tts_status("tts_ready_offline")
             if (
                 self._tts_engine_download_needed
+                and sys.platform != "darwin"
                 and not self._tts_download_prompted
             ):
                 self._tts_download_prompted = True
@@ -2430,6 +2472,28 @@ class SettingsDialog(QDialog):
         if key is not None:
             self._set_tts_status(key)
 
+    def _setup_macos_tts(self) -> None:
+        if sys.platform != "darwin":
+            return
+        script = PROJECT_ROOT / "install_macos_tts.command"
+        if not script.is_file():
+            self._set_tts_status(
+                "tts_service_failed",
+                message="install_macos_tts.command was not found.",
+            )
+            return
+        self.tts_engine_root.setText(str(managed_gpt_sovits_dir()))
+        self.tts_model_dir.setText(str(managed_tts_model_dir()))
+        try:
+            subprocess.Popen(
+                ["open", "-a", "Terminal", str(script)],
+                cwd=str(PROJECT_ROOT),
+            )
+        except OSError as exc:
+            self._set_tts_status("tts_service_failed", message=str(exc))
+            return
+        self._set_tts_status("tts_macos_setup_opened")
+
     def _on_tts_service_succeeded(self, action: str) -> None:
         self._set_tts_status(
             "tts_service_stopped"
@@ -2466,8 +2530,11 @@ class SettingsDialog(QDialog):
         )
         if model_destination is None:
             return
+        include_engine = (
+            self._tts_engine_download_needed and sys.platform != "darwin"
+        )
         engine_destination = None
-        if self._tts_engine_download_needed:
+        if include_engine:
             engine_destination = self._require_download_directory(
                 self.tts_engine_root,
                 "tts_engine_path_required",
@@ -2478,9 +2545,16 @@ class SettingsDialog(QDialog):
             self,
             self._text("tts_download_consent_title"),
             self._text(
-                "tts_download_consent_body_with_engine"
-                if self._tts_engine_download_needed
-                else "tts_download_consent_body"
+                "tts_download_consent_body_macos"
+                if (
+                    sys.platform == "darwin"
+                    and self._tts_engine_download_needed
+                )
+                else (
+                    "tts_download_consent_body_with_engine"
+                    if include_engine
+                    else "tts_download_consent_body"
+                )
             ),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
@@ -2489,7 +2563,7 @@ class SettingsDialog(QDialog):
             return
         self.download_manager.start_tts(
             model_destination,
-            include_engine=self._tts_engine_download_needed,
+            include_engine=include_engine,
             engine_destination=engine_destination,
         )
         self._set_tts_path_controls(downloading=True)

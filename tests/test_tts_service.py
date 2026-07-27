@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,7 +28,11 @@ class TTSServiceTests(unittest.TestCase):
 
             self.assertEqual(
                 Path(command[0]),
-                (engine / "runtime" / "python.exe").resolve(),
+                (
+                    engine
+                    / "runtime"
+                    / ("python.exe" if os.name == "nt" else "python")
+                ).resolve(),
             )
             self.assertEqual(Path(command[1]), engine / "api_v2.py")
             self.assertEqual(command[-4:], ["-p", "9880", "-c", command[-1]])
@@ -42,13 +47,45 @@ class TTSServiceTests(unittest.TestCase):
     def test_build_command_requires_engine_python_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             engine = self._create_engine(Path(directory))
-            (engine / "runtime" / "python.exe").unlink()
+            (
+                engine
+                / "runtime"
+                / ("python.exe" if os.name == "nt" else "python")
+            ).unlink()
 
-            with self.assertRaisesRegex(
-                TTSServiceError,
-                "does not contain a bundled Python runtime",
+            with (
+                patch("tool.tts_service.Path.home", return_value=Path(directory)),
+                self.assertRaisesRegex(
+                    TTSServiceError,
+                    "does not contain a bundled Python runtime",
+                ),
             ):
                 _build_start_command(engine, ("127.0.0.1", 9880))
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS runtime layout")
+    def test_build_command_finds_mac_user_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            engine = self._create_engine(Path(directory))
+            (engine / "runtime" / "python").unlink()
+            with tempfile.TemporaryDirectory() as home:
+                runtime = (
+                    Path(home)
+                    / ".local"
+                    / "share"
+                    / "AIpet-Murasame"
+                    / "gpt-sovits"
+                    / "env"
+                    / "bin"
+                )
+                runtime.mkdir(parents=True)
+                python = runtime / "python"
+                python.write_bytes(b"python")
+                with patch("tool.tts_service.Path.home", return_value=Path(home)):
+                    command, _ = _build_start_command(
+                        engine,
+                        ("127.0.0.1", 9880),
+                    )
+            self.assertEqual(Path(command[0]), python.resolve())
 
     def test_ensure_running_launches_once_and_stop_only_owned_process(
         self,
@@ -189,7 +226,10 @@ class TTSServiceTests(unittest.TestCase):
     @staticmethod
     def _create_engine(root: Path) -> Path:
         (root / "runtime").mkdir(parents=True)
-        (root / "runtime" / "python.exe").write_bytes(b"runtime")
+        runtime = root / "runtime" / (
+            "python.exe" if os.name == "nt" else "python"
+        )
+        runtime.write_bytes(b"runtime")
         (root / "api_v2.py").write_text("# api", encoding="utf-8")
         config = root / "GPT_SoVITS" / "configs" / "tts_infer.yaml"
         config.parent.mkdir(parents=True)

@@ -11,6 +11,7 @@
 <p align="center">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
+  <img alt="macOS" src="https://img.shields.io/badge/Platform-macOS-000000?style=flat-square&logo=apple&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
   <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
@@ -34,9 +35,11 @@ her—and the maintainer—very happy.
 
 ## Overview
 
-AIpet is an always-on-top Murasame desktop companion for Windows. It combines a
-transparent PyQt5 character window with local or cloud conversations, optional
-screen awareness, GPT-SoVITS speech output, and faster-whisper speech input.
+AIpet is an always-on-top Murasame desktop companion for Windows and Apple
+Silicon macOS. It combines a transparent PyQt5 character window with local or
+cloud conversations, optional screen awareness, GPT-SoVITS speech output, and
+faster-whisper speech input. This edition keeps the upstream V2 interface and
+behavior while adding native macOS integration.
 
 Based on [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet).
 Videos and project updates are available on
@@ -52,12 +55,13 @@ Videos and project updates are available on
 - Hold-to-talk speech input powered by faster-whisper
 - Conversation memory, screen-event summaries, proactive reminders, and a
   persistent Do Not Disturb mode
-- Transparent multi-monitor window, Windows topmost watchdog, bilingual
-  settings, and structured diagnostic logs
+- Transparent multi-monitor window, Windows topmost watchdog, native macOS
+  fullscreen Spaces and input-method support, bilingual settings, and
+  structured diagnostic logs
 
 ## Quick start
 
-Windows 10 and Windows 11 are the primary supported systems.
+Windows 10/11 and Apple Silicon macOS are supported.
 
 ### Run the Windows EXE
 
@@ -104,6 +108,32 @@ To enable speech input in a source installation:
 python -m pip install -r requirements-voice.txt
 ```
 
+### Run on macOS
+
+Requirements:
+
+- Apple Silicon Mac
+- Python 3.10 or later
+- Xcode Command Line Tools (`xcode-select --install`)
+
+Double-click **`start_macos.command`**, or run:
+
+```zsh
+./start_macos.command
+```
+
+The first launch creates `.venv`, installs the application and speech-input
+dependencies, and compiles the small native fullscreen helper. macOS may ask
+for these permissions:
+
+- **Screen Recording** for Screen Vision
+- **Microphone** for speech input
+- **Accessibility / Input Monitoring** for the macOS Option+V hold-to-talk trigger
+
+The native helper appears only while another application occupies a fullscreen
+Space. It preserves the original character interaction and supports macOS
+Pinyin composition and candidate selection in fullscreen.
+
 ### Configure a conversation backend
 
 AIpet needs either a local Ollama service or a cloud API.
@@ -124,6 +154,8 @@ $env:DASHSCOPE_API_KEY = "your-key"
 $env:OPENAI_API_KEY = "your-key"
 ```
 
+On macOS, use the equivalent `export NAME="value"` syntax in Terminal.
+
 On first launch, select the backend and model, set the user name, review the
 personality prompt, and save. Keep vision, TTS, and speech input disabled until
 their dependencies are ready.
@@ -133,13 +165,16 @@ their dependencies are ready.
 | Capability | Setup |
 |---|---|
 | Screen awareness | Enable **Screen Vision** and choose an Ollama, Alibaba Cloud, or OpenAI-compatible vision model. Screenshots are temporary and are not added to conversation history. |
-| Local TTS | Enable **TTS → Local computer** and select the GPT-SoVITS engine and Murasame voice-model directories. Missing managed assets can be downloaded after confirmation. |
+| Local TTS | Enable **TTS → Local computer**. On macOS, click **Install GPT-SoVITS for macOS** in Settings; the installer places the official engine and base models in the project and keeps its Conda environment under `~/.local/share/AIpet-Murasame/`. Then click **Download voice model** for Murasame's weights and references. |
 | AutoDL TTS | Enable **TTS → AutoDL cloud**, provide the SSH login, password, remote command, and reference-voice directory. The remote instance must already expose GPT-SoVITS on port `9880`. |
-| Speech input | Enable speech input, choose a microphone, device, and faster-whisper model. Hold Caps Lock for two seconds to record; release it to transcribe and send. |
+| Speech input | On Windows, enable speech input, choose a microphone, device, and faster-whisper model, then hold Caps Lock for two seconds to record. On macOS, hold Option+V for two seconds instead. |
 
 TTS errors do not discard text replies. Temporary screenshots, recordings, and
 generated speech are cleaned automatically and can also be cleared from
 Settings.
+
+For a macOS GPT-SoVITS environment outside the engine directory, set
+`AIPET_GPT_SOVITS_PYTHON` to that environment's Python executable.
 
 ## Controls
 
@@ -149,10 +184,11 @@ Settings.
 | Cancel input | Press Escape |
 | Pat her head | Hold the left mouse button over her head and move horizontally |
 | Move the pet | Drag with the middle mouse button |
-| Talk | Hold Caps Lock for two seconds when speech input is enabled |
+| Talk | On Windows, hold Caps Lock for two seconds; on macOS, hold Option+V for two seconds |
 | Settings, vision, DND, memory, exit | Use the system tray menu |
 
 Dragging the pet to another monitor updates its display and portrait scale.
+The same controls remain available in the native macOS fullscreen window.
 
 ## Data and privacy
 
@@ -171,6 +207,11 @@ Disposable runtime data is stored under
 `%LOCALAPPDATA%\AIpet-Murasame\cache\`. Downloaded models use
 `C:\AIpet\models\` by default; set `AIPET_MODEL_DIR` to override that location.
 
+On macOS, persistent data and logs are stored under
+`~/.config/AIpet-Murasame/`, runtime cache under its `cache/` subdirectory,
+and downloaded models in the repository's `models/` directory by default.
+AutoDL passwords are stored in macOS Keychain.
+
 API keys entered in Settings are stored in `config.json`. Leave those fields
 blank and use environment variables if you prefer to keep keys out of the
 configuration file. Logs redact recognized secret fields and replace large
@@ -183,6 +224,12 @@ Run the test suite in the `aipet` Conda environment:
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
+```
+
+On macOS:
+
+```zsh
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v
 ```
 
 Build both single-file Windows executables with:
@@ -221,14 +268,17 @@ Main project areas:
 classes\    desktop interaction, workers, and downloads
 tool\       backends, configuration, storage, speech, and diagnostics
 ui\         bilingual settings window
+native_overlay/  native macOS fullscreen and input bridge
 packaging\  reproducible PyInstaller build
 tests\      unit and UI smoke tests
 ```
 
 ## Limitations
 
-- Desktop behavior is designed and tested primarily for Windows.
 - Exclusive-fullscreen or anti-cheat-protected surfaces may cover the pet.
+- The macOS helper targets Apple Silicon and is compiled locally on first run.
+- faster-whisper runs on CPU on Apple Silicon; its CUDA mode is for compatible
+  Windows/NVIDIA systems.
 - Local chat, vision, and TTS performance depends on the selected model and
   hardware.
 - Character artwork and voice assets may have terms different from the source
@@ -238,6 +288,8 @@ tests\      unit and UI smoke tests
 
 - Original desktop-pet project:
   [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
+- Upstream AIpet V2 project and Windows implementation:
+  [kuxiaowo/AIpet-Murasame](https://github.com/kuxiaowo/AIpet-Murasame)
 - Speech-synthesis project:
   [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
 

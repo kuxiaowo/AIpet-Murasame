@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import sys
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tool.autodl_tts import (
     AutoDLConnectionError,
@@ -73,6 +74,22 @@ class AutoDLTTSTests(unittest.TestCase):
             unprotect_secret(token),
             "temporary-password",
         )
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS Keychain is required")
+    def test_password_round_trip_uses_macos_keychain(self) -> None:
+        saved = Mock(returncode=0, stdout="", stderr="")
+        loaded = Mock(returncode=0, stdout="temporary-password\n", stderr="")
+        with patch(
+            "tool.credentials.subprocess.run",
+            side_effect=[saved, loaded],
+        ) as run:
+            token = protect_secret("temporary-password")
+            password = unprotect_secret(token)
+
+        self.assertEqual(token, "keychain:AutoDL")
+        self.assertNotIn("temporary-password", token)
+        self.assertEqual(password, "temporary-password")
+        self.assertEqual(run.call_count, 2)
 
 
 if __name__ == "__main__":

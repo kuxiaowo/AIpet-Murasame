@@ -11,6 +11,7 @@
 <p align="center">
   <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows11&logoColor=white">
+  <img alt="macOS" src="https://img.shields.io/badge/Platform-macOS-000000?style=flat-square&logo=apple&logoColor=white">
   <img alt="PyQt5" src="https://img.shields.io/badge/UI-PyQt5-41CD52?style=flat-square&logo=qt&logoColor=white">
   <img alt="Ollama" src="https://img.shields.io/badge/Local-Ollama-111111?style=flat-square&logo=ollama&logoColor=white">
   <a href="../../LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/kuxiaowo/AIpet-Murasame?style=flat-square&color=8A2BE2"></a>
@@ -34,9 +35,10 @@
 
 ## 项目简介
 
-AIpet 是一款面向 Windows 的丛雨 AI 桌宠。它将透明 PyQt5 角色窗口、本地或
-云端对话、可选的屏幕感知、GPT-SoVITS 语音输出和 faster-whisper 语音输入
-组合在一起。
+AIpet 是一款支持 Windows 与 Apple Silicon macOS 的丛雨 AI 桌宠。它将
+透明 PyQt5 角色窗口、本地或云端对话、可选的屏幕感知、GPT-SoVITS 语音
+输出和 faster-whisper 语音输入组合在一起。本版本保留原作者 V2 的界面和
+操作方式，仅补充 macOS 原生适配。
 
 项目基于
 [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
@@ -51,11 +53,12 @@ AIpet 是一款面向 Windows 的丛雨 AI 桌宠。它将透明 PyQt5 角色窗
 - 本地或 AutoDL 云端 GPT-SoVITS 语音合成
 - 基于 faster-whisper 的按键语音输入
 - 对话记忆、屏幕事件摘要、主动提醒和持久化勿扰模式
-- 透明多屏窗口、Windows 置顶守护、中英双语设置和结构化诊断日志
+- 透明多屏窗口、Windows 置顶守护、macOS 全屏 Space 与原生输入法兼容、
+  中英双语设置和结构化诊断日志
 
 ## 快速开始
 
-项目主要支持 Windows 10 和 Windows 11。
+项目支持 Windows 10/11 与 Apple Silicon macOS。
 
 ### 直接运行 Windows EXE
 
@@ -100,6 +103,30 @@ python main.py
 python -m pip install -r requirements-voice.txt
 ```
 
+### 在 macOS 上运行
+
+需要：
+
+- Apple Silicon Mac
+- Python 3.10 或更高版本
+- Xcode Command Line Tools（运行 `xcode-select --install` 安装）
+
+双击 **`start_macos.command`**，或在终端执行：
+
+```zsh
+./start_macos.command
+```
+
+首次启动会创建 `.venv`、安装程序及语音输入依赖，并编译一个很小的原生
+全屏辅助组件。macOS 可能会请求以下权限：
+
+- “屏幕录制”：供屏幕视觉使用
+- “麦克风”：供语音输入使用
+- “辅助功能 / 输入监控”：供 macOS 上长按 Option+V 触发语音输入
+
+只有当其他应用进入全屏 Space 时，程序才会切换到原生辅助窗口。它沿用原来
+的桌宠操作，并支持在全屏中使用 macOS 拼音组合输入和候选词。
+
 ### 配置对话后端
 
 AIpet 至少需要本地 Ollama 或一种云端 API。
@@ -119,6 +146,8 @@ $env:DASHSCOPE_API_KEY = "your-key"
 $env:OPENAI_API_KEY = "your-key"
 ```
 
+macOS 终端中请使用对应的 `export NAME="value"` 写法。
+
 首次启动后，选择后端与模型，填写用户名称，检查人格提示词并保存。视觉、TTS
 和语音输入属于可选功能，相关依赖尚未准备好时请先保持关闭。
 
@@ -127,12 +156,15 @@ $env:OPENAI_API_KEY = "your-key"
 | 功能 | 配置方法 |
 |---|---|
 | 屏幕感知 | 启用“屏幕视觉”，选择 Ollama、阿里云百炼或 OpenAI 兼容视觉模型。截图仅作临时处理，不写入对话历史。 |
-| 本地 TTS | 启用“TTS → 本地计算机”，选择 GPT-SoVITS 引擎和丛雨语音模型目录。缺少的托管资源可在确认后下载。 |
+| 本地 TTS | 启用“TTS → 本地计算机”，在设置中点击“安装 macOS GPT-SoVITS”；安装程序会把官方引擎和基础模型放在项目目录内，并将 Conda 环境放在 `~/.local/share/AIpet-Murasame/`。完成后点击“下载角色语音模型”，获取丛雨权重和参考音频。 |
 | AutoDL TTS | 启用“TTS → AutoDL 云端”，填写 SSH 登录信息、远程命令和参考音频目录。远程实例需已在 `9880` 端口提供 GPT-SoVITS 服务。 |
-| 语音输入 | 启用语音输入，选择麦克风、计算设备和 faster-whisper 模型。长按 Caps Lock 两秒开始录音，松开后识别并发送。 |
+| 语音输入 | Windows 上可启用语音输入，选择麦克风、计算设备和 faster-whisper 模型，长按 Caps Lock 两秒开始录音；macOS 上改为长按 Option+V 两秒。 |
 
 TTS 失败不会丢弃文字回复。临时截图、录音和合成语音会自动清理，也可以在
 设置中手动清除。
+
+如果 macOS 的 GPT-SoVITS Python 环境不在引擎目录内，可将
+`AIPET_GPT_SOVITS_PYTHON` 指向该环境的 Python 可执行文件。
 
 ## 桌宠操作
 
@@ -142,10 +174,11 @@ TTS 失败不会丢弃文字回复。临时截图、录音和合成语音会自�
 | 取消输入 | 按 Escape |
 | 摸头 | 在头部按住鼠标左键并横向移动 |
 | 移动桌宠 | 按住鼠标中键拖动 |
-| 语音对话 | 启用语音输入后长按 Caps Lock 两秒 |
+| 语音对话 | Windows 上启用语音输入后长按 Caps Lock 两秒；macOS 上长按 Option+V 两秒 |
 | 设置、视觉、勿扰、记忆、退出 | 使用系统托盘菜单 |
 
 把桌宠拖到另一台显示器后，程序会自动更新显示器和立绘比例。
+macOS 原生全屏窗口保持相同的操作方式。
 
 ## 数据与隐私
 
@@ -163,6 +196,10 @@ Windows 上的设置和持久化数据保存在：
 临时运行数据保存在 `%LOCALAPPDATA%\AIpet-Murasame\cache\`。下载模型默认
 保存在 `C:\AIpet\models\`；可以通过 `AIPET_MODEL_DIR` 修改模型目录。
 
+macOS 上的持久化数据及日志位于 `~/.config/AIpet-Murasame/`，运行缓存位于
+其 `cache/` 子目录，下载模型默认位于项目的 `models/` 目录。AutoDL 密码
+保存在 macOS 钥匙串中。
+
 在设置中填写的 API Key 会写入 `config.json`。如果不希望密钥进入配置文件，
 请把密钥字段留空并使用环境变量。日志会对已识别的密钥字段脱敏，并把大型
 Base64 媒体替换成元数据。
@@ -174,6 +211,12 @@ Base64 媒体替换成元数据。
 ```powershell
 $env:QT_QPA_PLATFORM = "offscreen"
 python -m unittest discover -s tests -v
+```
+
+macOS 上运行：
+
+```zsh
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v
 ```
 
 同时构建两个 Windows 单文件 EXE：
@@ -210,14 +253,17 @@ python -m unittest discover -s tests -v
 classes\    桌宠交互、后台任务和下载
 tool\       模型后端、配置、存储、语音和诊断
 ui\         中英双语设置窗口
+native_overlay/  macOS 原生全屏及输入桥接
 packaging\  可重复执行的 PyInstaller 构建
 tests\      单元测试和 UI 冒烟测试
 ```
 
 ## 已知限制
 
-- 桌面行为目前主要针对 Windows 设计和测试。
 - 独占全屏或受反作弊保护的画面仍可能覆盖桌宠。
+- macOS 辅助组件面向 Apple Silicon，并在首次启动时于本机编译。
+- Apple Silicon 上的 faster-whisper 使用 CPU；CUDA 模式适用于兼容的
+  Windows/NVIDIA 环境。
 - 本地对话、视觉与 TTS 的速度取决于模型和硬件。
 - 角色立绘与语音素材的使用条款可能不同于源代码许可证。
 
@@ -225,6 +271,8 @@ tests\      单元测试和 UI 冒烟测试
 
 - 原作桌宠项目：
   [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
+- AIpet V2 原项目及 Windows 实现：
+  [kuxiaowo/AIpet-Murasame](https://github.com/kuxiaowo/AIpet-Murasame)
 - 语音合成项目：
   [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
 

@@ -3,11 +3,17 @@ from __future__ import annotations
 import base64
 import ctypes
 import os
+import subprocess
+import sys
 from ctypes import wintypes
 
 
 class CredentialError(RuntimeError):
     pass
+
+
+KEYCHAIN_SERVICE = "AIpet-Murasame AutoDL TTS"
+KEYCHAIN_ACCOUNT = "AutoDL"
 
 
 class _DataBlob(ctypes.Structure):
@@ -47,13 +53,36 @@ def _windows_apis():
 
 
 def protect_secret(secret: str) -> str:
-    """Encrypt a secret for the current Windows user with DPAPI."""
+    """Store a secret with the current operating system's credential service."""
 
     if not secret:
         return ""
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                [
+                    "/usr/bin/security",
+                    "add-generic-password",
+                    "-U",
+                    "-a",
+                    KEYCHAIN_ACCOUNT,
+                    "-s",
+                    KEYCHAIN_SERVICE,
+                    "-w",
+                    secret,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise CredentialError(
+                "macOS could not save the AutoDL password in Keychain."
+            ) from exc
+        return f"keychain:{KEYCHAIN_ACCOUNT}"
     if os.name != "nt":
         raise CredentialError(
-            "AutoDL password storage is available only on Windows."
+            "Secure AutoDL password storage is unavailable on this system."
         )
 
     raw = secret.encode("utf-8")
@@ -85,13 +114,36 @@ def protect_secret(secret: str) -> str:
 
 
 def unprotect_secret(token: str) -> str:
-    """Decrypt a DPAPI token created for the current Windows user."""
+    """Read a secret from the current operating system's credential service."""
 
     if not token:
         return ""
+    if sys.platform == "darwin":
+        if token != f"keychain:{KEYCHAIN_ACCOUNT}":
+            raise CredentialError("The stored AutoDL password is invalid.")
+        try:
+            result = subprocess.run(
+                [
+                    "/usr/bin/security",
+                    "find-generic-password",
+                    "-a",
+                    KEYCHAIN_ACCOUNT,
+                    "-s",
+                    KEYCHAIN_SERVICE,
+                    "-w",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise CredentialError(
+                "macOS could not read the AutoDL password from Keychain."
+            ) from exc
+        return result.stdout.rstrip("\n")
     if os.name != "nt":
         raise CredentialError(
-            "AutoDL password storage is available only on Windows."
+            "Secure AutoDL password storage is unavailable on this system."
         )
     try:
         encrypted = base64.b64decode(token, validate=True)

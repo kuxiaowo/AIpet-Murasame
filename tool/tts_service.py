@@ -4,6 +4,7 @@ import atexit
 import ctypes
 import os
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -600,8 +601,35 @@ def _build_start_command(
 
 
 def _locate_runtime_python(engine_root: Path) -> Path:
+    configured = os.environ.get("AIPET_GPT_SOVITS_PYTHON", "").strip()
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.is_file():
+            return candidate.resolve()
+        raise TTSServiceError(
+            "AIPET_GPT_SOVITS_PYTHON does not point to a Python executable."
+        )
+
     names = ("python.exe",) if os.name == "nt" else ("python", "python3")
-    for directory in (engine_root / "runtime", engine_root):
+    directories = [engine_root / "runtime"]
+    if sys.platform == "darwin":
+        directories.extend(
+            [
+                engine_root / ".venv" / "bin",
+                engine_root / "venv" / "bin",
+                (
+                    Path.home()
+                    / ".local"
+                    / "share"
+                    / "AIpet-Murasame"
+                    / "gpt-sovits"
+                    / "env"
+                    / "bin"
+                ),
+            ]
+        )
+    directories.append(engine_root)
+    for directory in directories:
         for name in names:
             candidate = directory / name
             if candidate.is_file():

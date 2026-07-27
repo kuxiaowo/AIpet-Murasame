@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ctypes
+import sys
 import textwrap
 import time
 import uuid
@@ -37,6 +37,7 @@ from tool.storage import HistoryStore, ScreenMemoryEntry, ScreenMemoryStore
 from tool.time_utils import build_time_context
 from tool.windowing import (
     ensure_window_topmost,
+    get_system_idle_seconds,
     native_topmost_available,
 )
 
@@ -58,29 +59,8 @@ def wrap_text(text: str, width: int = 10) -> str:
     )
 
 
-class LastInputInfo(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", ctypes.c_uint),
-        ("dwTime", ctypes.c_uint),
-    ]
-
-
 def get_idle_seconds() -> float:
-    """Return global input idle time on Windows; return zero elsewhere."""
-
-    try:
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-    except AttributeError:
-        return 0.0
-
-    info = LastInputInfo()
-    info.cbSize = ctypes.sizeof(LastInputInfo)
-    if not user32.GetLastInputInfo(ctypes.byref(info)):
-        return 0.0
-
-    idle_milliseconds = (kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF
-    return idle_milliseconds / 1000.0
+    return get_system_idle_seconds()
 
 
 class Murasame(QLabel):
@@ -90,6 +70,7 @@ class Murasame(QLabel):
         super().__init__()
         self.settings = settings.model_copy(deep=True)
         self.pet_name = "丛雨"
+        self._native_overlay_dir = get_cache_dir() / "native_overlay"
 
         self.full_text = ""
         self.display_text = ""
@@ -164,6 +145,8 @@ class Murasame(QLabel):
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        if sys.platform == "darwin":
+            self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setAttribute(Qt.WA_InputMethodEnabled, True)
         self.setMouseTracking(True)
@@ -697,6 +680,7 @@ class Murasame(QLabel):
         )
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
+        self._save_native_overlay_portrait(pixmap)
         if previous_geometry is not None and screen is not None:
             available = screen.availableGeometry()
             x = previous_geometry.center().x() - pixmap.width() // 2
@@ -807,6 +791,7 @@ class Murasame(QLabel):
         scaled = self._scale_portrait_pixmap(source, screen)
         self.setPixmap(scaled)
         self.resize(scaled.size())
+        self._save_native_overlay_portrait(scaled)
 
         available = screen.availableGeometry()
         x = old_geometry.center().x() - scaled.width() // 2
@@ -856,9 +841,11 @@ class Murasame(QLabel):
         self.typing_timer.stop()
         if typing:
             self.display_text = self.typing_prefix
+            self._save_native_overlay_text()
             self.typing_timer.start()
         else:
             self.display_text = self.typing_prefix + self.full_text
+            self._save_native_overlay_text()
             self.update()
 
     def _start_thinking_animation(self) -> None:
@@ -875,6 +862,7 @@ class Murasame(QLabel):
         self.full_text = "." * self._thinking_dot_count
         self.typing_prefix = f"【{self.pet_name}】\n"
         self.display_text = self.typing_prefix + self.full_text
+        self._save_native_overlay_text()
         self.update()
 
     def _typing_step(self) -> None:
@@ -885,6 +873,7 @@ class Murasame(QLabel):
         self.display_text = (
             self.typing_prefix + self.full_text[: self.typing_index]
         )
+        self._save_native_overlay_text()
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -943,6 +932,7 @@ class Murasame(QLabel):
                     f"【{self.settings.character.user_name}】\n  「...」"
                 )
                 self.setFocus()
+                self._save_native_overlay_text()
                 self.update()
             else:
                 self.touch_head = False
@@ -1041,7 +1031,36 @@ class Murasame(QLabel):
         self.display_text = (
             f"【{self.settings.character.user_name}】\n  「{content}」"
         )
+        self._save_native_overlay_text()
         self.update()
+
+    @property
+    def native_overlay_directory(self) -> Path:
+        return self._native_overlay_dir
+
+    def _save_native_overlay_portrait(self, pixmap: QPixmap) -> None:
+        if sys.platform != "darwin":
+            return
+        try:
+            self._native_overlay_dir.mkdir(parents=True, exist_ok=True)
+            temporary = self._native_overlay_dir / "portrait.tmp.png"
+            target = self._native_overlay_dir / "portrait.png"
+            if pixmap.save(str(temporary), "PNG"):
+                temporary.replace(target)
+        except OSError:
+            pass
+
+    def _save_native_overlay_text(self) -> None:
+        if sys.platform != "darwin":
+            return
+        try:
+            self._native_overlay_dir.mkdir(parents=True, exist_ok=True)
+            temporary = self._native_overlay_dir / "text.tmp"
+            target = self._native_overlay_dir / "text.txt"
+            temporary.write_text(self.display_text or "", encoding="utf-8")
+            temporary.replace(target)
+        except OSError:
+            pass
 
     def clear_history(self) -> None:
         self._cancel_active_jobs()

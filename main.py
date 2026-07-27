@@ -28,6 +28,7 @@ from tool.runtime_logging import (
     get_logger,
     shutdown_console_logging,
 )
+from tool.macos_overlay import MacOSFullscreenOverlay
 from ui.settings_dialog import SettingsDialog
 from tool.tts_service import shutdown_tts_service
 
@@ -153,9 +154,8 @@ def configure_voice_trigger(
 ):
     if not settings.stt.enabled:
         return None
-
     try:
-        from tool.voice_trigger import CapslockVoiceTrigger
+        from tool.voice_trigger import CapslockVoiceTrigger, MacOSHotkeyVoiceTrigger
     except ImportError as exc:
         logger.exception("语音输入模块加载失败")
         tray_icon.showMessage(
@@ -189,7 +189,10 @@ def configure_voice_trigger(
         )
     )
 
-    trigger = CapslockVoiceTrigger(
+    trigger_class = (
+        MacOSHotkeyVoiceTrigger if sys.platform == "darwin" else CapslockVoiceTrigger
+    )
+    trigger = trigger_class(
         on_text_ready=bridge.text_ready.emit,
         hold_seconds=2.0,
         on_record_start=bridge.record_start.emit,
@@ -267,6 +270,8 @@ def main() -> int:
         return 1
     pet.show()
     move_pet_to_configured_screen(app, pet, settings)
+    macos_overlay = MacOSFullscreenOverlay(app, pet)
+    macos_overlay.start()
 
     tray_icon = QSystemTrayIcon(icon, app)
     tray_menu = QMenu()
@@ -423,6 +428,7 @@ def main() -> int:
 
     def shutdown() -> None:
         logger.info("AIpet 正在退出")
+        macos_overlay.stop()
         if voice_trigger is not None:
             voice_trigger.stop()
         persist_pet_settings()

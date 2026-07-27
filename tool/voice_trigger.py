@@ -268,4 +268,116 @@ class CapslockVoiceTrigger:
         t.start()
 
 
-__all__ = ["CapslockVoiceTrigger"]
+class MacOSHotkeyVoiceTrigger(CapslockVoiceTrigger):
+    """macOS native Option+V hold-to-record trigger.
+
+    This uses a listen-only Quartz event tap instead of pynput.  In particular,
+    it avoids the Caps Lock/input-source path that can crash macOS's input
+    method service.
+    """
+
+    _KEYCODE_V = 9
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._hotkey_pressed = False
+        self._event_tap = None
+        self._run_loop = None
+        self._event_thread: Optional[threading.Thread] = None
+        self._event_callback = None
+
+    def start(self) -> None:
+        if self._event_thread is not None:
+            return
+        try:
+            import Quartz
+        except ImportError as exc:
+            raise RuntimeError("macOS 录音快捷键需要 pyobjc-framework-Quartz") from exc
+
+        mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown) | Quartz.CGEventMaskBit(
+            Quartz.kCGEventKeyUp
+        )
+
+        def callback(proxy, event_type, event, refcon):
+            keycode = Quartz.CGEventGetIntegerValueField(
+                event, Quartz.kCGKeyboardEventKeycode
+            )
+            flags = Quartz.CGEventGetFlags(event)
+            modifiers = Quartz.kCGEventFlagMaskAlternate
+            if keycode == self._KEYCODE_V:
+                if event_type == Quartz.kCGEventKeyDown:
+                    if flags & modifiers == modifiers:
+                        self._on_hotkey_press()
+                elif event_type == Quartz.kCGEventKeyUp:
+                    self._on_hotkey_release()
+            return event
+
+        self._event_callback = callback
+        self._event_tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            callback,
+            None,
+        )
+        if self._event_tap is None:
+            self._event_callback = None
+            raise RuntimeError(
+                "无法创建 macOS 全局快捷键监听，请在系统设置中允许本程序使用辅助功能"
+            )
+
+        def run_events():
+            self._run_loop = Quartz.CFRunLoopGetCurrent()
+            source = Quartz.CFMachPortCreateRunLoopSource(None, self._event_tap, 0)
+            Quartz.CFRunLoopAddSource(
+                self._run_loop, source, Quartz.kCFRunLoopCommonModes
+            )
+            Quartz.CGEventTapEnable(self._event_tap, True)
+            logger.info("macOS Option+V 语音触发已启动")
+            Quartz.CFRunLoopRun()
+
+        self._event_thread = threading.Thread(target=run_events, daemon=True)
+        self._event_thread.start()
+
+    def stop(self) -> None:
+        super().stop()
+        self._hotkey_pressed = False
+        if self._run_loop is not None:
+            try:
+                import Quartz
+
+                Quartz.CFRunLoopStop(self._run_loop)
+            except Exception:
+                logger.exception("停止 macOS 快捷键监听失败")
+        thread = self._event_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        self._event_thread = None
+        self._run_loop = None
+        self._event_tap = None
+        self._event_callback = None
+
+    def _on_hotkey_press(self) -> None:
+        if self._hotkey_pressed:
+            return
+        self._hotkey_pressed = True
+        self._caps_pressed = True
+        self._hold_timer = threading.Timer(self.hold_seconds, self._maybe_start_record)
+        self._hold_timer.daemon = True
+        self._hold_timer.start()
+
+    def _on_hotkey_release(self) -> None:
+        if not self._hotkey_pressed:
+            return
+        self._hotkey_pressed = False
+        self._caps_pressed = False
+        if self._hold_timer is not None:
+            self._hold_timer.cancel()
+            self._hold_timer = None
+        if self._recording:
+            self._recording = False
+            self._handle_record_done()
+
+
+__all__ = ["CapslockVoiceTrigger", "MacOSHotkeyVoiceTrigger"]
