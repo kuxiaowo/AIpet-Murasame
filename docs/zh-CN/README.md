@@ -31,8 +31,7 @@
 > 并补充 Apple Silicon、全屏 Space、macOS 输入法和本地 TTS 等原生适配。
 
 如果你喜欢让丛雨陪在桌面上，就请给项目一颗
-[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers)，或去
-[B站](https://space.bilibili.com/1067030066)
+[Star ⭐](https://github.com/kuxiaowo/AIpet-Murasame/stargazers)
 点个关注吧～丛雨会很开心，维护者也会更有动力继续更新的！
 
 ## 项目简介
@@ -44,7 +43,7 @@ faster-whisper 语音输入组合在一起，保留原作者 V2 的界面和操�
 
 项目基于
 [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
-继续开发。演示、部署视频和项目动态见
+继续开发。的演示、部署视频和项目动态见
 [哔哩哔哩主页](https://space.bilibili.com/1067030066)。
 
 ## 主要功能
