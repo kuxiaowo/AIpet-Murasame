@@ -848,6 +848,15 @@ class SettingsDialog(QDialog):
         form.addRow(label, field)
         self._form_labels.setdefault(key, []).append(label)
 
+    def _set_form_labels_enabled(
+        self,
+        keys: tuple[str, ...],
+        enabled: bool,
+    ) -> None:
+        for key in keys:
+            for label in self._form_labels.get(key, ()):
+                label.setEnabled(enabled)
+
     def _build_models_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -1983,27 +1992,42 @@ class SettingsDialog(QDialog):
     def _set_tts_path_controls(self, *, downloading: bool) -> None:
         enabled = self.tts_enabled.isChecked()
         autodl = self.tts_backend.currentData() == "autodl"
-        self.tts_backend.setEnabled(enabled and not downloading)
-        self.tts_url.setEnabled(enabled and not autodl and not downloading)
-        self.tts_engine_root.setEnabled(
-            enabled and not autodl and not downloading
-        )
-        self.tts_engine_browse.setEnabled(
-            enabled and not autodl and not downloading
-        )
-        self.tts_model_dir.setEnabled(
-            enabled and not autodl and not downloading
-        )
-        self.tts_model_browse.setEnabled(
-            enabled and not autodl and not downloading
-        )
+        controls_enabled = enabled and not downloading
+        local_enabled = controls_enabled and not autodl
+        autodl_enabled = controls_enabled and autodl
+
+        self.tts_backend.setEnabled(controls_enabled)
+        self.tts_timeout.setEnabled(controls_enabled)
+        self.tts_url.setEnabled(local_enabled)
+        self.tts_engine_root.setEnabled(local_enabled)
+        self.tts_engine_browse.setEnabled(local_enabled)
+        self.tts_model_dir.setEnabled(local_enabled)
+        self.tts_model_browse.setEnabled(local_enabled)
         for field in (
             self.tts_autodl_ssh_command,
             self.tts_autodl_password,
             self.tts_autodl_remote_command,
             self.tts_autodl_reference_root,
         ):
-            field.setEnabled(enabled and autodl and not downloading)
+            field.setEnabled(autodl_enabled)
+
+        self._set_form_labels_enabled(
+            ("tts_backend", "tts_timeout"),
+            controls_enabled,
+        )
+        self._set_form_labels_enabled(
+            ("tts_endpoint", "tts_engine_root", "tts_model_dir"),
+            local_enabled,
+        )
+        self._set_form_labels_enabled(
+            (
+                "tts_autodl_ssh_command",
+                "tts_autodl_password",
+                "tts_autodl_remote_command",
+                "tts_autodl_reference_root",
+            ),
+            autodl_enabled,
+        )
 
     def _update_tts_state(self) -> None:
         if not hasattr(self, "tts_status"):

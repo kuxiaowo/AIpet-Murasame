@@ -145,6 +145,46 @@ class UISmokeTests(unittest.TestCase):
                 notify_if_busy=False,
             )
 
+    def test_disabled_tts_greys_out_all_options(self) -> None:
+        settings = AppSettings()
+        settings.tts.enabled = False
+        dialog = SettingsDialog(settings)
+        try:
+            self.assertTrue(dialog.tts_enabled.isEnabled())
+            for field in (
+                dialog.tts_backend,
+                dialog.tts_url,
+                dialog.tts_timeout,
+                dialog.tts_engine_root,
+                dialog.tts_engine_browse,
+                dialog.tts_model_dir,
+                dialog.tts_model_browse,
+                dialog.tts_autodl_ssh_command,
+                dialog.tts_autodl_password,
+                dialog.tts_autodl_remote_command,
+                dialog.tts_autodl_reference_root,
+                dialog.tts_service_button,
+                dialog.tts_download_button,
+            ):
+                self.assertFalse(field.isEnabled(), field.objectName())
+
+            tts_label_keys = (
+                "tts_backend",
+                "tts_endpoint",
+                "tts_timeout",
+                "tts_engine_root",
+                "tts_model_dir",
+                "tts_autodl_ssh_command",
+                "tts_autodl_password",
+                "tts_autodl_remote_command",
+                "tts_autodl_reference_root",
+            )
+            for key in tts_label_keys:
+                for label in dialog._form_labels[key]:
+                    self.assertFalse(label.isEnabled(), key)
+        finally:
+            dialog.close()
+
     def test_models_tab_does_not_compress_form_rows(self) -> None:
         previous_font = self.app.font()
         try:
