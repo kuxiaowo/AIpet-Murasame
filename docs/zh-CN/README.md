@@ -182,8 +182,15 @@ python -m unittest discover -s tests -v
 .\packaging\build_exe.ps1 -SkipDependencyInstall
 ```
 
-跳过依赖安装时，构建环境中必须已有 `cublas64_12.dll` 和
-`cublasLt64_12.dll`；也可以通过 `-CudaDllDirectory` 指定它们所在的目录。
+跳过依赖安装时，构建环境中必须已有 CUDA 12 cuBLAS、cuDNN 9 和 NVRTC
+运行库。如果它们不在构建环境的 `Library\bin` 中，可以分别指定目录：
+
+```powershell
+.\packaging\build_exe.ps1 -SkipDependencyInstall `
+  -CudaDllDirectory C:\path\to\cublas\bin `
+  -CudnnDllDirectory C:\path\to\cudnn\bin `
+  -CudaNvrtcDllDirectory C:\path\to\nvrtc\bin
+```
 
 主要目录：
 

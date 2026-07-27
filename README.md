@@ -191,8 +191,15 @@ Reuse the installed build dependencies with:
 ```
 
 When skipping dependency installation, the build environment must already
-contain `cublas64_12.dll` and `cublasLt64_12.dll`. Alternatively, provide their
-directory with `-CudaDllDirectory`.
+contain the CUDA 12 cuBLAS, cuDNN 9, and NVRTC DLLs. If they are outside the
+build environment's `Library\bin`, provide their locations with:
+
+```powershell
+.\packaging\build_exe.ps1 -SkipDependencyInstall `
+  -CudaDllDirectory C:\path\to\cublas\bin `
+  -CudnnDllDirectory C:\path\to\cudnn\bin `
+  -CudaNvrtcDllDirectory C:\path\to\nvrtc\bin
+```
 
 Main project areas:
 

@@ -31,14 +31,41 @@ $cudnnDllNames = @(
 )
 $nvrtcDllNames = @("nvrtc64_120_0.dll")
 
-if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    throw "Conda was not found on PATH."
+function Resolve-CondaExecutable {
+    $command = Get-Command conda.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    $legacyCommand = Get-Command conda -ErrorAction SilentlyContinue
+    if ($legacyCommand -and $legacyCommand.Source) {
+        $legacyDirectory = Split-Path -Parent $legacyCommand.Source
+        $candidateRoots = @(
+            $legacyDirectory
+            Split-Path -Parent $legacyDirectory
+            Split-Path -Parent (
+                Split-Path -Parent $legacyDirectory
+            )
+        )
+        foreach ($root in $candidateRoots) {
+            $candidate = Join-Path $root "Scripts\conda.exe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return $candidate
+            }
+        }
+    }
+
+    throw "conda.exe was not found on PATH or beside the Conda installation."
 }
+
+$condaExecutable = Resolve-CondaExecutable
 
 function Get-CondaEnvironmentPath {
     param([string]$Name)
 
-    $environmentList = (& conda env list --json | ConvertFrom-Json).envs
+    $environmentList = (
+        & $condaExecutable env list --json | ConvertFrom-Json
+    ).envs
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to list Conda environments."
     }
@@ -54,7 +81,7 @@ if ($LASTEXITCODE -ne 0) {
 
 if (-not $buildEnvironmentPath) {
     Write-Host "Creating Conda environment: $EnvironmentName"
-    & conda create -n $EnvironmentName python=3.10 pip -y
+    & $condaExecutable create -n $EnvironmentName python=3.10 pip -y
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to create Conda environment: $EnvironmentName"
     }
@@ -66,7 +93,7 @@ if (-not $buildEnvironmentPath) {
 
 if (-not $SkipDependencyInstall) {
     Write-Host "Installing build and Whisper dependencies..."
-    & conda run -n $EnvironmentName python -m pip install `
+    & $condaExecutable run -n $EnvironmentName python -m pip install `
         --disable-pip-version-check `
         --no-input `
         -r $requirementsPath
@@ -80,7 +107,7 @@ if (-not $SkipDependencyInstall) {
         -not $CudaNvrtcDllDirectory
     ) {
         Write-Host "Installing the CUDA 12 cuBLAS/cuDNN 9 runtime..."
-        & conda install -n $EnvironmentName -c conda-forge `
+        & $condaExecutable install -n $EnvironmentName -c conda-forge `
             "libcublas>=12,<13" `
             "cudnn>=9,<10" `
             "cuda-nvrtc>=12,<13" `
@@ -131,7 +158,7 @@ if installed:
     sys.exit(2)
 "@
 
-& conda run -n $EnvironmentName python -c $dependencyCheck
+& $condaExecutable run -n $EnvironmentName python -c $dependencyCheck
 if ($LASTEXITCODE -ne 0) {
     throw "The build environment is incomplete or contains heavyweight extras."
 }
@@ -260,7 +287,8 @@ function Invoke-AIpetBuild {
         $env:AIPET_CUDA_NVRTC_DLL_DIR = $CudaNvrtcDllDirectory
         Push-Location $projectRoot
         try {
-            & conda run -n $EnvironmentName python -m PyInstaller `
+            & $condaExecutable run -n $EnvironmentName `
+                python -m PyInstaller `
                 --noconfirm `
                 --clean `
                 --distpath $distPath `
