@@ -143,6 +143,7 @@ class CapslockVoiceTrigger:
         self._caps_pressed = False
         self._press_time: Optional[float] = None
         self._recording = False
+        self._recognizing = False
         self._hold_timer: Optional[threading.Timer] = None
 
         self._recorder = AudioRecorder(input_device=input_device)
@@ -166,6 +167,7 @@ class CapslockVoiceTrigger:
             self._hold_timer = None
         self._caps_pressed = False
         self._recording = False
+        self._recognizing = False
         self._recorder.close()
         if self._listener is not None:
             self._listener.stop()
@@ -177,6 +179,9 @@ class CapslockVoiceTrigger:
             if key != keyboard.Key.caps_lock:
                 return
         except Exception:
+            return
+        if self._recognizing:
+            logger.info("语音识别进行中，忽略新的录音请求")
             return
         if self._caps_pressed:
             return
@@ -224,6 +229,7 @@ class CapslockVoiceTrigger:
 
     # 录音结束 -> 保存 WAV -> STT -> 回调
     def _handle_record_done(self) -> None:
+        self._recognizing = True
         recording_dir = get_cache_dir() / "recordings"
         wav_path = str(recording_dir / f"{uuid4().hex}.wav")
 
@@ -234,6 +240,9 @@ class CapslockVoiceTrigger:
             except Exception as exc:
                 logger.exception("录音结束回调失败")
         if not saved:
+            self._recognizing = False
+            if self.on_error:
+                self.on_error("没有录到有效音频，请检查麦克风后重试。")
             return
 
         def _stt_and_callback():
@@ -247,6 +256,8 @@ class CapslockVoiceTrigger:
                 text = (text or "").strip()
                 if not text:
                     logger.warning("语音识别结果为空")
+                    if self.on_error:
+                        self.on_error("没有识别到有效语音，请重试。")
                     return
                 logger.info("语音识别完成（内容不写入日志）")
                 try:
@@ -258,6 +269,7 @@ class CapslockVoiceTrigger:
                 if self.on_error:
                     self.on_error(str(exc))
             finally:
+                self._recognizing = False
                 try:
                     Path(saved).unlink(missing_ok=True)
                     logger.info("语音临时文件已删除")
@@ -265,7 +277,14 @@ class CapslockVoiceTrigger:
                     logger.warning("删除语音临时文件失败：%s", exc)
 
         t = threading.Thread(target=_stt_and_callback, daemon=True)
-        t.start()
+        try:
+            t.start()
+        except Exception as exc:
+            self._recognizing = False
+            Path(saved).unlink(missing_ok=True)
+            logger.exception("启动语音识别线程失败")
+            if self.on_error:
+                self.on_error(str(exc))
 
 
 __all__ = ["CapslockVoiceTrigger"]

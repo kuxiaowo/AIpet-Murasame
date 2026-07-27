@@ -188,6 +188,13 @@ def configure_voice_trigger(
             QSystemTrayIcon.Warning,
         )
     )
+    bridge.error.connect(
+        lambda _message: pet.show_text(
+            ui_text(settings, "speech_failed"),
+            typing=False,
+            speaker_name=settings.character.user_name,
+        )
+    )
 
     trigger = CapslockVoiceTrigger(
         on_text_ready=bridge.text_ready.emit,
@@ -425,6 +432,12 @@ def main() -> int:
         logger.info("AIpet 正在退出")
         if voice_trigger is not None:
             voice_trigger.stop()
+        try:
+            from tool.stt import clear_model_cache
+
+            clear_model_cache()
+        except ImportError:
+            pass
         persist_pet_settings()
         pet.shutdown()
         shutdown_tts_service()
