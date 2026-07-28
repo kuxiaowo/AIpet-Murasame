@@ -172,6 +172,9 @@ Base64 媒体替换成元数据。
 
 ## 开发
 
+项目将共享业务逻辑与操作系统集成分开维护。添加新平台支持前，请先阅读
+[平台适配层架构](../architecture/platform-adapters.md)。
+
 在 `aipet` Conda 环境中运行测试：
 
 ```powershell

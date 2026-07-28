@@ -1,18 +1,9 @@
+"""Compatibility alias for :mod:`aipet.core.network`."""
+
 from __future__ import annotations
 
-import ipaddress
-from urllib.parse import urlparse
+import sys
 
+from aipet.core import network as _implementation
 
-def is_loopback_url(url: str) -> bool:
-    """Return whether a URL points to localhost or a loopback IP."""
-
-    host = urlparse(url).hostname
-    if not host:
-        return False
-    if host.lower() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+sys.modules[__name__] = _implementation

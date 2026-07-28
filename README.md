@@ -181,6 +181,11 @@ Base64 media with metadata.
 
 ## Development
 
+The codebase keeps shared application logic separate from operating-system
+integration. See the
+[platform adapter architecture](docs/architecture/platform-adapters.md)
+before adding support for another platform.
+
 Run the test suite in the `aipet` Conda environment:
 
 ```powershell
