@@ -11,10 +11,10 @@ from tool.config import get_user_data_dir
 
 class ScreenMemoryEntry(BaseModel):
     occurred_at: str = Field(max_length=40)
-    software: str = Field(default="", max_length=80)
-    activity: str = Field(default="", max_length=240)
-    topic: str = Field(default="", max_length=240)
-    change_summary: str = Field(min_length=1, max_length=240)
+    software: str = Field(default="", max_length=120)
+    activity: str = Field(default="", max_length=1_200)
+    topic: str = Field(default="", max_length=500)
+    change_summary: str = Field(min_length=1, max_length=1_200)
 
     @classmethod
     def now(cls, **values) -> "ScreenMemoryEntry":

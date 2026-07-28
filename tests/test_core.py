@@ -314,9 +314,16 @@ class CoreTests(unittest.TestCase):
         self.assertIn("自己在屏幕上的形象", prompt)
         self.assertIn("不要猜测画面中人物的姓名", prompt)
         self.assertIn("游戏中切换地点", prompt)
+        self.assertIn("人物动作", prompt)
+        self.assertIn("不能仅因软件名称、地点或总体模式未改变而忽略", prompt)
+        self.assertIn("activity 都必须完整描述当前画面", prompt)
+        self.assertNotIn("同一任务或游戏状态的普通进展都必须为 false", prompt)
         self.assertNotIn("纯黑色矩形", prompt)
         self.assertNotIn("change_type", prompt)
         properties = ScreenAnalysis.model_json_schema()["properties"]
+        self.assertEqual(properties["activity"]["maxLength"], 1_200)
+        self.assertEqual(properties["topic"]["maxLength"], 500)
+        self.assertEqual(properties["change_summary"]["maxLength"], 1_200)
         self.assertNotIn("recognized_characters", properties)
         self.assertNotIn("murasame_visible", properties)
 
@@ -1024,7 +1031,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(call.kwargs["json"]["model"], "vision-model")
         self.assertEqual(
             call.kwargs["json"]["max_completion_tokens"],
-            600,
+            1200,
         )
         self.assertEqual(
             call.kwargs["headers"]["Authorization"],
