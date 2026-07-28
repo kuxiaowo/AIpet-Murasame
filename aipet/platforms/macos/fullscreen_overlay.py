@@ -29,7 +29,12 @@ class FullscreenOverlay:
     @staticmethod
     def _binary() -> Path:
         if getattr(sys, "frozen", False):
-            return Path(sys.executable).resolve().parents[1] / "Resources" / "aipet-fullscreen-overlay"
+            return (
+                Path(sys.executable).resolve().parents[1]
+                / "Resources"
+                / "aipet-fullscreen-overlay"
+                / "aipet-fullscreen-overlay"
+            )
         return Path(__file__).resolve().parents[3] / "build" / "macos" / "aipet-fullscreen-overlay"
 
     def start(self) -> bool:

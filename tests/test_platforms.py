@@ -209,10 +209,24 @@ class PlatformArchitectureTests(unittest.TestCase):
     def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
         integration = create_macos_runtime().windowing
         widget = Mock()
+        widget.winId.return_value = 123
         from PyQt5.QtCore import Qt
 
-        with patch.object(integration, "_uses_cocoa", return_value=False):
+        app = Mock()
+        timer = Mock()
+        with (
+            patch(
+                "aipet.platforms.macos.runtime.windowing.configure_native_window"
+            ),
+            patch(
+                "aipet.platforms.macos.runtime.windowing.configure_qt_windows_for_spaces"
+            ),
+            patch("PyQt5.QtWidgets.QApplication.instance", return_value=app),
+            patch("PyQt5.QtCore.QTimer", return_value=timer) as timer_class,
+        ):
             integration.configure_widget(widget)
+
+        self.assertEqual(timer_class.singleShot.call_count, 2)
 
         widget.setAttribute.assert_any_call(
             Qt.WA_MacAlwaysShowToolWindow,
