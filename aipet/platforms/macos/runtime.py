@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from aipet.platforms.contracts import (
-    CredentialError,
     ManagedArchive,
     PlatformCapabilities,
     PlatformNotImplementedError,
     PlatformRuntime,
 )
+from aipet.platforms.macos.credentials import KeychainStore
 
 
 class MacOSPathPolicy:
@@ -76,22 +76,6 @@ class MacOSInputIntegration:
         del kwargs
         raise PlatformNotImplementedError(
             "The macOS global voice trigger has not been implemented yet."
-        )
-
-
-class MacOSCredentialStore:
-    def protect(self, secret: str) -> str:
-        if not secret:
-            return ""
-        raise CredentialError(
-            "macOS Keychain storage has not been implemented yet."
-        )
-
-    def unprotect(self, token: str) -> str:
-        if not token:
-            return ""
-        raise CredentialError(
-            "macOS Keychain storage has not been implemented yet."
         )
 
 
@@ -199,7 +183,7 @@ def create_runtime() -> PlatformRuntime:
         capabilities=PlatformCapabilities(
             window_topmost=False,
             global_voice_trigger=False,
-            secure_credentials=False,
+            secure_credentials=True,
             log_viewer=True,
             child_process_guard=False,
             managed_archives=False,
@@ -207,7 +191,7 @@ def create_runtime() -> PlatformRuntime:
         paths=MacOSPathPolicy(),
         windowing=MacOSWindowIntegration(),
         input=MacOSInputIntegration(),
-        credentials=MacOSCredentialStore(),
+        credentials=KeychainStore(),
         processes=MacOSProcessPolicy(),
         archives=MacOSArchivePolicy(),
         audio=MacOSAudioPolicy(),

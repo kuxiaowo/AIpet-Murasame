@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 from aipet.core.config import AppSettings, TTSSettings, load_settings, save_settings
 from aipet.platforms import CredentialError, get_platform_runtime
 from aipet.platforms.macos import create_runtime as create_macos_runtime
+from aipet.platforms.macos.credentials import KeychainStore
 from aipet.platforms.registry import reset_platform_runtime_for_tests
 from aipet.platforms.windows import create_runtime as create_windows_runtime
 from aipet.platforms.windows.processes import WindowsKillOnCloseJob
@@ -119,7 +120,7 @@ class PlatformArchitectureTests(unittest.TestCase):
 
         self.assertEqual(runtime.platform_id, "macos")
         self.assertFalse(runtime.capabilities.window_topmost)
-        self.assertFalse(runtime.capabilities.secure_credentials)
+        self.assertTrue(runtime.capabilities.secure_credentials)
         self.assertTrue(callable(runtime.paths.user_data_dir))
         self.assertTrue(callable(runtime.windowing.ensure_topmost))
         self.assertTrue(callable(runtime.input.create_voice_trigger))
@@ -142,11 +143,20 @@ class PlatformArchitectureTests(unittest.TestCase):
         ):
             self.assertEqual(runtime.input.idle_seconds(), 3.0)
 
-    def test_macos_credentials_fail_closed_until_keychain_support_exists(
-        self,
-    ) -> None:
-        with self.assertRaises(CredentialError):
-            create_macos_runtime().credentials.protect("not-a-real-secret")
+    @patch("aipet.platforms.macos.runtime.KeychainStore")
+    def test_macos_uses_keychain_credentials(self, keychain_store) -> None:
+        runtime = create_macos_runtime()
+        self.assertIs(runtime.credentials, keychain_store.return_value)
+
+    def test_macos_keychain_adds_missing_password(self) -> None:
+        store = KeychainStore.__new__(KeychainStore)
+        store._security = Mock()
+        store._security.SecKeychainAddGenericPassword.return_value = 0
+        store._core_foundation = Mock()
+        with patch.object(store, "_find", return_value=-25300):
+            token = store.protect("secret")
+        self.assertEqual(token, "macos-keychain:autodl")
+        store._security.SecKeychainAddGenericPassword.assert_called_once()
 
     def test_configuration_round_trip_preserves_autodl_fields(self) -> None:
         original = AppSettings(
