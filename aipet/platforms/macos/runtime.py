@@ -118,6 +118,7 @@ class MacOSProcessPolicy:
     ) -> Sequence[Path]:
         return (
             engine_root / ".venv" / "bin" / "python",
+            engine_root.parent / ".gpt-sovits-venv" / "bin" / "python",
             engine_root / "runtime" / "bin" / "python",
             engine_root / "bin" / "python",
             engine_root / "python",

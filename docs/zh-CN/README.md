@@ -57,6 +57,12 @@ AIpet 是一款面向 Windows 的丛雨 AI 桌宠。它将透明 PyQt5 角色窗
 
 项目主要支持 Windows 10 和 Windows 11。
 
+### macOS 适配
+
+使用 M 系列芯片的 Mac 可参阅
+[macOS 适配说明](../../aipet/platforms/macos/README.md)。macOS 平台代码与
+Windows 行为相互隔离，目前支持源码运行和 DMG 打包。
+
 ### 直接运行 Windows EXE
 
 从项目 [Releases 页面](https://github.com/kuxiaowo/AIpet-Murasame/releases)
@@ -221,14 +227,15 @@ python -m unittest discover -s tests -v
 ```text
 aipet\core\       共享后端、配置、存储、语音和后台任务
 aipet\ui\         共享桌宠与中英双语设置窗口
-aipet\platforms\  平台接口、Windows 实现和 macOS 占位
+aipet\platforms\  平台接口与各平台实现
 packaging\         可重复执行的 PyInstaller 构建
 tests\             单元测试、平台契约测试和 UI 冒烟测试
 ```
 
 ## 已知限制
 
-- 桌面行为目前主要针对 Windows 设计和测试。
+- Windows 仍是主要发行平台；macOS 适配面向 macOS 13 或更高版本的
+  M 系列芯片 Mac。
 - 独占全屏或受反作弊保护的画面仍可能覆盖桌宠。
 - 本地对话、视觉与 TTS 的速度取决于模型和硬件。
 - 角色立绘与语音素材的使用条款可能不同于源代码许可证。

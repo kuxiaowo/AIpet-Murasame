@@ -183,6 +183,17 @@ class PlatformArchitectureTests(unittest.TestCase):
 
         self.assertEqual(download_manager.TTS_ENGINE_ARCHIVE, "")
 
+    def test_macos_tts_runtime_accepts_sibling_virtualenv(self) -> None:
+        root = Path("/tmp/models/tts/GPT-SoVITS")
+        candidates = (
+            create_macos_runtime()
+            .processes.runtime_python_candidates(root)
+        )
+        self.assertIn(
+            root.parent / ".gpt-sovits-venv" / "bin" / "python",
+            candidates,
+        )
+
     def test_configuration_round_trip_preserves_autodl_fields(self) -> None:
         original = AppSettings(
             tts=TTSSettings(
