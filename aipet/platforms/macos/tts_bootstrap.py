@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import ssl
 import stat
@@ -53,6 +54,7 @@ class MacOSTTSBootstrap:
         )
         self._install_dependencies(engine_root, virtualenv, progress)
         self._install_base_assets(engine_root, progress)
+        self._configure_cpu(engine_root, progress)
 
     @staticmethod
     def _uv() -> Path:
@@ -267,6 +269,24 @@ class MacOSTTSBootstrap:
             "gsv-v4-pretrained/vocoder.pth",
         )
         return all((engine_root / path).is_file() for path in required)
+
+    @staticmethod
+    def _configure_cpu(engine_root: Path, progress: Callable[[str], None]) -> None:
+        config = engine_root / "GPT_SoVITS/configs/tts_infer.yaml"
+        if not config.is_file():
+            raise RuntimeError("GPT-SoVITS inference configuration is missing.")
+        content = config.read_text(encoding="utf-8")
+        match = re.search(r"(?ms)^custom:\n.*?(?=^[^ \t].*?:|\Z)", content)
+        if match is None:
+            raise RuntimeError("GPT-SoVITS custom inference configuration is missing.")
+        custom = match.group(0)
+        configured = re.sub(r"(?m)^  device:.*$", "  device: cpu", custom, count=1)
+        configured = re.sub(r"(?m)^  is_half:.*$", "  is_half: false", configured, count=1)
+        if configured == custom:
+            progress("GPT-SoVITS is already configured for macOS CPU")
+            return
+        config.write_text(content[:match.start()] + configured + content[match.end():], encoding="utf-8")
+        progress("Configured GPT-SoVITS for macOS CPU")
 
     @staticmethod
     def _download(

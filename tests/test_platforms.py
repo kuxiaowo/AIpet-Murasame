@@ -229,6 +229,23 @@ class PlatformArchitectureTests(unittest.TestCase):
 
             self.assertTrue(MacOSTTSBootstrap._base_assets_ready(root))
 
+    def test_macos_tts_bootstrap_configures_custom_profile_for_cpu(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "GPT_SoVITS/configs/tts_infer.yaml"
+            config.parent.mkdir(parents=True)
+            config.write_text(
+                "custom:\n  device: mps\n  is_half: true\nv2:\n  is_half: false\n",
+                encoding="utf-8",
+            )
+
+            MacOSTTSBootstrap._configure_cpu(root, lambda _status: None)
+
+            self.assertEqual(
+                config.read_text(encoding="utf-8"),
+                "custom:\n  device: cpu\n  is_half: false\nv2:\n  is_half: false\n",
+            )
+
     def test_macos_tts_bootstrap_uses_certifi_for_downloads(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             response = MagicMock()
