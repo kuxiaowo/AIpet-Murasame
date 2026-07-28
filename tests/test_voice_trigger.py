@@ -36,12 +36,17 @@ class VoiceTriggerTests(unittest.TestCase):
         trigger = OptionVVoiceTrigger(on_text_ready=Mock())
         trigger.press = Mock()
         trigger.release = Mock()
-        v_key = keyboard.KeyCode.from_vk(9)
+        option_v_down = Mock()
+        option_v_down.keyCode.return_value = 9
+        option_v_down.type.return_value = 10
+        option_v_down.modifierFlags.return_value = 524288
+        v_up = Mock()
+        v_up.keyCode.return_value = 9
+        v_up.type.return_value = 11
 
-        trigger._on_press(keyboard.Key.alt)
-        trigger._on_press(v_key)
+        trigger._handle_event(option_v_down)
         trigger.press.assert_called_once_with()
-        trigger._on_release(v_key)
+        trigger._handle_event(v_up)
         trigger.release.assert_called_once_with()
 
     def test_missing_audio_reports_error_and_clears_recognizing_state(

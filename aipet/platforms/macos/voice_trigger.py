@@ -2,68 +2,65 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-from pynput import keyboard
+from AppKit import (
+    NSEvent,
+    NSEventMaskKeyDown,
+    NSEventMaskKeyUp,
+    NSEventModifierFlagOption,
+    NSEventTypeKeyDown,
+    NSEventTypeKeyUp,
+)
 
 from aipet.core.runtime_logging import get_logger
 from aipet.core.voice_input import HoldToTalkSession
 
 
 logger = get_logger("voice")
-_OPTION_KEYS = {
-    keyboard.Key.alt,
-    keyboard.Key.alt_l,
-    keyboard.Key.alt_r,
-}
+_V_KEY_CODE = 9
 
 
 class OptionVVoiceTrigger(HoldToTalkSession):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._option_pressed = False
-        self._v_pressed = False
-        self._listener: Optional[keyboard.Listener] = None
-
-    @staticmethod
-    def _is_v(key) -> bool:
-        return (
-            (getattr(key, "char", "") or "").casefold() == "v"
-            or getattr(key, "vk", None) == 9
-        )
+        self._monitors: list[object] = []
 
     def start(self) -> None:
-        if self._listener is not None:
+        if self._monitors:
             return
-        self._listener = keyboard.Listener(
-            on_press=self._on_press,
-            on_release=self._on_release,
-            daemon=True,
+        mask = NSEventMaskKeyDown | NSEventMaskKeyUp
+        global_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+            mask,
+            self._handle_global_event,
         )
-        self._listener.start()
+        local_monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            mask,
+            self._handle_local_event,
+        )
+        self._monitors = [global_monitor, local_monitor]
         logger.info("Option+V 语音触发已启动")
 
     def stop(self) -> None:
         self.stop_session()
-        if self._listener is not None:
-            self._listener.stop()
-            self._listener = None
+        for monitor in self._monitors:
+            NSEvent.removeMonitor_(monitor)
+        self._monitors = []
 
-    def _on_press(self, key) -> None:
-        if key in _OPTION_KEYS:
-            self._option_pressed = True
-        elif self._is_v(key):
-            self._v_pressed = True
-        if self._option_pressed and self._v_pressed:
+    def _handle_global_event(self, event) -> None:
+        self._handle_event(event)
+
+    def _handle_local_event(self, event):
+        self._handle_event(event)
+        return event
+
+    def _handle_event(self, event) -> None:
+        if event.keyCode() != _V_KEY_CODE:
+            return
+        if (
+            event.type() == NSEventTypeKeyDown
+            and event.modifierFlags() & NSEventModifierFlagOption
+        ):
             self.press()
-
-    def _on_release(self, key) -> None:
-        was_pressed = self._option_pressed and self._v_pressed
-        if key in _OPTION_KEYS:
-            self._option_pressed = False
-        elif self._is_v(key):
-            self._v_pressed = False
-        if was_pressed:
+        elif event.type() == NSEventTypeKeyUp:
             self.release()
 
 

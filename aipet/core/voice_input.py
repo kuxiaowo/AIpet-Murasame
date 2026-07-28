@@ -9,8 +9,6 @@ from typing import Callable, Optional
 from uuid import uuid4
 
 import numpy as np
-import sounddevice as sd
-
 from aipet.core.audio_devices import (
     audio_backend_access,
     resolve_audio_input_device,
@@ -34,7 +32,7 @@ class AudioRecorder:
         self.samplerate = samplerate
         self.channels = channels
         self.input_device = input_device
-        self._stream: Optional[sd.InputStream] = None
+        self._stream: Optional[object] = None
         self._stream_active = False
         self._frames = []
         self._lock = threading.Lock()
@@ -47,6 +45,8 @@ class AudioRecorder:
             self._frames.append(indata.copy())
 
     def start(self) -> None:
+        import sounddevice as sd
+
         with self._lock:
             self._frames = []
         with audio_backend_access():
