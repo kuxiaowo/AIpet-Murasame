@@ -53,6 +53,7 @@ class MacOSTTSBootstrap:
             progress,
         )
         self._install_dependencies(engine_root, virtualenv, progress)
+        self._configure_reference_audio_loader(engine_root, progress)
         self._install_base_assets(engine_root, progress)
         self._configure_cpu(engine_root, progress)
 
@@ -205,6 +206,34 @@ class MacOSTTSBootstrap:
             ],
             cwd=engine_root,
         )
+
+    @staticmethod
+    def _configure_reference_audio_loader(
+        engine_root: Path,
+        progress: Callable[[str], None],
+    ) -> None:
+        source = engine_root / "GPT_SoVITS/TTS_infer_pack/TTS.py"
+        if not source.is_file():
+            raise RuntimeError("GPT-SoVITS reference audio loader is missing.")
+        content = source.read_text(encoding="utf-8")
+        old = "raw_audio, raw_sr = torchaudio.load(ref_audio_path)"
+        if old not in content:
+            progress("GPT-SoVITS reference audio loader is already configured")
+            return
+        if "import soundfile as sf" not in content:
+            content = content.replace(
+                "import torchaudio\n",
+                "import torchaudio\nimport soundfile as sf\n",
+                1,
+            )
+        content = content.replace(
+            old,
+            "raw_audio_np, raw_sr = sf.read(ref_audio_path, always_2d=True)\n"
+            "        raw_audio = torch.from_numpy(raw_audio_np.T).contiguous()",
+            1,
+        )
+        source.write_text(content, encoding="utf-8")
+        progress("Configured GPT-SoVITS reference audio loader for macOS")
 
     def _install_base_assets(
         self,

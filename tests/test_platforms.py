@@ -246,6 +246,24 @@ class PlatformArchitectureTests(unittest.TestCase):
                 "custom:\n  device: cpu\n  is_half: false\nv2:\n  is_half: false\n",
             )
 
+    def test_macos_tts_bootstrap_uses_soundfile_for_reference_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "GPT_SoVITS/TTS_infer_pack/TTS.py"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "import torchaudio\nraw_audio, raw_sr = torchaudio.load(ref_audio_path)\n",
+                encoding="utf-8",
+            )
+
+            MacOSTTSBootstrap._configure_reference_audio_loader(
+                root,
+                lambda _status: None,
+            )
+
+            self.assertIn("import soundfile as sf", source.read_text(encoding="utf-8"))
+            self.assertIn("sf.read(ref_audio_path, always_2d=True)", source.read_text(encoding="utf-8"))
+
     def test_macos_tts_bootstrap_uses_certifi_for_downloads(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             response = MagicMock()
