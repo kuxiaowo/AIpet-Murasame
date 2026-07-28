@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import http.server
+import subprocess
 import tempfile
 import threading
 import unittest
-import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from classes.download_manager import (
+    BUNDLED_7ZIP,
     TTS_ENGINE_ARCHIVE,
     TTS_ENGINE_ARCHIVE_NVIDIA50,
     TTS_REFERENCE_MODEL,
@@ -63,13 +64,28 @@ class DownloadWorkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "7z.exe"
             executable.write_bytes(b"7z")
-            with patch(
-                "classes.download_manager.shutil.which",
-                side_effect=lambda name: (
-                    str(executable) if name == "7z" else None
+            missing_bundled = Path(directory) / "missing-7zr.exe"
+            with (
+                patch(
+                    "classes.download_manager.BUNDLED_7ZIP",
+                    missing_bundled,
+                ),
+                patch(
+                    "classes.download_manager.shutil.which",
+                    side_effect=lambda name: (
+                        str(executable) if name == "7z" else None
+                    ),
                 ),
             ):
                 self.assertEqual(_find_7zip(), executable.resolve())
+
+    def test_prefers_bundled_7zip(self) -> None:
+        self.assertTrue(BUNDLED_7ZIP.is_file())
+        with patch(
+            "classes.download_manager.shutil.which",
+            side_effect=AssertionError("PATH lookup should not win"),
+        ):
+            self.assertEqual(_find_7zip(), BUNDLED_7ZIP.resolve())
 
     def test_hash_reports_progress(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -165,13 +181,18 @@ class DownloadWorkerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             archive = root / "engine.7z"
-            with zipfile.ZipFile(archive, mode="w") as package:
-                for item in (root / "source" / "package").rglob("*"):
-                    if item.is_file():
-                        package.write(
-                            item,
-                            item.relative_to(root / "source"),
-                        )
+            subprocess.run(
+                [
+                    str(BUNDLED_7ZIP),
+                    "a",
+                    "-t7z",
+                    str(archive),
+                    "package",
+                ],
+                cwd=root / "source",
+                check=True,
+                capture_output=True,
+            )
 
             destination = root / "installed" / "GPT-SoVITS"
             progress: list[tuple[int, int, str]] = []

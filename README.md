@@ -68,13 +68,16 @@ Choose one executable from the
   Use this build for CPU-based Whisper transcription or when local
   speech-recognition GPU acceleration is not needed. This is the recommended
   download if you are unsure which build to choose.
-- **`AIpet-with-cuda.exe` (CUDA build, about 1.06 GiB):** bundles CUDA 12
+- **`AIpet-with-cuda.exe` (CUDA build, about 1.4 GiB):** bundles CUDA 12
   cuBLAS, cuDNN 9, and NVRTC for local faster-whisper acceleration on a
   compatible NVIDIA GPU. A compatible NVIDIA graphics driver is still
   required. If CUDA is selected in Settings, use this build.
 
 Both builds provide the same application features and settings interface.
 The CUDA build is larger only because it includes the GPU runtime libraries.
+Both builds also include the public-domain `7zr.exe` extractor from the
+7-Zip LZMA SDK. A separate 7-Zip installation is not required when AIpet
+downloads and installs the managed GPT-SoVITS engine.
 
 1. Download the selected EXE. If a release has no EXE asset, use the source
    installation below.
@@ -133,7 +136,7 @@ their dependencies are ready.
 | Capability | Setup |
 |---|---|
 | Screen awareness | Enable **Screen Vision** and choose an Ollama, Alibaba Cloud, or OpenAI-compatible vision model. Screenshots are temporary and are not added to conversation history. |
-| Local TTS | Enable **TTS → Local computer** and select the GPT-SoVITS engine and Murasame voice-model directories. Missing managed assets can be downloaded after confirmation. |
+| Local TTS | Enable **TTS → Local computer** and select the GPT-SoVITS engine and Murasame voice-model directories. Missing managed assets can be downloaded after confirmation; AIpet includes the required 7z extractor. |
 | AutoDL TTS | Enable **TTS → AutoDL cloud**, provide the SSH login, password, remote command, and reference-voice directory. The remote instance must already expose GPT-SoVITS on port `9880`. |
 | Speech input | Enable speech input, choose a microphone, device, and faster-whisper model. Hold Caps Lock for two seconds to record; release it to transcribe and send. |
 
@@ -198,6 +201,14 @@ needed and writes:
 - `dist\AIpet-with-cuda.exe`: CUDA build with the CUDA 12 cuBLAS, cuDNN 9,
   and NVRTC runtime bundled for local Whisper GPU inference.
 
+Before building, the script verifies the bundled 7-Zip/LZMA SDK 26.02
+`packaging\vendor\7zip\7zr.exe` against its pinned SHA-256 hash. Both EXEs
+include this extractor. The build stops if the file is missing or modified;
+provenance and update instructions are in
+[`packaging/vendor/7zip/README.md`](packaging/vendor/7zip/README.md).
+After packaging, the script reads both PyInstaller archives, extracts the
+embedded `7zr.exe`, verifies its hash, and executes it as a smoke test.
+
 Reuse the installed build dependencies with:
 
 ```powershell
@@ -240,6 +251,11 @@ tests\      unit and UI smoke tests
   [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
 - Speech-synthesis project:
   [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
+- Embedded 7z extraction:
+  [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html). The bundled, unmodified
+  `7zr.exe` 26.02 is distributed under the LZMA SDK's public-domain terms;
+  its provenance and SHA-256 are documented in
+  [`packaging/vendor/7zip/README.md`](packaging/vendor/7zip/README.md).
 
 Source code is distributed under the
 [GNU Affero General Public License v3.0](LICENSE).

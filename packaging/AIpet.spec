@@ -61,6 +61,26 @@ datas = [
     (str(project_root / "prompt.txt"), "."),
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
+    (
+        str(
+            project_root
+            / "packaging"
+            / "vendor"
+            / "7zip"
+            / "7zr.exe"
+        ),
+        "packaging/vendor/7zip",
+    ),
+    (
+        str(
+            project_root
+            / "packaging"
+            / "vendor"
+            / "7zip"
+            / "README.md"
+        ),
+        "packaging/vendor/7zip",
+    ),
 ]
 datas += collect_data_files("faster_whisper")
 

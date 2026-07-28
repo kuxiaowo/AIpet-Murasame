@@ -12,9 +12,15 @@ Set-StrictMode -Version Latest
 $packagingRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $packagingRoot
 $requirementsPath = Join-Path $packagingRoot "requirements-build.txt"
+$dependencyCheckPath = Join-Path $packagingRoot "check_build_environment.py"
+$artifactCheckPath = Join-Path $packagingRoot "verify_build_artifacts.py"
 $specPath = Join-Path $packagingRoot "AIpet.spec"
 $distPath = Join-Path $projectRoot "dist"
 $workPath = Join-Path $projectRoot "build"
+$sevenZipPath = Join-Path $packagingRoot "vendor\7zip\7zr.exe"
+$sevenZipExpectedSha256 = (
+    "56b8cc9f4971cef253644fafe54063ed7fdca551d4dee0f8c6baa81b855acd72"
+)
 $cublasDllNames = @(
     "cublas64_12.dll",
     "cublasLt64_12.dll"
@@ -30,6 +36,22 @@ $cudnnDllNames = @(
     "cudnn_ops64_9.dll"
 )
 $nvrtcDllNames = @("nvrtc64_120_0.dll")
+
+if (-not (Test-Path -LiteralPath $sevenZipPath -PathType Leaf)) {
+    throw (
+        "Bundled 7-Zip extractor is missing: $sevenZipPath. " +
+        "Restore packaging\vendor\7zip\7zr.exe before building."
+    )
+}
+$sevenZipActualSha256 = (
+    Get-FileHash -Algorithm SHA256 -LiteralPath $sevenZipPath
+).Hash.ToLowerInvariant()
+if ($sevenZipActualSha256 -ne $sevenZipExpectedSha256) {
+    throw (
+        "Bundled 7-Zip extractor failed SHA-256 verification. " +
+        "Expected $sevenZipExpectedSha256, got $sevenZipActualSha256."
+    )
+}
 
 function Resolve-CondaExecutable {
     $command = Get-Command conda.exe -ErrorAction SilentlyContinue
@@ -90,6 +112,10 @@ if (-not $buildEnvironmentPath) {
         throw "The newly created Conda environment could not be located."
     }
 }
+$buildPython = Join-Path $buildEnvironmentPath "python.exe"
+if (-not (Test-Path -LiteralPath $buildPython -PathType Leaf)) {
+    throw "Build environment Python was not found: $buildPython"
+}
 
 if (-not $SkipDependencyInstall) {
     Write-Host "Installing build and Whisper dependencies..."
@@ -118,47 +144,7 @@ if (-not $SkipDependencyInstall) {
     }
 }
 
-$dependencyCheck = @"
-import importlib.util
-import sys
-
-required = [
-    "PyInstaller",
-    "PyQt5",
-    "av",
-    "ctranslate2",
-    "cv2",
-    "faster_whisper",
-    "numpy",
-    "onnxruntime",
-    "paramiko",
-    "pydantic",
-    "pynput",
-    "requests",
-    "sounddevice",
-]
-missing = [name for name in required if importlib.util.find_spec(name) is None]
-if missing:
-    print("Missing build dependencies: " + ", ".join(missing))
-    sys.exit(1)
-
-forbidden = [
-    "accelerate",
-    "bitsandbytes",
-    "torch",
-    "torchaudio",
-    "torchvision",
-    "transformers",
-]
-installed = [
-    name for name in forbidden if importlib.util.find_spec(name) is not None
-]
-if installed:
-    print("Refusing a polluted build environment: " + ", ".join(installed))
-    sys.exit(2)
-"@
-
-& $condaExecutable run -n $EnvironmentName python -c $dependencyCheck
+& $buildPython $dependencyCheckPath
 if ($LASTEXITCODE -ne 0) {
     throw "The build environment is incomplete or contains heavyweight extras."
 }
@@ -322,6 +308,14 @@ $artifacts = @(
         -ArtifactName "AIpet-with-cuda.exe" `
         -VariantWorkPath (Join-Path $workPath "with-cuda")
 )
+
+$artifactPaths = @(
+    $artifacts | ForEach-Object { $_.FullName }
+)
+& $buildPython $artifactCheckPath @artifactPaths
+if ($LASTEXITCODE -ne 0) {
+    throw "Built-in 7-Zip verification failed for the packaged artifacts."
+}
 
 Write-Host ""
 Write-Host "Build complete:"
