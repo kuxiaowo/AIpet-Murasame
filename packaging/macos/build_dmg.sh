@@ -39,10 +39,9 @@ export AIPET_MACOS_UV="$venv_root/bin/uv"
 app_path="$dist_root/AIpet-Murasame.app"
 codesign --force --deep --sign - "$app_path"
 
-dmg_root="$build_root/dmg"
 dmg_path="$dist_root/AIpet-Murasame.dmg"
-rm -rf "$dmg_root"
-mkdir -p "$dmg_root"
+dmg_root=$(mktemp -d "$build_root/dmg.XXXXXX")
+trap 'rm -rf "$dmg_root"' EXIT
 ditto "$app_path" "$dmg_root/AIpet-Murasame.app"
 ln -s /Applications "$dmg_root/Applications"
 hdiutil create \
