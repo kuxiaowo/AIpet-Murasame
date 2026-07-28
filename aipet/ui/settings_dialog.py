@@ -224,6 +224,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_bootstrap_consent_body": (
             "Download the pinned GPT-SoVITS source, an isolated Python runtime, "
             "Python dependencies, and required base assets for Apple Silicon? "
+            "The upstream base assets are about 5 GB. "
             "Character voice weights and reference voices are not included and "
             "remain separate on-demand downloads."
         ),
@@ -532,7 +533,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_bootstrap_consent_title": "安装 macOS GPT-SoVITS",
         "tts_bootstrap_consent_body": (
             "是否下载固定版本的 GPT-SoVITS 源码、隔离的 Python 运行环境、"
-            "Python 依赖和 Apple Silicon 所需的基础资源？角色语音权重和"
+            "Python 依赖和 Apple Silicon 所需的基础资源？上游基础资源约 5 GB。"
+            "角色语音权重和"
             "参考音频不包含在此步骤中，仍按需单独下载。"
         ),
         "tts_bootstrap_installing": (
@@ -869,6 +871,7 @@ class SettingsDialog(QDialog):
         self._tts_check_worker: TTSCheckWorker | None = None
         self._tts_service_worker: TTSServiceWorker | None = None
         self._tts_bootstrap_worker: TTSBootstrapWorker | None = None
+        self._tts_bootstrap_error: str | None = None
         self._tts_service_error: str | None = None
         self._tts_service_button_mode = "start"
         self._pending_tts_check = False
@@ -2645,6 +2648,7 @@ class SettingsDialog(QDialog):
             engine_root,
             self,
         )
+        self._tts_bootstrap_error = None
         self._tts_bootstrap_worker = worker
         worker.stage_changed.connect(self._on_tts_bootstrap_stage)
         worker.succeeded.connect(self._on_tts_bootstrap_succeeded)
@@ -2667,6 +2671,7 @@ class SettingsDialog(QDialog):
         self._set_tts_status("tts_bootstrap_installed", path=path)
 
     def _on_tts_bootstrap_failed(self, message: str) -> None:
+        self._tts_bootstrap_error = message
         self._set_tts_status("tts_bootstrap_failed", message=message)
 
     def _finish_tts_bootstrap_worker(
@@ -2676,8 +2681,10 @@ class SettingsDialog(QDialog):
         if self._tts_bootstrap_worker is worker:
             self._tts_bootstrap_worker = None
         worker.deleteLater()
-        if not self._closing:
+        if not self._closing and self._tts_bootstrap_error is None:
             self._update_tts_state()
+        else:
+            self._set_tts_path_controls(downloading=False)
 
     def _finish_tts_check(self, worker: TTSCheckWorker) -> None:
         if self._tts_check_worker is worker:

@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -56,6 +56,15 @@ class UISmokeTests(unittest.TestCase):
                     self.assertTrue(pet.display_text.startswith("【丛雨】\n"))
                 finally:
                     pet.shutdown()
+
+    def test_tts_bootstrap_failure_keeps_its_error_visible(self) -> None:
+        dialog = SettingsDialog(AppSettings())
+        try:
+            dialog._on_tts_bootstrap_failed("network failed")
+            dialog._finish_tts_bootstrap_worker(MagicMock())
+            self.assertEqual(dialog._tts_status_key, "tts_bootstrap_failed")
+        finally:
+            dialog.close()
 
     def test_topmost_watchdog_tracks_window_visibility(self) -> None:
         with (
