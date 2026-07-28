@@ -218,15 +218,39 @@ class MacOSTTSBootstrap:
             dir=engine_root.parent,
         ) as directory:
             temporary = Path(directory)
+            urls = {
+                archive: f"{_MODEL_BASE}/{archive}"
+                for archive, _destination in _BASE_ARCHIVES
+            }
+            context = ssl.create_default_context(cafile=certifi.where())
+            sizes = {
+                archive: self._remote_size(url, context)
+                for archive, url in urls.items()
+            }
+            total = (
+                sum(size for size in sizes.values() if size is not None)
+                if all(size is not None for size in sizes.values())
+                else None
+            )
+            if total:
+                progress(
+                    "Downloading GPT-SoVITS base assets: total "
+                    f"{self._format_size(total)}"
+                )
+            completed = 0
             for archive, destination in _BASE_ARCHIVES:
                 progress(f"Downloading {archive}")
                 source = temporary / archive
                 self._download(
-                    f"{_MODEL_BASE}/{archive}",
+                    urls[archive],
                     source,
                     progress=progress,
                     label=archive,
+                    total=sizes[archive],
+                    overall_total=total,
+                    overall_before=completed,
                 )
+                completed += sizes[archive] or 0
                 progress(f"Installing {archive}")
                 self._extract_zip(source, engine_root / destination)
         if not self._base_assets_ready(engine_root):
@@ -251,26 +275,66 @@ class MacOSTTSBootstrap:
         *,
         progress: Callable[[str], None] | None = None,
         label: str = "file",
+        total: int | None = None,
+        overall_total: int | None = None,
+        overall_before: int = 0,
     ) -> None:
         request = Request(url, headers={"User-Agent": "AIpet-Murasame"})
         context = ssl.create_default_context(cafile=certifi.where())
+        if total is None:
+            total = MacOSTTSBootstrap._remote_size(url, context)
         started = time.monotonic()
         last_reported = started
         downloaded = 0
+
+        def status(now: float) -> str:
+            megabytes = downloaded / 1024**2
+            completed = f"{megabytes:.0f} MB"
+            if total:
+                total_text = MacOSTTSBootstrap._format_size(total)
+                completed += f" / {total_text} ({downloaded / total:.0%})"
+            if overall_total:
+                overall = overall_before + downloaded
+                completed += (
+                    " · total "
+                    f"{MacOSTTSBootstrap._format_size(overall)} / "
+                    f"{MacOSTTSBootstrap._format_size(overall_total)} "
+                    f"({overall / overall_total:.0%})"
+                )
+            speed = megabytes / max(now - started, 0.001)
+            return f"Downloading {label}: {completed} ({speed:.1f} MB/s)"
+
         with urlopen(request, timeout=60, context=context) as response, destination.open("wb") as output:
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
                 downloaded += len(chunk)
                 now = time.monotonic()
                 if progress is not None and now - last_reported >= 1:
-                    megabytes = downloaded / 1024**2
-                    speed = megabytes / (now - started)
-                    progress(f"Downloading {label}: {megabytes:.0f} MB ({speed:.1f} MB/s)")
+                    progress(status(now))
                     last_reported = now
         if progress is not None and downloaded:
-            megabytes = downloaded / 1024**2
-            elapsed = max(time.monotonic() - started, 0.001)
-            progress(f"Downloaded {label}: {megabytes:.0f} MB ({megabytes / elapsed:.1f} MB/s)")
+            progress(status(time.monotonic()).replace("Downloading", "Downloaded", 1))
+
+    @staticmethod
+    def _remote_size(url: str, context: ssl.SSLContext) -> int | None:
+        request = Request(
+            url,
+            headers={"User-Agent": "AIpet-Murasame", "Range": "bytes=0-0"},
+        )
+        try:
+            with urlopen(request, timeout=20, context=context) as response:
+                _, _, total = response.headers.get("Content-Range", "").rpartition("/")
+                return int(total) if total.isdigit() else None
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _format_size(size: int) -> str:
+        return (
+            f"{size / 1024**3:.1f} GB"
+            if size >= 1024**3
+            else f"{size / 1024**2:.0f} MB"
+        )
 
     @staticmethod
     def _extract_zip(archive: Path, destination: Path) -> None:

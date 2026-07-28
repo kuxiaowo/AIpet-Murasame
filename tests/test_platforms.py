@@ -236,6 +236,7 @@ class PlatformArchitectureTests(unittest.TestCase):
                     "aipet.platforms.macos.tts_bootstrap.urlopen",
                     return_value=request,
                 ) as open_url,
+                patch.object(MacOSTTSBootstrap, "_remote_size", return_value=None),
             ):
                 MacOSTTSBootstrap._download(
                     "https://example.invalid/model.zip",
@@ -260,6 +261,11 @@ class PlatformArchitectureTests(unittest.TestCase):
                     "aipet.platforms.macos.tts_bootstrap.urlopen",
                     return_value=request,
                 ),
+                patch.object(
+                    MacOSTTSBootstrap,
+                    "_remote_size",
+                    return_value=2 * 1024**2,
+                ),
                 patch(
                     "aipet.platforms.macos.tts_bootstrap.time.monotonic",
                     side_effect=(0.0, 1.0, 1.0),
@@ -270,8 +276,11 @@ class PlatformArchitectureTests(unittest.TestCase):
                     Path(directory) / "model.zip",
                     progress=updates.append,
                     label="model.zip",
+                    overall_total=2 * 1024**2,
                 )
 
+            self.assertIn("/ 2 MB (50%)", updates[-1])
+            self.assertIn("total 1 MB / 2 MB (50%)", updates[-1])
             self.assertIn("MB/s", updates[-1])
 
     def test_macos_tts_bootstrap_finds_packaged_uv(self) -> None:
