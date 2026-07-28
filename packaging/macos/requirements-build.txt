@@ -1,0 +1,2 @@
+-r ../../requirements-voice.txt
+pyinstaller>=6.11,<7
