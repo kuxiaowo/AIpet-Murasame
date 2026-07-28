@@ -18,6 +18,7 @@ from urllib.parse import quote
 import requests
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
+from tool.config import PROJECT_ROOT
 from tool.runtime_logging import get_logger
 from tool.whisper_models import model_repository
 
@@ -43,6 +44,13 @@ TTS_ENGINE_ARCHIVES = {
         "97b4edcd451c42357db7e26e6c1c877ca5d85144fe97beaff6d7005d35bee008",
     ),
 }
+BUNDLED_7ZIP = (
+    PROJECT_ROOT
+    / "packaging"
+    / "vendor"
+    / "7zip"
+    / "7zr.exe"
+)
 
 
 @dataclass(frozen=True)
@@ -798,9 +806,12 @@ def _extract_gpt_sovits_archive(
 
 
 def _find_7zip() -> Path | None:
+    if os.name == "nt" and BUNDLED_7ZIP.is_file():
+        return BUNDLED_7ZIP.resolve()
+
     candidates = [
         shutil.which(name)
-        for name in ("7z", "7zz", "7za")
+        for name in ("7z", "7zz", "7za", "7zr")
     ]
     if os.name == "nt":
         for variable in ("ProgramFiles", "ProgramFiles(x86)"):

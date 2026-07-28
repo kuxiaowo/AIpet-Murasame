@@ -166,7 +166,9 @@ def configure_voice_trigger(
         return None
 
     bridge = VoiceBridge(pet)
-    bridge.text_ready.connect(lambda text: pet.start_thread(text, role="user"))
+    bridge.text_ready.connect(
+        lambda text: pet.start_thread(text, role="user", source="voice")
+    )
     bridge.record_start.connect(
         lambda: pet.show_text(
             ui_text(settings, "recording"),
@@ -186,6 +188,13 @@ def configure_voice_trigger(
             ui_text(settings, "speech_failed"),
             message,
             QSystemTrayIcon.Warning,
+        )
+    )
+    bridge.error.connect(
+        lambda _message: pet.show_text(
+            ui_text(settings, "speech_failed"),
+            typing=False,
+            speaker_name=settings.character.user_name,
         )
     )
 
@@ -425,6 +434,12 @@ def main() -> int:
         logger.info("AIpet 正在退出")
         if voice_trigger is not None:
             voice_trigger.stop()
+        try:
+            from tool.stt import clear_model_cache
+
+            clear_model_cache()
+        except ImportError:
+            pass
         persist_pet_settings()
         pet.shutdown()
         shutdown_tts_service()

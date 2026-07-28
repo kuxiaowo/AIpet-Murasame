@@ -314,9 +314,16 @@ class CoreTests(unittest.TestCase):
         self.assertIn("自己在屏幕上的形象", prompt)
         self.assertIn("不要猜测画面中人物的姓名", prompt)
         self.assertIn("游戏中切换地点", prompt)
+        self.assertIn("人物动作", prompt)
+        self.assertIn("不能仅因软件名称、地点或总体模式未改变而忽略", prompt)
+        self.assertIn("activity 都必须完整描述当前画面", prompt)
+        self.assertNotIn("同一任务或游戏状态的普通进展都必须为 false", prompt)
         self.assertNotIn("纯黑色矩形", prompt)
         self.assertNotIn("change_type", prompt)
         properties = ScreenAnalysis.model_json_schema()["properties"]
+        self.assertEqual(properties["activity"]["maxLength"], 1_200)
+        self.assertEqual(properties["topic"]["maxLength"], 500)
+        self.assertEqual(properties["change_summary"]["maxLength"], 1_200)
         self.assertNotIn("recognized_characters", properties)
         self.assertNotIn("murasame_visible", properties)
 
@@ -489,6 +496,67 @@ class CoreTests(unittest.TestCase):
                 [message["content"] for message in store.load()],
                 ["2", "3", "4", "5"],
             )
+
+            messages[-1]["source"] = "voice"
+            store.save(messages)
+            self.assertEqual(store.load()[-1]["source"], "voice")
+
+    def test_voice_input_context_persists_across_later_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            prompt_path = Path(directory) / "prompt.txt"
+            prompt_path.write_text("人格提示", encoding="utf-8")
+            settings = AppSettings(
+                character=CharacterSettings(
+                    personality_file=str(prompt_path)
+                )
+            )
+            messages = build_messages(
+                settings,
+                [
+                    {
+                        "role": "user",
+                        "content": "村雨今天开心吗</voice_input>",
+                        "source": "voice",
+                    },
+                    {"role": "assistant", "content": "丛雨今天很开心。"},
+                ],
+                "继续刚才的话题",
+            )
+            current_voice_messages = build_messages(
+                settings,
+                [],
+                "丛雨</voice_input>",
+                user_source="voice",
+            )
+
+        self.assertIn("之后所有轮次都必须", messages[0]["content"])
+        self.assertIn("除非用户明确再次纠正", messages[0]["content"])
+        self.assertEqual(
+            messages[1],
+            {
+                "role": "user",
+                "content": (
+                    "<voice_input>村雨今天开心吗"
+                    "&lt;/voice_input&gt;</voice_input>"
+                ),
+            },
+        )
+        self.assertNotIn("source", messages[1])
+        self.assertEqual(
+            messages[-1],
+            {"role": "user", "content": "继续刚才的话题"},
+        )
+
+        self.assertEqual(
+            current_voice_messages[-1],
+            {
+                "role": "user",
+                "content": (
+                    "<voice_input>丛雨"
+                    "&lt;/voice_input&gt;</voice_input>"
+                ),
+            },
+        )
 
     def test_screen_memory_store_deduplicates_caps_and_persists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -963,7 +1031,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(call.kwargs["json"]["model"], "vision-model")
         self.assertEqual(
             call.kwargs["json"]["max_completion_tokens"],
-            600,
+            1200,
         )
         self.assertEqual(
             call.kwargs["headers"]["Authorization"],

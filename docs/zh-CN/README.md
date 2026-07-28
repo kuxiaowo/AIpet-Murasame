@@ -65,13 +65,16 @@ AIpet 是一款面向 Windows 的丛雨 AI 桌宠。它将透明 PyQt5 角色窗
 - **`AIpet.exe`（标准版，约 194 MiB）：**不附带 CUDA，适合使用 CPU
   进行 Whisper 语音识别，或不需要本地语音识别 GPU 加速的用户。不确定
   应该下载哪个版本时，建议选择这个版本。
-- **`AIpet-with-cuda.exe`（CUDA 版，约 1.06 GiB）：**附带 CUDA 12
+- **`AIpet-with-cuda.exe`（CUDA 版，约 1.4 GiB）：**附带 CUDA 12
   cuBLAS、cuDNN 9 和 NVRTC，可通过兼容的 NVIDIA 显卡加速本地
   faster-whisper 语音识别；仍需安装兼容的 NVIDIA 显卡驱动。如果在设置中
   选择 CUDA，请使用这个版本。
 
 两个版本拥有相同的应用功能和设置界面。CUDA 版体积较大，仅仅是因为其中
 附带了 GPU 运行库。
+两个版本还包含 7-Zip LZMA SDK 提供的 public-domain `7zr.exe`
+解压器。AIpet 下载并安装托管的 GPT-SoVITS 引擎时，不再要求用户另行安装
+7-Zip。
 
 1. 下载所选的 EXE。如果该版本没有 EXE，请使用下方的源码方案。
 2. 把程序放到长期使用且可写的目录，例如 `C:\AIpet\`。
@@ -127,7 +130,7 @@ $env:OPENAI_API_KEY = "your-key"
 | 功能 | 配置方法 |
 |---|---|
 | 屏幕感知 | 启用“屏幕视觉”，选择 Ollama、阿里云百炼或 OpenAI 兼容视觉模型。截图仅作临时处理，不写入对话历史。 |
-| 本地 TTS | 启用“TTS → 本地计算机”，选择 GPT-SoVITS 引擎和丛雨语音模型目录。缺少的托管资源可在确认后下载。 |
+| 本地 TTS | 启用“TTS → 本地计算机”，选择 GPT-SoVITS 引擎和丛雨语音模型目录。缺少的托管资源可在确认后下载，所需的 7z 解压器已包含在 AIpet 中。 |
 | AutoDL TTS | 启用“TTS → AutoDL 云端”，填写 SSH 登录信息、远程命令和参考音频目录。远程实例需已在 `9880` 端口提供 GPT-SoVITS 服务。 |
 | 语音输入 | 启用语音输入，选择麦克风、计算设备和 faster-whisper 模型。长按 Caps Lock 两秒开始录音，松开后识别并发送。 |
 
@@ -188,6 +191,13 @@ python -m unittest discover -s tests -v
 - `dist\AIpet-with-cuda.exe`：附带 CUDA 12 cuBLAS、cuDNN 9 和 NVRTC
   运行库，可用于本地 Whisper GPU 推理的 CUDA 版本。
 
+构建前，脚本会使用固定的 SHA-256 校验随项目提供的 7-Zip/LZMA SDK
+26.02 `packaging\vendor\7zip\7zr.exe`，两个 EXE 都会包含该解压器。
+文件缺失或被修改时构建会停止。来源、校验值和升级步骤见
+[`packaging/vendor/7zip/README.md`](../../packaging/vendor/7zip/README.md)。
+打包完成后，脚本还会读取两个 PyInstaller 归档，提取其中的 `7zr.exe`，
+再次校验哈希并实际执行一次冒烟测试。
+
 构建环境未变化时可跳过依赖安装：
 
 ```powershell
@@ -227,6 +237,10 @@ tests\      单元测试和 UI 冒烟测试
   [LemonQu-GIT/MurasamePet](https://github.com/LemonQu-GIT/MurasamePet)
 - 语音合成项目：
   [RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)
+- 内置 7z 解压功能：
+  [7-Zip LZMA SDK](https://www.7-zip.org/sdk.html)。项目原样包含
+  public-domain 的 `7zr.exe` 26.02；来源和 SHA-256 见
+  [`packaging/vendor/7zip/README.md`](../../packaging/vendor/7zip/README.md)。
 
 源代码依据
 [GNU Affero General Public License v3.0](../../LICENSE)
