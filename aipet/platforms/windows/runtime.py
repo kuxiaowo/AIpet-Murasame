@@ -77,6 +77,9 @@ class WindowsInputIntegration:
 
         return CapslockVoiceTrigger(**kwargs)
 
+    def voice_trigger_shortcut(self) -> str:
+        return "Caps Lock"
+
 
 class WindowsCredentialStore:
     def protect(self, secret: str) -> str:

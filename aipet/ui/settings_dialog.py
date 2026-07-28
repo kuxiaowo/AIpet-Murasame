@@ -247,7 +247,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_download_failed": "Voice model download failed: {message}",
         "download_files": "files",
         "download_steps": "steps",
-        "stt_enabled": "Hold Caps Lock for speech input",
+        "stt_enabled": "Hold {shortcut} for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
         "stt_input_device": "Recording device",
@@ -536,7 +536,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_download_failed": "角色语音模型下载失败：{message}",
         "download_files": "个文件",
         "download_steps": "个步骤",
-        "stt_enabled": "长按 Caps Lock 进行语音输入",
+        "stt_enabled": "长按 {shortcut} 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
         "stt_input_device": "录音设备",
@@ -1852,7 +1852,14 @@ class SettingsDialog(QDialog):
         self.tts_model_browse.setText(self._text("browse"))
         self.tts_download_button.setText(self._text("tts_download"))
         self._render_tts_service_button()
-        self.stt_enabled.setText(self._text("stt_enabled"))
+        self.stt_enabled.setText(
+            self._text(
+                "stt_enabled",
+                shortcut=(
+                    self._platform_runtime.input.voice_trigger_shortcut()
+                ),
+            )
+        )
         self._retranslate_audio_input_devices()
         self._set_combo_item_text(
             self.stt_device,

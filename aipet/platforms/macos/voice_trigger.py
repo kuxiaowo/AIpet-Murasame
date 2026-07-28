@@ -1,4 +1,4 @@
-"""Windows Caps Lock voice-input trigger."""
+"""macOS Option+V voice-input trigger."""
 
 from __future__ import annotations
 
@@ -11,12 +11,26 @@ from aipet.core.voice_input import HoldToTalkSession
 
 
 logger = get_logger("voice")
+_OPTION_KEYS = {
+    keyboard.Key.alt,
+    keyboard.Key.alt_l,
+    keyboard.Key.alt_r,
+}
 
 
-class CapslockVoiceTrigger(HoldToTalkSession):
+class OptionVVoiceTrigger(HoldToTalkSession):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._option_pressed = False
+        self._v_pressed = False
         self._listener: Optional[keyboard.Listener] = None
+
+    @staticmethod
+    def _is_v(key) -> bool:
+        return (
+            (getattr(key, "char", "") or "").casefold() == "v"
+            or getattr(key, "vk", None) == 9
+        )
 
     def start(self) -> None:
         if self._listener is not None:
@@ -27,7 +41,7 @@ class CapslockVoiceTrigger(HoldToTalkSession):
             daemon=True,
         )
         self._listener.start()
-        logger.info("CapsLock 语音触发已启动")
+        logger.info("Option+V 语音触发已启动")
 
     def stop(self) -> None:
         self.stop_session()
@@ -36,12 +50,21 @@ class CapslockVoiceTrigger(HoldToTalkSession):
             self._listener = None
 
     def _on_press(self, key) -> None:
-        if key == keyboard.Key.caps_lock:
+        if key in _OPTION_KEYS:
+            self._option_pressed = True
+        elif self._is_v(key):
+            self._v_pressed = True
+        if self._option_pressed and self._v_pressed:
             self.press()
 
     def _on_release(self, key) -> None:
-        if key == keyboard.Key.caps_lock:
+        was_pressed = self._option_pressed and self._v_pressed
+        if key in _OPTION_KEYS:
+            self._option_pressed = False
+        elif self._is_v(key):
+            self._v_pressed = False
+        if was_pressed:
             self.release()
 
 
-__all__ = ["CapslockVoiceTrigger"]
+__all__ = ["OptionVVoiceTrigger"]

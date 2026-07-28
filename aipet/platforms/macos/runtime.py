@@ -83,10 +83,12 @@ class MacOSInputIntegration:
         return int(match.group(1)) / 1_000_000_000 if match else 0.0
 
     def create_voice_trigger(self, **kwargs: Any) -> Any:
-        del kwargs
-        raise PlatformNotImplementedError(
-            "The macOS global voice trigger has not been implemented yet."
-        )
+        from aipet.platforms.macos.voice_trigger import OptionVVoiceTrigger
+
+        return OptionVVoiceTrigger(**kwargs)
+
+    def voice_trigger_shortcut(self) -> str:
+        return "Option+V"
 
 
 class MacOSChildProcessGuard:
@@ -192,7 +194,7 @@ def create_runtime() -> PlatformRuntime:
         platform_id="macos",
         capabilities=PlatformCapabilities(
             window_topmost=True,
-            global_voice_trigger=False,
+            global_voice_trigger=True,
             secure_credentials=True,
             log_viewer=True,
             child_process_guard=False,
