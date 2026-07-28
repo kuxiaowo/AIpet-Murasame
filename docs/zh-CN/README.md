@@ -220,11 +220,11 @@ python -m unittest discover -s tests -v
 主要目录：
 
 ```text
-classes\    桌宠交互、后台任务和下载
-tool\       模型后端、配置、存储、语音和诊断
-ui\         中英双语设置窗口
-packaging\  可重复执行的 PyInstaller 构建
-tests\      单元测试和 UI 冒烟测试
+aipet\core\       共享后端、配置、存储、语音和后台任务
+aipet\ui\         共享桌宠与中英双语设置窗口
+aipet\platforms\  平台接口、Windows 实现和 macOS 占位
+packaging\         可重复执行的 PyInstaller 构建
+tests\             单元测试、平台契约测试和 UI 冒烟测试
 ```
 
 ## 已知限制

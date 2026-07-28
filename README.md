@@ -234,11 +234,11 @@ build environment's `Library\bin`, provide their locations with:
 Main project areas:
 
 ```text
-classes\    desktop interaction, workers, and downloads
-tool\       backends, configuration, storage, speech, and diagnostics
-ui\         bilingual settings window
-packaging\  reproducible PyInstaller build
-tests\      unit and UI smoke tests
+aipet\core\       shared backends, configuration, storage, speech, and workers
+aipet\ui\         shared desktop pet and bilingual settings window
+aipet\platforms\  platform contracts, Windows implementation, and macOS stubs
+packaging\         reproducible PyInstaller build
+tests\             unit, platform-contract, and UI smoke tests
 ```
 
 ## Limitations

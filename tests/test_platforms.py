@@ -104,24 +104,6 @@ class PlatformArchitectureTests(unittest.TestCase):
             with self.assertRaises(PlatformNotImplementedError):
                 get_platform_runtime()
 
-    def test_legacy_modules_alias_the_new_implementations(self) -> None:
-        aliases = {
-            "tool.config": "aipet.core.config",
-            "tool.backends": "aipet.core.backends",
-            "tool.tts_service": "aipet.core.tts_service",
-            "classes.download_manager": "aipet.core.download_manager",
-            "classes.workers": "aipet.core.workers",
-            "classes.murasame_class": "aipet.ui.pet",
-            "ui.settings_dialog": "aipet.ui.settings_dialog",
-            "main": "aipet.application",
-        }
-        for legacy_name, new_name in aliases.items():
-            with self.subTest(legacy=legacy_name):
-                self.assertIs(
-                    importlib.import_module(legacy_name),
-                    importlib.import_module(new_name),
-                )
-
     def test_configuration_round_trip_preserves_autodl_fields(self) -> None:
         original = AppSettings(
             tts=TTSSettings(

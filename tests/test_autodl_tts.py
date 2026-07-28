@@ -4,13 +4,13 @@ import os
 import unittest
 from unittest.mock import Mock
 
-from tool.autodl_tts import (
+from aipet.core.autodl_tts import (
     AutoDLConnectionError,
     AutoDLTTSConnection,
     SSHLogin,
     parse_ssh_login_command,
 )
-from tool.credentials import protect_secret, unprotect_secret
+from aipet.core.credentials import protect_secret, unprotect_secret
 
 
 class AutoDLTTSTests(unittest.TestCase):

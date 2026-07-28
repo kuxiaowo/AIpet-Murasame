@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tool.config import TTSSettings
-from tool.tts_assets import TTSAssetState
-from tool.tts_service import (
+from aipet.core.config import TTSSettings
+from aipet.core.tts_assets import TTSAssetState
+from aipet.core.tts_service import (
     LocalTTSServiceManager,
     TTSServiceError,
     _build_start_command,
@@ -79,12 +79,12 @@ class TTSServiceTests(unittest.TestCase):
             try:
                 with (
                     patch(
-                        "tool.tts_service.tts_service_is_reachable",
+                        "aipet.core.tts_service.tts_service_is_reachable",
                         side_effect=[False, False, True, True],
                     ),
                     patch.object(manager._process_job, "assign"),
                     patch(
-                        "tool.tts_service.subprocess.Popen",
+                        "aipet.core.tts_service.subprocess.Popen",
                         return_value=process,
                     ) as popen,
                 ):
@@ -114,7 +114,7 @@ class TTSServiceTests(unittest.TestCase):
         settings = TTSSettings(base_url="https://example.com/tts")
         with (
             patch(
-                "tool.tts_service.tts_service_is_reachable",
+                "aipet.core.tts_service.tts_service_is_reachable",
                 return_value=False,
             ),
             self.assertRaises(TTSServiceError),
@@ -137,15 +137,15 @@ class TTSServiceTests(unittest.TestCase):
         connection.is_active.return_value = True
         with (
             patch(
-                "tool.tts_service.tts_service_is_reachable",
+                "aipet.core.tts_service.tts_service_is_reachable",
                 side_effect=[False, False, True],
             ),
             patch(
-                "tool.tts_service.AutoDLTTSConnection",
+                "aipet.core.tts_service.AutoDLTTSConnection",
                 return_value=connection,
             ),
             patch(
-                "tool.tts_service.unprotect_secret",
+                "aipet.core.tts_service.unprotect_secret",
                 return_value="secret",
             ),
         ):
@@ -170,7 +170,7 @@ class TTSServiceTests(unittest.TestCase):
         )
         with (
             patch(
-                "tool.tts_service.tts_service_is_reachable",
+                "aipet.core.tts_service.tts_service_is_reachable",
                 return_value=True,
             ),
             self.assertRaisesRegex(

@@ -10,9 +10,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from main import run_special_mode
-from tool import runtime_logging
-from tool.log_viewer import _print_appended, _print_recent
-from tool.runtime_logging import (
+from aipet.core import runtime_logging
+from aipet.platforms.windows.log_viewer import _print_appended, _print_recent
+from aipet.core.runtime_logging import (
     DailyFileHandler,
     _console_python_executable,
     _viewer_command,
@@ -161,7 +161,7 @@ class RuntimeLoggingTests(unittest.TestCase):
         )
 
     def test_main_dispatches_log_viewer_special_mode(self) -> None:
-        with patch("tool.log_viewer.follow") as follow:
+        with patch("aipet.platforms.windows.log_viewer.follow") as follow:
             result = run_special_mode(
                 ["AIpet.exe", "--log-viewer", "C:/logs", "123"]
             )

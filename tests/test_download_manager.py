@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from classes.download_manager import (
+from aipet.core.download_manager import (
     BUNDLED_7ZIP,
     TTS_ENGINE_ARCHIVE,
     TTS_ENGINE_ARCHIVE_NVIDIA50,
@@ -67,11 +67,11 @@ class DownloadWorkerTests(unittest.TestCase):
             missing_bundled = Path(directory) / "missing-7zr.exe"
             with (
                 patch(
-                    "classes.download_manager.BUNDLED_7ZIP",
+                    "aipet.core.download_manager.BUNDLED_7ZIP",
                     missing_bundled,
                 ),
                 patch(
-                    "classes.download_manager.shutil.which",
+                    "aipet.core.download_manager.shutil.which",
                     side_effect=lambda name: (
                         str(executable) if name == "7z" else None
                     ),
@@ -82,7 +82,7 @@ class DownloadWorkerTests(unittest.TestCase):
     def test_prefers_bundled_7zip(self) -> None:
         self.assertTrue(BUNDLED_7ZIP.is_file())
         with patch(
-            "classes.download_manager.shutil.which",
+            "aipet.core.download_manager.shutil.which",
             side_effect=AssertionError("PATH lookup should not win"),
         ):
             self.assertEqual(_find_7zip(), BUNDLED_7ZIP.resolve())
@@ -153,7 +153,7 @@ class DownloadWorkerTests(unittest.TestCase):
 
     def test_tts_download_includes_selected_engine_archive(self) -> None:
         with patch(
-            "classes.download_manager.detect_nvidia_gpu_names",
+            "aipet.core.download_manager.detect_nvidia_gpu_names",
             return_value=["NVIDIA GeForce RTX 5080"],
         ):
             files = _tts_files(include_engine=True)

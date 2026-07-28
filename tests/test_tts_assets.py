@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tool.tts_assets import (
+from aipet.core.tts_assets import (
     configure_local_tts_weights,
     locate_gpt_sovits_root,
     locate_murasame_weights,
@@ -45,8 +45,8 @@ class TTSAssetTests(unittest.TestCase):
             references = self._create_references(model)
 
             with (
-                patch("tool.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
-                patch("tool.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
             ):
                 state = locate_tts_assets(
                     configured_engine_root=str(engine),
@@ -97,15 +97,15 @@ class TTSAssetTests(unittest.TestCase):
 
             with (
                 patch(
-                    "tool.tts_assets.managed_gpt_sovits_dir",
+                    "aipet.core.tts_assets.managed_gpt_sovits_dir",
                     return_value=managed_engine,
                 ),
                 patch(
-                    "tool.tts_assets.managed_tts_model_dir",
+                    "aipet.core.tts_assets.managed_tts_model_dir",
                     return_value=managed_model,
                 ),
-                patch("tool.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
-                patch("tool.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
             ):
                 self.assertIsNone(
                     locate_gpt_sovits_root(str(configured_engine))
@@ -132,15 +132,15 @@ class TTSAssetTests(unittest.TestCase):
 
             with (
                 patch(
-                    "tool.tts_assets.managed_gpt_sovits_dir",
+                    "aipet.core.tts_assets.managed_gpt_sovits_dir",
                     return_value=engine,
                 ),
                 patch(
-                    "tool.tts_assets.managed_tts_model_dir",
+                    "aipet.core.tts_assets.managed_tts_model_dir",
                     return_value=model,
                 ),
-                patch("tool.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
-                patch("tool.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_GPT_WEIGHT_SIZE", 1),
+                patch("aipet.core.tts_assets.MIN_SOVITS_WEIGHT_SIZE", 1),
             ):
                 self.assertEqual(
                     locate_gpt_sovits_root(),

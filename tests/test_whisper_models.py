@@ -8,12 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from tool.stt import (
+from aipet.core.stt import (
     WHISPER_INITIAL_PROMPT,
     clear_model_cache,
     transcribe_full,
 )
-from tool.whisper_models import (
+from aipet.core.whisper_models import (
     WHISPER_MODELS,
     find_local_model,
     looks_like_local_model_path,
@@ -78,7 +78,7 @@ class WhisperModelTests(unittest.TestCase):
             )
 
             with patch(
-                "tool.whisper_models.managed_whisper_dir",
+                "aipet.core.whisper_models.managed_whisper_dir",
                 return_value=managed,
             ):
                 self.assertEqual(
@@ -94,7 +94,7 @@ class WhisperModelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "managed"
             with patch(
-                "tool.whisper_models.managed_whisper_dir",
+                "aipet.core.whisper_models.managed_whisper_dir",
                 return_value=missing,
             ):
                 self.assertIsNone(find_local_model("large-v3"))
@@ -104,7 +104,7 @@ class WhisperModelTests(unittest.TestCase):
         module = SimpleNamespace(WhisperModel=whisper_model)
         with (
             patch.dict(sys.modules, {"faster_whisper": module}),
-            patch("tool.stt.find_local_model", return_value=None),
+            patch("aipet.core.stt.find_local_model", return_value=None),
             self.assertRaisesRegex(RuntimeError, "configured model directory"),
         ):
             transcribe_full("audio.wav", model_size="large-v3")
@@ -130,7 +130,7 @@ class WhisperModelTests(unittest.TestCase):
         with (
             patch.dict(sys.modules, {"faster_whisper": module}),
             patch(
-                "tool.stt.find_local_model",
+                "aipet.core.stt.find_local_model",
                 return_value="C:/models/whisper",
             ),
         ):
@@ -162,7 +162,7 @@ class WhisperModelTests(unittest.TestCase):
         with (
             patch.dict(sys.modules, {"faster_whisper": module}),
             patch(
-                "tool.stt.find_local_model",
+                "aipet.core.stt.find_local_model",
                 return_value="C:/models/whisper",
             ),
         ):
