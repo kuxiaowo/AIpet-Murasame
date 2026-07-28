@@ -164,10 +164,23 @@ class PlatformArchitectureTests(unittest.TestCase):
         native.set_integer.assert_any_call(
             321,
             "setCollectionBehavior:",
-            (1 << 0) | (1 << 18) | (1 << 8),
+            (1 << 0) | (1 << 4) | (1 << 18) | (1 << 8),
         )
         native.set_integer.assert_any_call(321, "setLevel:", 101)
         native.call_void.assert_called_once_with(321, "orderFrontRegardless")
+
+    def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
+        integration = create_macos_runtime().windowing
+        widget = Mock()
+        from PyQt5.QtCore import Qt
+
+        with patch.object(integration, "_uses_cocoa", return_value=False):
+            integration.configure_widget(widget)
+
+        widget.setAttribute.assert_any_call(
+            Qt.WA_MacAlwaysShowToolWindow,
+            True,
+        )
 
     @patch("aipet.platforms.macos.runtime.KeychainStore")
     def test_macos_uses_keychain_credentials(self, keychain_store) -> None:

@@ -52,6 +52,7 @@ class MacOSWindowIntegration:
         widget.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
+        widget.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
         widget.setAttribute(Qt.WA_TranslucentBackground, True)
         if self._uses_cocoa():
             windowing.configure_native_window(int(widget.winId()))

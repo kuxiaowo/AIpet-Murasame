@@ -7,6 +7,7 @@ import ctypes.util
 
 
 _CAN_JOIN_ALL_SPACES = 1 << 0
+_STATIONARY = 1 << 4
 _CAN_JOIN_ALL_APPLICATIONS = 1 << 18
 _FULL_SCREEN_AUXILIARY = 1 << 8
 _OVERLAY_WINDOW_LEVEL = 101
@@ -74,6 +75,7 @@ def configure_native_window(window_id: int) -> bool:
         window,
         "setCollectionBehavior:",
         _CAN_JOIN_ALL_SPACES
+        | _STATIONARY
         | _CAN_JOIN_ALL_APPLICATIONS
         | _FULL_SCREEN_AUXILIARY,
     )
