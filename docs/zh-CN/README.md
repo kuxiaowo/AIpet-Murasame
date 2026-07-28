@@ -110,8 +110,7 @@ AIpet 至少需要本地 Ollama 或一种云端 API。
 使用 Ollama 时，启动服务并拉取对话模型；视觉模型可选：
 
 ```powershell
-ollama pull qwen3:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3.5:9b
 ```
 
 使用云端服务时，可以在设置中填写密钥，也可以使用环境变量：

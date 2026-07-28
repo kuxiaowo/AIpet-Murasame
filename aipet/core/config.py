@@ -75,7 +75,7 @@ class OllamaSettings(BaseModel):
         default="http://127.0.0.1:11434",
         min_length=1,
     )
-    chat_model: str = Field(default="qwen3:14b", min_length=1)
+    chat_model: str = Field(default="qwen3.5:9b", min_length=1)
     context_window: int = Field(default=8_192, ge=2_048, le=131_072)
     timeout_seconds: int = Field(default=180, ge=10, le=600)
     keep_alive: str = Field(default="10m", min_length=1)
@@ -155,7 +155,7 @@ class VisionSettings(BaseModel):
         default="http://127.0.0.1:11434",
         min_length=1,
     )
-    ollama_model: str = Field(default="qwen2.5vl:7b", min_length=1)
+    ollama_model: str = Field(default="qwen3.5:9b", min_length=1)
     ollama_context_window: int = Field(
         default=8_192,
         ge=2_048,

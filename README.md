@@ -115,8 +115,7 @@ For Ollama, start the service and pull a chat model. The vision model is
 optional:
 
 ```powershell
-ollama pull qwen3:14b
-ollama pull qwen2.5vl:7b
+ollama pull qwen3.5:9b
 ```
 
 For cloud services, enter credentials in Settings or use environment variables:
