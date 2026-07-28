@@ -61,6 +61,7 @@ class FullscreenOverlay:
             return
         fullscreen = self._state.read_text(encoding="utf-8").strip() == "1"
         if fullscreen and not self._was_fullscreen:
+            self._snapshot()
             self._widget.hide()
         elif self._was_fullscreen and not fullscreen:
             self._widget.show()
@@ -69,7 +70,8 @@ class FullscreenOverlay:
             "1\n" if self._widget.isVisible() else "0\n",
             encoding="utf-8",
         )
-        self._snapshot()
+        if self._widget.isVisible():
+            self._snapshot()
         try:
             modified = self._command.stat().st_mtime_ns
         except OSError:
@@ -83,4 +85,8 @@ class FullscreenOverlay:
             self._widget.start_thread(text, role="user")
 
     def _snapshot(self) -> None:
+        pixmap = self._widget.pixmap()
+        if pixmap is not None and not pixmap.isNull():
+            pixmap.save(str(self._image), "PNG")
+            return
         self._widget.grab().save(str(self._image), "PNG")
