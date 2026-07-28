@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 try:
-    from tool.voice_trigger import CapslockVoiceTrigger
+    from aipet.platforms.windows.voice_trigger import CapslockVoiceTrigger
 except (ImportError, OSError):
     CapslockVoiceTrigger = None
 
@@ -60,11 +60,11 @@ class VoiceTriggerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "tool.voice_trigger.get_cache_dir",
+                    "aipet.platforms.windows.voice_trigger.get_cache_dir",
                     return_value=Path(directory),
                 ),
                 patch(
-                    "tool.voice_trigger.transcribe_full",
+                    "aipet.platforms.windows.voice_trigger.transcribe_full",
                     return_value="",
                 ),
             ):

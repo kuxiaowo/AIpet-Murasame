@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from pydantic import ValidationError
 
-from tool.audio_devices import (
+from aipet.core.audio_devices import (
     AudioInputDevice,
     decode_audio_input_device,
     encode_audio_input_device,
@@ -18,7 +18,7 @@ from tool.audio_devices import (
     resolve_audio_input_device,
     set_audio_capture_active,
 )
-from tool.backends import (
+from aipet.core.backends import (
     APIBackend,
     OllamaBackend,
     ScreenAnalysis,
@@ -29,8 +29,8 @@ from tool.backends import (
     parse_character_reply,
     parse_screen_analysis,
 )
-from tool.cache import clear_runtime_cache
-from tool.config import (
+from aipet.core.cache import clear_runtime_cache
+from aipet.core.config import (
     APISettings,
     AppSettings,
     CharacterSettings,
@@ -46,17 +46,17 @@ from tool.config import (
     load_settings,
     save_settings,
 )
-from tool.generate import generate_fgimage
-from tool.network import is_loopback_url
-from tool.portraits import OUTFITS, default_layers, layers_for
-from tool.storage import (
+from aipet.core.generate import generate_fgimage
+from aipet.core.network import is_loopback_url
+from aipet.core.portraits import OUTFITS, default_layers, layers_for
+from aipet.core.storage import (
     HistoryStore,
     ScreenMemoryEntry,
     ScreenMemoryStore,
 )
-from tool.tts import TTSClient
-from tool.tts_assets import TTSAssetState
-from tool.windowing import (
+from aipet.core.tts import TTSClient
+from aipet.core.tts_assets import TTSAssetState
+from aipet.platforms.windows.windowing import (
     SWP_NOACTIVATE,
     TOPMOST_FLAGS,
     _set_windows_topmost,
@@ -122,7 +122,7 @@ class CoreTests(unittest.TestCase):
             (device.name, device.hostapi),
         )
         with patch(
-            "tool.audio_devices._all_compatible_audio_input_devices",
+            "aipet.core.audio_devices._all_compatible_audio_input_devices",
             return_value=[device],
         ):
             self.assertEqual(resolve_audio_input_device(identifier), 37)
@@ -174,7 +174,7 @@ class CoreTests(unittest.TestCase):
             ),
         ]
         with patch(
-            "tool.audio_devices._all_compatible_audio_input_devices",
+            "aipet.core.audio_devices._all_compatible_audio_input_devices",
             return_value=devices,
         ):
             preferred = list_audio_input_devices()
@@ -200,13 +200,13 @@ class CoreTests(unittest.TestCase):
         try:
             with (
                 patch.dict("sys.modules", {"sounddevice": sounddevice}),
-                patch("tool.audio_devices._restart_portaudio") as restart,
+                patch("aipet.core.audio_devices._restart_portaudio") as restart,
                 patch(
-                    "tool.audio_devices._compatible_audio_input_devices",
+                    "aipet.core.audio_devices._compatible_audio_input_devices",
                     return_value=[device],
                 ),
                 patch(
-                    "tool.audio_devices._default_audio_input_device",
+                    "aipet.core.audio_devices._default_audio_input_device",
                     return_value=device,
                 ),
             ):
@@ -1154,15 +1154,15 @@ class CoreTests(unittest.TestCase):
                 reference_voices_ready=True,
             )
             with patch(
-                "tool.tts.get_cache_dir",
+                "aipet.core.tts.get_cache_dir",
                 return_value=root,
             ), patch(
-                "tool.tts.locate_tts_assets",
+                "aipet.core.tts.locate_tts_assets",
                 return_value=state,
             ), patch(
-                "tool.tts.get_tts_service_manager",
+                "aipet.core.tts.get_tts_service_manager",
             ) as service_manager, patch(
-                "tool.tts.configure_local_tts_weights",
+                "aipet.core.tts.configure_local_tts_weights",
             ):
                 settings = AppSettings()
                 settings.tts.enabled = True
@@ -1196,13 +1196,13 @@ class CoreTests(unittest.TestCase):
             )
             with (
                 patch(
-                    "tool.tts.get_cache_dir",
+                    "aipet.core.tts.get_cache_dir",
                     return_value=root,
                 ),
                 patch(
-                    "tool.tts.locate_tts_assets",
+                    "aipet.core.tts.locate_tts_assets",
                 ) as locate_assets,
-                patch("tool.tts.get_tts_service_manager") as service_manager,
+                patch("aipet.core.tts.get_tts_service_manager") as service_manager,
             ):
                 service_manager.return_value.autodl_reference.return_value = (
                     "/root/reference_voices/平静/ref.wav",

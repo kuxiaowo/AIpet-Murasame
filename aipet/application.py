@@ -1,0 +1,478 @@
+"""Shared Qt application bootstrap."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any
+
+from PyQt5.QtCore import QObject, QTimer, pyqtSignal
+from PyQt5.QtGui import QFont, QIcon
+from PyQt5.QtWidgets import (
+    QAction,
+    QApplication,
+    QDialog,
+    QMenu,
+    QMessageBox,
+    QSystemTrayIcon,
+)
+
+from aipet.core.config import (
+    AppSettings,
+    PROJECT_ROOT,
+    load_settings,
+    save_settings,
+    settings_file_exists,
+)
+from aipet.core.download_manager import DownloadManager
+from aipet.core.runtime_logging import (
+    configure_console_logging,
+    get_logger,
+    shutdown_console_logging,
+)
+from aipet.core.tts_service import (
+    get_tts_service_manager,
+    shutdown_tts_service,
+)
+from aipet.platforms import PlatformRuntime, get_platform_runtime
+from aipet.ui.pet import Murasame
+from aipet.ui.settings_dialog import SettingsDialog
+
+
+logger = get_logger("main")
+
+
+UI_TEXT = {
+    "en": {
+        "speech_unavailable": "Speech input unavailable",
+        "install_voice": "Install requirements-voice.txt to enable it: {error}",
+        "speech_failed": "Speech input failed",
+        "recording": "Recording…",
+        "recognizing": "Recognizing speech…",
+        "settings": "Settings…",
+        "dnd": "Do Not Disturb",
+        "vision": "Screen Vision",
+        "clear": "Clear Conversation Memory",
+        "exit": "Exit",
+        "save_failed": "Settings save failed",
+    },
+    "zh-CN": {
+        "speech_unavailable": "语音输入不可用",
+        "install_voice": "请安装 requirements-voice.txt：{error}",
+        "speech_failed": "语音输入失败",
+        "recording": "正在录音……",
+        "recognizing": "正在识别……",
+        "settings": "设置…",
+        "dnd": "勿扰模式",
+        "vision": "屏幕视觉",
+        "clear": "清除对话记忆",
+        "exit": "退出",
+        "save_failed": "设置保存失败",
+    },
+}
+
+
+def run_special_mode(argv: list[str] | None = None) -> int | None:
+    args = sys.argv if argv is None else argv
+    if len(args) < 2 or args[1] != "--log-viewer":
+        return None
+    if len(args) != 4:
+        return 2
+    try:
+        parent_process_id = int(args[3])
+    except ValueError:
+        return 2
+
+    get_platform_runtime().processes.follow_log_viewer(
+        Path(args[2]),
+        parent_process_id,
+    )
+    return 0
+
+
+def ui_text(settings: AppSettings, key: str, **values: object) -> str:
+    language = (
+        settings.ui_language
+        if settings.ui_language in UI_TEXT
+        else "en"
+    )
+    text = UI_TEXT[language][key]
+    return text.format(**values) if values else text
+
+
+class VoiceBridge(QObject):
+    text_ready = pyqtSignal(str)
+    record_start = pyqtSignal()
+    record_end = pyqtSignal()
+    error = pyqtSignal(str)
+
+
+def load_settings_safely() -> tuple[AppSettings, str | None]:
+    try:
+        return load_settings(), None
+    except Exception as exc:
+        return AppSettings(), str(exc)
+
+
+def move_pet_to_configured_screen(
+    app: QApplication,
+    pet: Murasame,
+    settings: AppSettings,
+) -> None:
+    screens = app.screens()
+    display = settings.display
+    screen = next(
+        (
+            candidate
+            for candidate in screens
+            if display.screen_name
+            and candidate.name() == display.screen_name
+        ),
+        None,
+    )
+    index = display.screen_index
+    screen = (
+        screen
+        or (
+            screens[index]
+            if 0 <= index < len(screens)
+            else app.primaryScreen()
+        )
+    )
+    if screen is not None:
+        geometry = screen.availableGeometry()
+        x = geometry.x()
+        y = geometry.y()
+        if display.window_x is not None and display.window_y is not None:
+            x += display.window_x
+            y += display.window_y
+            max_x = max(geometry.left(), geometry.right() - pet.width() + 1)
+            max_y = max(geometry.top(), geometry.bottom() - pet.height() + 1)
+            x = max(geometry.left(), min(x, max_x))
+            y = max(geometry.top(), min(y, max_y))
+        pet.move(x, y)
+        pet.remember_window_position()
+
+
+def configure_voice_trigger(
+    pet: Murasame,
+    settings: AppSettings,
+    tray_icon: QSystemTrayIcon,
+    platform_runtime: PlatformRuntime | None = None,
+) -> Any | None:
+    if not settings.stt.enabled:
+        return None
+
+    bridge = VoiceBridge(pet)
+    bridge.text_ready.connect(
+        lambda text: pet.start_thread(text, role="user", source="voice")
+    )
+    bridge.record_start.connect(
+        lambda: pet.show_text(
+            ui_text(settings, "recording"),
+            typing=False,
+            speaker_name=settings.character.user_name,
+        )
+    )
+    bridge.record_end.connect(
+        lambda: pet.show_text(
+            ui_text(settings, "recognizing"),
+            typing=False,
+            speaker_name=settings.character.user_name,
+        )
+    )
+    bridge.error.connect(
+        lambda message: tray_icon.showMessage(
+            ui_text(settings, "speech_failed"),
+            message,
+            QSystemTrayIcon.Warning,
+        )
+    )
+    bridge.error.connect(
+        lambda _message: pet.show_text(
+            ui_text(settings, "speech_failed"),
+            typing=False,
+            speaker_name=settings.character.user_name,
+        )
+    )
+
+    runtime = platform_runtime or get_platform_runtime()
+    try:
+        trigger = runtime.input.create_voice_trigger(
+            on_text_ready=bridge.text_ready.emit,
+            hold_seconds=2.0,
+            on_record_start=bridge.record_start.emit,
+            on_record_end=bridge.record_end.emit,
+            model_name=settings.stt.model,
+            model_directory=settings.stt.model_dir,
+            device=settings.stt.device,
+            input_device=settings.stt.input_device,
+            on_error=bridge.error.emit,
+        )
+    except (ImportError, OSError) as exc:
+        logger.exception("语音输入模块加载失败")
+        tray_icon.showMessage(
+            ui_text(settings, "speech_unavailable"),
+            ui_text(settings, "install_voice", error=exc),
+            QSystemTrayIcon.Warning,
+        )
+        return None
+
+    try:
+        trigger.start()
+    except Exception as exc:
+        logger.exception("语音触发器启动失败")
+        tray_icon.showMessage(
+            ui_text(settings, "speech_failed"),
+            str(exc),
+            QSystemTrayIcon.Warning,
+        )
+        return None
+    trigger._qt_bridge = bridge
+    return trigger
+
+
+def main() -> int:
+    platform_runtime = get_platform_runtime()
+    get_tts_service_manager(platform_runtime)
+    app = QApplication(sys.argv)
+    app.setApplicationName("AIpet Murasame")
+    app.setFont(QFont("Segoe UI", 10))
+    app.setQuitOnLastWindowClosed(False)
+    download_manager = DownloadManager(
+        app,
+        platform_runtime=platform_runtime,
+    )
+    icon = QIcon(str(PROJECT_ROOT / "icon.png"))
+    app.setWindowIcon(icon)
+
+    settings, load_error = load_settings_safely()
+    configure_console_logging(settings.display.show_log_console)
+    logger.info(
+        "配置已加载 | 对话后端=%s | 视觉后端=%s",
+        settings.mode,
+        settings.vision.provider,
+    )
+    first_run = not settings_file_exists()
+    if load_error:
+        logger.error("读取配置失败：%s", load_error)
+        QMessageBox.warning(
+            None,
+            "Invalid configuration",
+            "The saved configuration could not be read. "
+            f"Defaults will be shown instead.\n\n{load_error}",
+        )
+        first_run = True
+
+    if first_run:
+        setup = SettingsDialog(
+            settings,
+            first_run=True,
+            download_manager=download_manager,
+            platform_runtime=platform_runtime,
+        )
+        if setup.exec_() != QDialog.Accepted:
+            download_manager.shutdown()
+            return 0
+        settings = setup.result_settings()
+        save_settings(settings)
+        configure_console_logging(settings.display.show_log_console)
+
+    try:
+        pet = Murasame(settings, platform_runtime)
+    except Exception as exc:
+        logger.exception("AIpet 启动失败")
+        QMessageBox.critical(
+            None,
+            "AIpet startup failed",
+            str(exc),
+        )
+        download_manager.shutdown()
+        return 1
+    pet.show()
+    move_pet_to_configured_screen(app, pet, settings)
+
+    tray_icon = QSystemTrayIcon(icon, app)
+    tray_menu = QMenu()
+    settings_action = QAction(tray_menu)
+    dnd_action = QAction(tray_menu)
+    dnd_action.setCheckable(True)
+    dnd_action.setChecked(pet.is_dnd_enabled())
+    screenshot_action = QAction(tray_menu)
+    screenshot_action.setCheckable(True)
+    screenshot_action.setChecked(pet.is_screenshot_enabled())
+    clear_action = QAction(tray_menu)
+    exit_action = QAction(tray_menu)
+
+    def apply_tray_language(current_settings: AppSettings) -> None:
+        settings_action.setText(ui_text(current_settings, "settings"))
+        dnd_action.setText(ui_text(current_settings, "dnd"))
+        screenshot_action.setText(ui_text(current_settings, "vision"))
+        clear_action.setText(ui_text(current_settings, "clear"))
+        exit_action.setText(ui_text(current_settings, "exit"))
+
+    apply_tray_language(settings)
+
+    tray_menu.addAction(settings_action)
+    tray_menu.addSeparator()
+    tray_menu.addAction(dnd_action)
+    tray_menu.addAction(screenshot_action)
+    tray_menu.addAction(clear_action)
+    tray_menu.addSeparator()
+    tray_menu.addAction(exit_action)
+    tray_icon.setContextMenu(tray_menu)
+    tray_icon.show()
+
+    pet.notification.connect(
+        lambda title, message: tray_icon.showMessage(
+            title,
+            message,
+            QSystemTrayIcon.Warning,
+        )
+    )
+
+    voice_trigger = configure_voice_trigger(
+        pet,
+        settings,
+        tray_icon,
+        platform_runtime,
+    )
+
+    def persist_pet_settings() -> None:
+        pet.remember_window_position()
+        try:
+            save_settings(pet.settings)
+        except OSError as exc:
+            tray_icon.showMessage(
+                ui_text(pet.settings, "save_failed"),
+                str(exc),
+                QSystemTrayIcon.Warning,
+            )
+
+    def set_screen_vision(enabled: bool) -> None:
+        pet.set_screenshot_enabled(enabled)
+        screenshot_action.blockSignals(True)
+        screenshot_action.setChecked(pet.is_screenshot_enabled())
+        screenshot_action.blockSignals(False)
+        persist_pet_settings()
+
+    def set_do_not_disturb(enabled: bool) -> None:
+        pet.set_dnd_enabled(enabled)
+        dnd_action.blockSignals(True)
+        dnd_action.setChecked(pet.is_dnd_enabled())
+        dnd_action.blockSignals(False)
+        persist_pet_settings()
+
+    screenshot_action.toggled.connect(set_screen_vision)
+    dnd_action.toggled.connect(set_do_not_disturb)
+    clear_action.triggered.connect(pet.clear_history)
+
+    settings_dialog: SettingsDialog | None = None
+
+    def apply_settings_dialog(dialog: SettingsDialog) -> None:
+        nonlocal settings, voice_trigger
+        settings = dialog.result_settings()
+        try:
+            save_settings(settings)
+        except OSError as exc:
+            QMessageBox.warning(
+                None,
+                ui_text(settings, "save_failed"),
+                str(exc),
+            )
+            return
+
+        configure_console_logging(settings.display.show_log_console)
+        logger.info(
+            "设置已应用 | 对话后端=%s | 视觉后端=%s",
+            settings.mode,
+            settings.vision.provider,
+        )
+        if voice_trigger is not None:
+            voice_trigger.stop()
+        voice_trigger = configure_voice_trigger(
+            pet,
+            settings,
+            tray_icon,
+            platform_runtime,
+        )
+        pet.apply_settings(settings)
+        apply_tray_language(settings)
+        dnd_action.blockSignals(True)
+        dnd_action.setChecked(pet.is_dnd_enabled())
+        dnd_action.blockSignals(False)
+        screenshot_action.blockSignals(True)
+        screenshot_action.setChecked(settings.vision.enabled)
+        screenshot_action.blockSignals(False)
+        move_pet_to_configured_screen(app, pet, settings)
+
+    def finish_settings_dialog(
+        result: int,
+        dialog: SettingsDialog,
+    ) -> None:
+        nonlocal settings_dialog
+        if result == QDialog.Accepted:
+            apply_settings_dialog(dialog)
+        if settings_dialog is dialog:
+            settings_dialog = None
+        dispose_settings_dialog_when_idle(dialog)
+
+    def dispose_settings_dialog_when_idle(
+        dialog: SettingsDialog,
+    ) -> None:
+        if dialog._background_check_is_running():
+            QTimer.singleShot(
+                100,
+                lambda current=dialog: (
+                    dispose_settings_dialog_when_idle(current)
+                ),
+            )
+            return
+        dialog.deleteLater()
+
+    def open_settings() -> None:
+        nonlocal settings_dialog
+        if settings_dialog is not None:
+            settings_dialog.showNormal()
+            settings_dialog.raise_()
+            settings_dialog.activateWindow()
+            return
+
+        dialog = SettingsDialog(
+            pet.settings,
+            download_manager=download_manager,
+            parent=None,
+            platform_runtime=platform_runtime,
+        )
+        dialog.clear_history_requested.connect(pet.clear_history)
+        settings_dialog = dialog
+        dialog.finished.connect(
+            lambda result, current=dialog: finish_settings_dialog(
+                result,
+                current,
+            )
+        )
+        dialog.open()
+
+    settings_action.triggered.connect(open_settings)
+
+    def shutdown() -> None:
+        logger.info("AIpet 正在退出")
+        if voice_trigger is not None:
+            voice_trigger.stop()
+        try:
+            from aipet.core.stt import clear_model_cache
+
+            clear_model_cache()
+        except ImportError:
+            pass
+        persist_pet_settings()
+        pet.shutdown()
+        shutdown_tts_service()
+        download_manager.shutdown()
+        tray_icon.hide()
+        shutdown_console_logging()
+
+    app.aboutToQuit.connect(shutdown)
+    exit_action.triggered.connect(app.quit)
+    return app.exec_()

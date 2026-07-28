@@ -16,18 +16,18 @@ from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
-from classes.download_manager import DownloadSnapshot, whisper_job_id
-from classes.murasame_class import Murasame
-from classes.workers import ConversationResult
+from aipet.core.download_manager import DownloadSnapshot, whisper_job_id
+from aipet.ui.pet import Murasame
+from aipet.core.workers import ConversationResult
 from main import move_pet_to_configured_screen
-from tool.audio_devices import AudioInputDevice
-from tool.backends import ScreenAnalysis, parse_character_reply
-from tool.cache import CacheClearResult
-from tool.config import AppSettings
-from tool.portraits import layers_for
-from tool.tts_assets import TTSAssetState
-from tool.whisper_models import model_repository
-from ui.settings_dialog import SettingsDialog
+from aipet.core.audio_devices import AudioInputDevice
+from aipet.core.backends import ScreenAnalysis, parse_character_reply
+from aipet.core.cache import CacheClearResult
+from aipet.core.config import AppSettings
+from aipet.core.portraits import layers_for
+from aipet.core.tts_assets import TTSAssetState
+from aipet.core.whisper_models import model_repository
+from aipet.ui.settings_dialog import SettingsDialog
 
 
 class UISmokeTests(unittest.TestCase):
@@ -62,11 +62,11 @@ class UISmokeTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             patch.dict(os.environ, {"AIPET_DATA_DIR": directory}),
             patch(
-                "classes.murasame_class.native_topmost_available",
+                "aipet.ui.pet.native_topmost_available",
                 return_value=True,
             ),
             patch(
-                "classes.murasame_class.ensure_window_topmost",
+                "aipet.ui.pet.ensure_window_topmost",
                 return_value=True,
             ) as ensure_topmost,
         ):
@@ -107,7 +107,7 @@ class UISmokeTests(unittest.TestCase):
                     {"AIPET_DATA_DIR": directory},
                 ),
                 patch(
-                    "ui.settings_dialog.refresh_audio_input_devices",
+                    "aipet.ui.settings_dialog.refresh_audio_input_devices",
                     return_value=(selected, [selected]),
                 ),
             ):
@@ -140,7 +140,7 @@ class UISmokeTests(unittest.TestCase):
                     )
                     with (
                         patch(
-                            "ui.settings_dialog.refresh_audio_input_devices",
+                            "aipet.ui.settings_dialog.refresh_audio_input_devices",
                             return_value=(selected, [selected, newly_connected]),
                         ),
                     ):
@@ -301,7 +301,7 @@ class UISmokeTests(unittest.TestCase):
         settings = AppSettings(ui_language="zh-CN")
         with (
             patch(
-                "ui.settings_dialog.refresh_audio_input_devices",
+                "aipet.ui.settings_dialog.refresh_audio_input_devices",
                 return_value=(None, []),
             ),
         ):
@@ -311,7 +311,7 @@ class UISmokeTests(unittest.TestCase):
                 bool(dialog.windowFlags() & Qt.WindowContextHelpButtonHint)
             )
             with patch(
-                "ui.settings_dialog.QMessageBox.information"
+                "aipet.ui.settings_dialog.QMessageBox.information"
             ) as information:
                 dialog.automation_help_button.click()
                 information.assert_called_once()
@@ -455,7 +455,7 @@ class UISmokeTests(unittest.TestCase):
                 )
                 dialog.whisper_model_dir.clear()
                 with patch(
-                    "ui.settings_dialog.QMessageBox.warning"
+                    "aipet.ui.settings_dialog.QMessageBox.warning"
                 ) as warning:
                     self.assertIsNone(
                         dialog._require_download_directory(
@@ -470,7 +470,7 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_model_dir.clear()
                 with (
                     patch(
-                        "ui.settings_dialog.QMessageBox.warning"
+                        "aipet.ui.settings_dialog.QMessageBox.warning"
                     ) as warning,
                     patch.object(
                         dialog.download_manager,
@@ -551,7 +551,7 @@ class UISmokeTests(unittest.TestCase):
                 pet.history_store.save(pet.history)
                 dialog.clear_history_requested.connect(pet.clear_history)
                 with patch(
-                    "ui.settings_dialog.QMessageBox.question",
+                    "aipet.ui.settings_dialog.QMessageBox.question",
                     return_value=QMessageBox.Yes,
                 ):
                     dialog.clear_history_button.click()
@@ -562,11 +562,11 @@ class UISmokeTests(unittest.TestCase):
                 self.assertEqual(dialog.tabs.tabText(5), "其他")
                 with (
                     patch(
-                        "ui.settings_dialog.QMessageBox.question",
+                        "aipet.ui.settings_dialog.QMessageBox.question",
                         return_value=QMessageBox.Yes,
                     ),
                     patch(
-                        "ui.settings_dialog.clear_runtime_cache",
+                        "aipet.ui.settings_dialog.clear_runtime_cache",
                         return_value=CacheClearResult(
                             removed_files=3,
                             removed_bytes=1536,
@@ -685,7 +685,7 @@ class UISmokeTests(unittest.TestCase):
                     reference_voices_ready=True,
                 )
                 with patch(
-                    "ui.settings_dialog.QMessageBox.question",
+                    "aipet.ui.settings_dialog.QMessageBox.question",
                     return_value=QMessageBox.No,
                 ):
                     dialog._on_tts_checked(missing_engine, False)
@@ -844,7 +844,7 @@ class UISmokeTests(unittest.TestCase):
                 ) as proactive_event:
                     pet._reset_idle_state()
                     with patch(
-                        "classes.murasame_class.get_idle_seconds",
+                        "aipet.ui.pet.get_idle_seconds",
                         return_value=(
                             pet.settings.idle.thinking_minutes * 60 + 1
                         ),
@@ -855,7 +855,7 @@ class UISmokeTests(unittest.TestCase):
                     proactive_event.reset_mock()
                     pet._reset_idle_state()
                     with patch(
-                        "classes.murasame_class.get_idle_seconds",
+                        "aipet.ui.pet.get_idle_seconds",
                         return_value=(
                             pet.settings.idle.away_minutes * 60 + 1
                         ),
@@ -867,7 +867,7 @@ class UISmokeTests(unittest.TestCase):
                     pet.idle_away_triggered = True
                     pet.away_trigger_time = time.time() - 31
                     with patch(
-                        "classes.murasame_class.get_idle_seconds",
+                        "aipet.ui.pet.get_idle_seconds",
                         return_value=0,
                     ):
                         pet.check_idle_state()
