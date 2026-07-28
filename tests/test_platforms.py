@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 from aipet.core.config import AppSettings, TTSSettings, load_settings, save_settings
+from aipet.core.tts_service import _locate_runtime_python
 from aipet.platforms import CredentialError, get_platform_runtime
 from aipet.platforms.macos import create_runtime as create_macos_runtime
 from aipet.platforms.macos.credentials import KeychainStore
@@ -198,6 +199,17 @@ class PlatformArchitectureTests(unittest.TestCase):
             root.parent / ".gpt-sovits-venv" / "bin" / "python",
             candidates,
         )
+
+    def test_tts_runtime_keeps_virtualenv_python_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "GPT-SoVITS"
+            python = root.parent / ".gpt-sovits-venv" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.symlink_to(Path(sys.executable))
+
+            selected = _locate_runtime_python(root, create_macos_runtime())
+
+            self.assertEqual(selected, python.absolute())
 
     def test_macos_tts_bootstrap_checks_base_assets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
