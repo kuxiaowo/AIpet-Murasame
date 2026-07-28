@@ -29,8 +29,20 @@ when the corresponding feature is first used.
 ## Local GPT-SoVITS
 
 Managed Windows GPT-SoVITS archives are intentionally not reused on macOS.
-Install a macOS-compatible GPT-SoVITS checkout manually, then select its
-directory in Settings. The adapter finds Python in these layouts:
+In **Settings → TTS**, choose **Local computer**, select the engine directory,
+then click **Install macOS GPT-SoVITS base environment**. The installer uses a
+pinned GPT-SoVITS release, downloads an isolated Python 3.10 runtime, installs
+the required Python packages and common base assets. Murasame's character
+weights and reference voices remain separate on-demand downloads.
+
+For a source checkout, install `uv` in the environment that launches AIpet
+before using the button:
+
+```bash
+.venv/bin/python -m pip install uv
+```
+
+The adapter also recognizes existing installations in these layouts:
 
 ```text
 GPT-SoVITS/.venv/bin/python

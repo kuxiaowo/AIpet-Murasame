@@ -8,12 +8,14 @@ from PyInstaller.utils.hooks import collect_data_files
 
 project_root = Path(SPECPATH).parents[1]
 icon_path = Path(os.environ["AIPET_MACOS_ICON"])
+uv_path = Path(os.environ["AIPET_MACOS_UV"])
 
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
     (str(project_root / "prompt.txt"), "."),
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
+    (str(uv_path), "tools"),
 ]
 datas += collect_data_files("faster_whisper")
 
@@ -27,6 +29,7 @@ a = Analysis(
         "aipet.platforms.macos.credentials",
         "aipet.platforms.macos.voice_trigger",
         "aipet.platforms.macos.windowing",
+        "aipet.platforms.macos.tts_bootstrap",
     ],
     hookspath=[],
     hooksconfig={},

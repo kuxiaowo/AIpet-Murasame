@@ -11,6 +11,7 @@ from aipet.core.config import AppSettings, TTSSettings, load_settings, save_sett
 from aipet.platforms import CredentialError, get_platform_runtime
 from aipet.platforms.macos import create_runtime as create_macos_runtime
 from aipet.platforms.macos.credentials import KeychainStore
+from aipet.platforms.macos.tts_bootstrap import MacOSTTSBootstrap
 from aipet.platforms.registry import reset_platform_runtime_for_tests
 from aipet.platforms.windows import create_runtime as create_windows_runtime
 from aipet.platforms.windows.processes import WindowsKillOnCloseJob
@@ -26,6 +27,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         self.assertEqual(runtime.platform_id, "windows")
         self.assertTrue(runtime.capabilities.window_topmost)
         self.assertTrue(runtime.capabilities.secure_credentials)
+        self.assertFalse(runtime.capabilities.managed_tts_bootstrap)
         self.assertTrue(callable(runtime.paths.user_data_dir))
         self.assertTrue(callable(runtime.windowing.ensure_topmost))
         self.assertTrue(callable(runtime.input.create_voice_trigger))
@@ -34,6 +36,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         self.assertTrue(callable(runtime.processes.hidden_subprocess_options))
         self.assertTrue(callable(runtime.archives.seven_zip_candidates))
         self.assertTrue(callable(runtime.audio.prepare_input_devices))
+        self.assertTrue(callable(runtime.tts_bootstrap.install))
 
     def test_windows_archive_policy_selects_expected_engine(self) -> None:
         archives = create_windows_runtime().archives
@@ -122,6 +125,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         self.assertEqual(runtime.platform_id, "macos")
         self.assertTrue(runtime.capabilities.window_topmost)
         self.assertTrue(runtime.capabilities.secure_credentials)
+        self.assertTrue(runtime.capabilities.managed_tts_bootstrap)
         self.assertTrue(callable(runtime.paths.user_data_dir))
         self.assertTrue(callable(runtime.windowing.ensure_topmost))
         self.assertTrue(callable(runtime.input.create_voice_trigger))
@@ -130,6 +134,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         self.assertTrue(callable(runtime.processes.hidden_subprocess_options))
         self.assertTrue(callable(runtime.archives.seven_zip_candidates))
         self.assertTrue(callable(runtime.audio.prepare_input_devices))
+        self.assertTrue(callable(runtime.tts_bootstrap.install))
 
         with patch.object(sys, "platform", "darwin"):
             reset_platform_runtime_for_tests()
@@ -193,6 +198,62 @@ class PlatformArchitectureTests(unittest.TestCase):
             root.parent / ".gpt-sovits-venv" / "bin" / "python",
             candidates,
         )
+
+    def test_macos_tts_bootstrap_checks_base_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            required = (
+                "GPT_SoVITS/pretrained_models/"
+                "chinese-roberta-wwm-ext-large/pytorch_model.bin",
+                "GPT_SoVITS/pretrained_models/"
+                "chinese-hubert-base/pytorch_model.bin",
+                "GPT_SoVITS/pretrained_models/"
+                "gsv-v4-pretrained/vocoder.pth",
+            )
+            for relative in required:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+
+            self.assertTrue(MacOSTTSBootstrap._base_assets_ready(root))
+
+    def test_macos_tts_bootstrap_finds_packaged_uv(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            contents = Path(directory) / "Contents"
+            executable = contents / "MacOS" / "AIpet-Murasame"
+            uv = contents / "Frameworks" / "tools" / "uv"
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            uv.parent.mkdir(parents=True)
+            uv.touch(mode=0o755)
+
+            with (
+                patch.dict("os.environ", {}, clear=True),
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertEqual(MacOSTTSBootstrap._uv(), uv.resolve())
+
+    def test_macos_tts_bootstrap_replaces_empty_engine_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "GPT-SoVITS"
+            root.mkdir()
+            bootstrap = MacOSTTSBootstrap()
+
+            def clone(command, **_kwargs) -> None:
+                staging = Path(command[-1])
+                staging.mkdir()
+                (staging / "api_v2.py").touch()
+
+            with (
+                patch.object(bootstrap, "_run", side_effect=clone),
+                patch.object(bootstrap, "_output", return_value=(
+                    "d7c2210da8c013e81a94bfc7b811a477c99fd506"
+                )),
+            ):
+                bootstrap._install_source(root, lambda _stage: None)
+
+            self.assertTrue((root / "api_v2.py").is_file())
 
     def test_configuration_round_trip_preserves_autodl_fields(self) -> None:
         original = AppSettings(

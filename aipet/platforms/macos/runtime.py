@@ -16,6 +16,7 @@ from aipet.platforms.contracts import (
 )
 from aipet.platforms.macos.credentials import KeychainStore
 from aipet.platforms.macos import windowing
+from aipet.platforms.macos.tts_bootstrap import MacOSTTSBootstrap
 
 
 class MacOSPathPolicy:
@@ -200,6 +201,7 @@ def create_runtime() -> PlatformRuntime:
             log_viewer=True,
             child_process_guard=False,
             managed_archives=False,
+            managed_tts_bootstrap=True,
         ),
         paths=MacOSPathPolicy(),
         windowing=MacOSWindowIntegration(),
@@ -208,4 +210,5 @@ def create_runtime() -> PlatformRuntime:
         processes=MacOSProcessPolicy(),
         archives=MacOSArchivePolicy(),
         audio=MacOSAudioPolicy(),
+        tts_bootstrap=MacOSTTSBootstrap(),
     )

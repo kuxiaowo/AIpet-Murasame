@@ -689,8 +689,18 @@ class UISmokeTests(unittest.TestCase):
                     return_value=QMessageBox.No,
                 ):
                     dialog._on_tts_checked(missing_engine, False)
-                self.assertTrue(dialog._tts_engine_download_needed)
-                self.assertTrue(dialog.tts_download_button.isEnabled())
+                self.assertEqual(
+                    dialog._tts_engine_download_needed,
+                    dialog._platform_runtime.capabilities.managed_archives,
+                )
+                self.assertEqual(
+                    dialog.tts_download_button.isEnabled(),
+                    dialog._platform_runtime.capabilities.managed_archives,
+                )
+                self.assertEqual(
+                    dialog.tts_bootstrap_button.isEnabled(),
+                    dialog._platform_runtime.capabilities.managed_tts_bootstrap,
+                )
                 managed_engine = Path(directory) / "managed-engine"
                 managed_engine.mkdir()
                 (managed_engine / "api_v2.py").write_text(

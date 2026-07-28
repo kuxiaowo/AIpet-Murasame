@@ -28,6 +28,7 @@ done
 iconutil -c icns "$iconset" -o "$icon_file"
 
 export AIPET_MACOS_ICON="$icon_file"
+export AIPET_MACOS_UV="$venv_root/bin/uv"
 "$venv_root/bin/python" -m PyInstaller \
   --noconfirm \
   --clean \
