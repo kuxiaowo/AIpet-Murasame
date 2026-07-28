@@ -42,6 +42,7 @@ class MacOSPathPolicy:
 class MacOSWindowIntegration:
     def __init__(self) -> None:
         self._spaces_timer = None
+        self._fullscreen_overlay = None
 
     @staticmethod
     def _uses_cocoa() -> bool:
@@ -59,6 +60,8 @@ class MacOSWindowIntegration:
         widget.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
         widget.setAttribute(Qt.WA_TranslucentBackground, True)
         if self._uses_cocoa():
+            from aipet.platforms.macos.fullscreen_overlay import FullscreenOverlay
+
             windowing.configure_native_window(int(widget.winId()))
             if self._spaces_timer is None:
                 self._spaces_timer = QTimer(QApplication.instance())
@@ -68,6 +71,13 @@ class MacOSWindowIntegration:
                 )
                 self._spaces_timer.start()
                 QTimer.singleShot(0, windowing.configure_qt_windows_for_spaces)
+            if self._fullscreen_overlay is None:
+                self._fullscreen_overlay = FullscreenOverlay(widget)
+                QTimer.singleShot(500, self._fullscreen_overlay.start)
+                self._spaces_timer.timeout.connect(self._fullscreen_overlay.sync)
+                QApplication.instance().aboutToQuit.connect(
+                    self._fullscreen_overlay.stop
+                )
 
     def topmost_available(self) -> bool:
         return True

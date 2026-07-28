@@ -29,6 +29,11 @@ iconutil -c icns "$iconset" -o "$icon_file"
 
 export AIPET_MACOS_ICON="$icon_file"
 export AIPET_MACOS_UV="$venv_root/bin/uv"
+overlay_binary="$build_root/aipet-fullscreen-overlay"
+clang -framework Cocoa -framework CoreGraphics \
+  "$project_root/aipet/platforms/macos/fullscreen_overlay.m" \
+  -o "$overlay_binary"
+export AIPET_MACOS_FULLSCREEN_OVERLAY="$overlay_binary"
 "$venv_root/bin/python" -m PyInstaller \
   --noconfirm \
   --clean \

@@ -9,6 +9,7 @@ from PyInstaller.utils.hooks import collect_data_files
 project_root = Path(SPECPATH).parents[1]
 icon_path = Path(os.environ["AIPET_MACOS_ICON"])
 uv_path = Path(os.environ["AIPET_MACOS_UV"])
+overlay_path = Path(os.environ["AIPET_MACOS_FULLSCREEN_OVERLAY"])
 
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
@@ -16,6 +17,7 @@ datas = [
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
     (str(uv_path), "tools"),
+    (str(overlay_path), "aipet-fullscreen-overlay"),
 ]
 datas += collect_data_files("faster_whisper")
 
@@ -29,6 +31,7 @@ a = Analysis(
         "aipet.platforms.macos.credentials",
         "aipet.platforms.macos.voice_trigger",
         "aipet.platforms.macos.windowing",
+        "aipet.platforms.macos.fullscreen_overlay",
         "aipet.platforms.macos.tts_bootstrap",
     ],
     hookspath=[],
