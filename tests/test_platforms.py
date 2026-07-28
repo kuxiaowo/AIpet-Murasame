@@ -119,7 +119,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         runtime = create_macos_runtime()
 
         self.assertEqual(runtime.platform_id, "macos")
-        self.assertFalse(runtime.capabilities.window_topmost)
+        self.assertTrue(runtime.capabilities.window_topmost)
         self.assertTrue(runtime.capabilities.secure_credentials)
         self.assertTrue(callable(runtime.paths.user_data_dir))
         self.assertTrue(callable(runtime.windowing.ensure_topmost))
@@ -143,6 +143,22 @@ class PlatformArchitectureTests(unittest.TestCase):
         ):
             self.assertEqual(runtime.input.idle_seconds(), 3.0)
 
+    @patch(
+        "aipet.platforms.macos.windowing._ObjectiveCRuntime"
+    )
+    def test_macos_window_joins_fullscreen_spaces(self, runtime_class) -> None:
+        native = runtime_class.return_value
+        native.object_result.return_value = 321
+        from aipet.platforms.macos.windowing import configure_native_window
+
+        self.assertTrue(configure_native_window(123))
+        native.set_integer.assert_any_call(
+            321,
+            "setCollectionBehavior:",
+            (1 << 0) | (1 << 8),
+        )
+        native.set_integer.assert_any_call(321, "setLevel:", 25)
+
     @patch("aipet.platforms.macos.runtime.KeychainStore")
     def test_macos_uses_keychain_credentials(self, keychain_store) -> None:
         runtime = create_macos_runtime()
@@ -157,6 +173,13 @@ class PlatformArchitectureTests(unittest.TestCase):
             token = store.protect("secret")
         self.assertEqual(token, "macos-keychain:autodl")
         store._security.SecKeychainAddGenericPassword.assert_called_once()
+
+    def test_macos_download_manager_imports_without_managed_archive(
+        self,
+    ) -> None:
+        from aipet.core import download_manager
+
+        self.assertEqual(download_manager.TTS_ENGINE_ARCHIVE, "")
 
     def test_configuration_round_trip_preserves_autodl_fields(self) -> None:
         original = AppSettings(

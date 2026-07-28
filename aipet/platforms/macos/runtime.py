@@ -15,6 +15,7 @@ from aipet.platforms.contracts import (
     PlatformRuntime,
 )
 from aipet.platforms.macos.credentials import KeychainStore
+from aipet.platforms.macos import windowing
 
 
 class MacOSPathPolicy:
@@ -38,6 +39,12 @@ class MacOSPathPolicy:
 
 
 class MacOSWindowIntegration:
+    @staticmethod
+    def _uses_cocoa() -> bool:
+        from PyQt5.QtGui import QGuiApplication
+
+        return QGuiApplication.platformName() == "cocoa"
+
     def configure_widget(self, widget: Any) -> None:
         from PyQt5.QtCore import Qt
 
@@ -45,14 +52,17 @@ class MacOSWindowIntegration:
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
         widget.setAttribute(Qt.WA_TranslucentBackground, True)
+        if self._uses_cocoa():
+            windowing.configure_native_window(int(widget.winId()))
 
     def topmost_available(self) -> bool:
-        # Native full-screen Spaces handling is implemented separately.
-        return False
+        return True
 
     def ensure_topmost(self, window_id: int) -> bool:
-        del window_id
-        return False
+        return (
+            self._uses_cocoa()
+            and windowing.configure_native_window(window_id)
+        )
 
 
 class MacOSInputIntegration:
@@ -181,7 +191,7 @@ def create_runtime() -> PlatformRuntime:
     return PlatformRuntime(
         platform_id="macos",
         capabilities=PlatformCapabilities(
-            window_topmost=False,
+            window_topmost=True,
             global_voice_trigger=False,
             secure_credentials=True,
             log_viewer=True,

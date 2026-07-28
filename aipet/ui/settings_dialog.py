@@ -2317,7 +2317,9 @@ class SettingsDialog(QDialog):
             self.tts_model_dir.setText(str(state.model_directory))
 
         self._tts_engine_download_needed = (
-            not reachable and not state.engine_ready
+            self._platform_runtime.capabilities.managed_archives
+            and not reachable
+            and not state.engine_ready
         )
         if reachable:
             if get_tts_service_manager().owns_running_process():
@@ -2343,10 +2345,14 @@ class SettingsDialog(QDialog):
                 self.tts_download_button.setEnabled(False)
                 self._set_tts_status("tts_ready_online")
             elif state.engine_root is None:
-                self.tts_download_button.setEnabled(True)
+                self.tts_download_button.setEnabled(
+                    self._platform_runtime.capabilities.managed_archives
+                )
                 self._set_tts_status("tts_engine_missing")
             elif not state.engine_ready:
-                self.tts_download_button.setEnabled(True)
+                self.tts_download_button.setEnabled(
+                    self._platform_runtime.capabilities.managed_archives
+                )
                 self._set_tts_status("tts_engine_incomplete")
             else:
                 self.tts_download_button.setEnabled(False)
