@@ -7,8 +7,9 @@ import ctypes.util
 
 
 _CAN_JOIN_ALL_SPACES = 1 << 0
+_CAN_JOIN_ALL_APPLICATIONS = 1 << 18
 _FULL_SCREEN_AUXILIARY = 1 << 8
-_STATUS_WINDOW_LEVEL = 25
+_OVERLAY_WINDOW_LEVEL = 101
 
 
 class _ObjectiveCRuntime:
@@ -49,6 +50,18 @@ class _ObjectiveCRuntime:
         send.restype = None
         send(receiver, self._selector(selector), value)
 
+    def bool_result(self, receiver: int, selector: str) -> bool:
+        send = self._objc.objc_msgSend
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        send.restype = ctypes.c_bool
+        return bool(send(receiver, self._selector(selector)))
+
+    def call_void(self, receiver: int, selector: str) -> None:
+        send = self._objc.objc_msgSend
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        send.restype = None
+        send(receiver, self._selector(selector))
+
 
 def configure_native_window(window_id: int) -> bool:
     if not window_id:
@@ -60,11 +73,15 @@ def configure_native_window(window_id: int) -> bool:
     runtime.set_integer(
         window,
         "setCollectionBehavior:",
-        _CAN_JOIN_ALL_SPACES | _FULL_SCREEN_AUXILIARY,
+        _CAN_JOIN_ALL_SPACES
+        | _CAN_JOIN_ALL_APPLICATIONS
+        | _FULL_SCREEN_AUXILIARY,
     )
-    runtime.set_integer(window, "setLevel:", _STATUS_WINDOW_LEVEL)
+    runtime.set_integer(window, "setLevel:", _OVERLAY_WINDOW_LEVEL)
     runtime.set_bool(window, "setHidesOnDeactivate:", False)
     runtime.set_bool(window, "setCanHide:", False)
+    if not runtime.bool_result(window, "isVisible"):
+        runtime.call_void(window, "orderFrontRegardless")
     return True
 
 

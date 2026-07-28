@@ -157,15 +157,17 @@ class PlatformArchitectureTests(unittest.TestCase):
     def test_macos_window_joins_fullscreen_spaces(self, runtime_class) -> None:
         native = runtime_class.return_value
         native.object_result.return_value = 321
+        native.bool_result.return_value = False
         from aipet.platforms.macos.windowing import configure_native_window
 
         self.assertTrue(configure_native_window(123))
         native.set_integer.assert_any_call(
             321,
             "setCollectionBehavior:",
-            (1 << 0) | (1 << 8),
+            (1 << 0) | (1 << 18) | (1 << 8),
         )
-        native.set_integer.assert_any_call(321, "setLevel:", 25)
+        native.set_integer.assert_any_call(321, "setLevel:", 101)
+        native.call_void.assert_called_once_with(321, "orderFrontRegardless")
 
     @patch("aipet.platforms.macos.runtime.KeychainStore")
     def test_macos_uses_keychain_credentials(self, keychain_store) -> None:
