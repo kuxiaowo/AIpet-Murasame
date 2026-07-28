@@ -13,6 +13,15 @@ _FULL_SCREEN_AUXILIARY = 1 << 8
 _OVERLAY_WINDOW_LEVEL = 101
 
 
+def _collection_behavior() -> int:
+    return (
+        _CAN_JOIN_ALL_SPACES
+        | _STATIONARY
+        | _CAN_JOIN_ALL_APPLICATIONS
+        | _FULL_SCREEN_AUXILIARY
+    )
+
+
 class _ObjectiveCRuntime:
     def __init__(self) -> None:
         library = ctypes.util.find_library("objc")
@@ -74,10 +83,7 @@ def configure_native_window(window_id: int) -> bool:
     runtime.set_integer(
         window,
         "setCollectionBehavior:",
-        _CAN_JOIN_ALL_SPACES
-        | _STATIONARY
-        | _CAN_JOIN_ALL_APPLICATIONS
-        | _FULL_SCREEN_AUXILIARY,
+        _collection_behavior(),
     )
     runtime.set_integer(window, "setLevel:", _OVERLAY_WINDOW_LEVEL)
     runtime.set_bool(window, "setHidesOnDeactivate:", False)
@@ -87,4 +93,20 @@ def configure_native_window(window_id: int) -> bool:
     return True
 
 
-__all__ = ["configure_native_window"]
+def configure_qt_windows_for_spaces() -> None:
+    """Reapply fullscreen behavior while macOS moves Qt windows between Spaces."""
+
+    from AppKit import NSApp
+
+    for window in NSApp.windows():
+        if window.className() != "QNSWindow":
+            continue
+        window.setCollectionBehavior_(_collection_behavior())
+        window.setLevel_(_OVERLAY_WINDOW_LEVEL)
+        window.setHidesOnDeactivate_(False)
+        window.setCanHide_(False)
+        if not window.isVisible():
+            window.orderFrontRegardless()
+
+
+__all__ = ["configure_native_window", "configure_qt_windows_for_spaces"]

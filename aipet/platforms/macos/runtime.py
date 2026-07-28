@@ -40,6 +40,9 @@ class MacOSPathPolicy:
 
 
 class MacOSWindowIntegration:
+    def __init__(self) -> None:
+        self._spaces_timer = None
+
     @staticmethod
     def _uses_cocoa() -> bool:
         from PyQt5.QtGui import QGuiApplication
@@ -47,7 +50,8 @@ class MacOSWindowIntegration:
         return QGuiApplication.platformName() == "cocoa"
 
     def configure_widget(self, widget: Any) -> None:
-        from PyQt5.QtCore import Qt
+        from PyQt5.QtCore import Qt, QTimer
+        from PyQt5.QtWidgets import QApplication
 
         widget.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
@@ -56,6 +60,14 @@ class MacOSWindowIntegration:
         widget.setAttribute(Qt.WA_TranslucentBackground, True)
         if self._uses_cocoa():
             windowing.configure_native_window(int(widget.winId()))
+            if self._spaces_timer is None:
+                self._spaces_timer = QTimer(QApplication.instance())
+                self._spaces_timer.setInterval(1000)
+                self._spaces_timer.timeout.connect(
+                    windowing.configure_qt_windows_for_spaces
+                )
+                self._spaces_timer.start()
+                QTimer.singleShot(0, windowing.configure_qt_windows_for_spaces)
 
     def topmost_available(self) -> bool:
         return True

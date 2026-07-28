@@ -169,6 +169,30 @@ class PlatformArchitectureTests(unittest.TestCase):
         native.set_integer.assert_any_call(321, "setLevel:", 101)
         native.call_void.assert_called_once_with(321, "orderFrontRegardless")
 
+    def test_macos_rechecks_all_qt_windows_after_space_changes(self) -> None:
+        qt_window = Mock()
+        qt_window.className.return_value = "QNSWindow"
+        qt_window.isVisible.return_value = False
+        other_window = Mock()
+        other_window.className.return_value = "NSMenuWindow"
+        appkit = types.ModuleType("AppKit")
+        appkit.NSApp = Mock()
+        appkit.NSApp.windows.return_value = [qt_window, other_window]
+
+        with patch.dict(sys.modules, {"AppKit": appkit}):
+            from aipet.platforms.macos.windowing import (
+                configure_qt_windows_for_spaces,
+            )
+
+            configure_qt_windows_for_spaces()
+
+        qt_window.setCollectionBehavior_.assert_called_once_with(
+            (1 << 0) | (1 << 4) | (1 << 18) | (1 << 8)
+        )
+        qt_window.setLevel_.assert_called_once_with(101)
+        qt_window.orderFrontRegardless.assert_called_once_with()
+        other_window.setLevel_.assert_not_called()
+
     def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
         integration = create_macos_runtime().windowing
         widget = Mock()
