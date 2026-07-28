@@ -193,6 +193,19 @@ class PlatformArchitectureTests(unittest.TestCase):
         qt_window.orderFrontRegardless.assert_called_once_with()
         other_window.setLevel_.assert_not_called()
 
+    def test_macos_pauses_qt_watchdog_while_overlay_is_fullscreen(self) -> None:
+        integration = create_macos_runtime().windowing
+        overlay = Mock(is_fullscreen=True)
+        integration._fullscreen_overlay = overlay
+
+        with patch(
+            "aipet.platforms.macos.runtime.windowing.configure_qt_windows_for_spaces"
+        ) as configure_windows:
+            integration._refresh_fullscreen_windows()
+
+        overlay.sync.assert_called_once_with()
+        configure_windows.assert_not_called()
+
     def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
         integration = create_macos_runtime().windowing
         widget = Mock()

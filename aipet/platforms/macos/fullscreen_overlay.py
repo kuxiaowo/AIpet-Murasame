@@ -48,6 +48,10 @@ class FullscreenOverlay:
         )
         return True
 
+    @property
+    def is_fullscreen(self) -> bool:
+        return self._was_fullscreen
+
     def stop(self) -> None:
         if self._process is not None and self._process.poll() is None:
             self._process.terminate()
@@ -80,4 +84,3 @@ class FullscreenOverlay:
 
     def _snapshot(self) -> None:
         self._widget.grab().save(str(self._image), "PNG")
-

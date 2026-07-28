@@ -50,6 +50,13 @@ class MacOSWindowIntegration:
 
         return QGuiApplication.platformName() == "cocoa"
 
+    def _refresh_fullscreen_windows(self) -> None:
+        if self._fullscreen_overlay is not None:
+            self._fullscreen_overlay.sync()
+            if self._fullscreen_overlay.is_fullscreen:
+                return
+        windowing.configure_qt_windows_for_spaces()
+
     def configure_widget(self, widget: Any) -> None:
         from PyQt5.QtCore import Qt, QTimer
         from PyQt5.QtWidgets import QApplication
@@ -67,14 +74,13 @@ class MacOSWindowIntegration:
                 self._spaces_timer = QTimer(QApplication.instance())
                 self._spaces_timer.setInterval(1000)
                 self._spaces_timer.timeout.connect(
-                    windowing.configure_qt_windows_for_spaces
+                    self._refresh_fullscreen_windows
                 )
                 self._spaces_timer.start()
                 QTimer.singleShot(0, windowing.configure_qt_windows_for_spaces)
             if self._fullscreen_overlay is None:
                 self._fullscreen_overlay = FullscreenOverlay(widget)
                 QTimer.singleShot(500, self._fullscreen_overlay.start)
-                self._spaces_timer.timeout.connect(self._fullscreen_overlay.sync)
                 QApplication.instance().aboutToQuit.connect(
                     self._fullscreen_overlay.stop
                 )
