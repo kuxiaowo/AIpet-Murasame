@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -220,7 +221,12 @@ class MacOSTTSBootstrap:
             for archive, destination in _BASE_ARCHIVES:
                 progress(f"Downloading {archive}")
                 source = temporary / archive
-                self._download(f"{_MODEL_BASE}/{archive}", source)
+                self._download(
+                    f"{_MODEL_BASE}/{archive}",
+                    source,
+                    progress=progress,
+                    label=archive,
+                )
                 progress(f"Installing {archive}")
                 self._extract_zip(source, engine_root / destination)
         if not self._base_assets_ready(engine_root):
@@ -239,12 +245,32 @@ class MacOSTTSBootstrap:
         return all((engine_root / path).is_file() for path in required)
 
     @staticmethod
-    def _download(url: str, destination: Path) -> None:
+    def _download(
+        url: str,
+        destination: Path,
+        *,
+        progress: Callable[[str], None] | None = None,
+        label: str = "file",
+    ) -> None:
         request = Request(url, headers={"User-Agent": "AIpet-Murasame"})
         context = ssl.create_default_context(cafile=certifi.where())
+        started = time.monotonic()
+        last_reported = started
+        downloaded = 0
         with urlopen(request, timeout=60, context=context) as response, destination.open("wb") as output:
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
+                downloaded += len(chunk)
+                now = time.monotonic()
+                if progress is not None and now - last_reported >= 1:
+                    megabytes = downloaded / 1024**2
+                    speed = megabytes / (now - started)
+                    progress(f"Downloading {label}: {megabytes:.0f} MB ({speed:.1f} MB/s)")
+                    last_reported = now
+        if progress is not None and downloaded:
+            megabytes = downloaded / 1024**2
+            elapsed = max(time.monotonic() - started, 0.001)
+            progress(f"Downloaded {label}: {megabytes:.0f} MB ({megabytes / elapsed:.1f} MB/s)")
 
     @staticmethod
     def _extract_zip(archive: Path, destination: Path) -> None:

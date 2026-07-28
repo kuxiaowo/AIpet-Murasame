@@ -248,6 +248,32 @@ class PlatformArchitectureTests(unittest.TestCase):
             )
             self.assertEqual((Path(directory) / "model.zip").read_bytes(), b"data")
 
+    def test_macos_tts_bootstrap_reports_download_speed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            response = MagicMock()
+            response.read.side_effect = (b"x" * 1024**2, b"")
+            request = MagicMock()
+            request.__enter__.return_value = response
+            updates: list[str] = []
+            with (
+                patch(
+                    "aipet.platforms.macos.tts_bootstrap.urlopen",
+                    return_value=request,
+                ),
+                patch(
+                    "aipet.platforms.macos.tts_bootstrap.time.monotonic",
+                    side_effect=(0.0, 1.0, 1.0),
+                ),
+            ):
+                MacOSTTSBootstrap._download(
+                    "https://example.invalid/model.zip",
+                    Path(directory) / "model.zip",
+                    progress=updates.append,
+                    label="model.zip",
+                )
+
+            self.assertIn("MB/s", updates[-1])
+
     def test_macos_tts_bootstrap_finds_packaged_uv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             contents = Path(directory) / "Contents"
