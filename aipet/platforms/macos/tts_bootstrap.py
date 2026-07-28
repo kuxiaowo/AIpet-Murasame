@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import ssl
 import stat
 import subprocess
 import sys
@@ -13,6 +14,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Callable
 from urllib.request import Request, urlopen
+
+import certifi
 
 
 _REPOSITORY = "https://github.com/RVC-Boss/GPT-SoVITS.git"
@@ -238,7 +241,8 @@ class MacOSTTSBootstrap:
     @staticmethod
     def _download(url: str, destination: Path) -> None:
         request = Request(url, headers={"User-Agent": "AIpet-Murasame"})
-        with urlopen(request, timeout=60) as response, destination.open("wb") as output:
+        context = ssl.create_default_context(cafile=certifi.where())
+        with urlopen(request, timeout=60, context=context) as response, destination.open("wb") as output:
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
 

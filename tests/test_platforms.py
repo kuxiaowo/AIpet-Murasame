@@ -5,7 +5,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from aipet.core.config import AppSettings, TTSSettings, load_settings, save_settings
 from aipet.platforms import CredentialError, get_platform_runtime
@@ -216,6 +216,37 @@ class PlatformArchitectureTests(unittest.TestCase):
                 path.touch()
 
             self.assertTrue(MacOSTTSBootstrap._base_assets_ready(root))
+
+    def test_macos_tts_bootstrap_uses_certifi_for_downloads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            response = MagicMock()
+            response.read.side_effect = (b"data", b"")
+            request = MagicMock()
+            request.__enter__.return_value = response
+            with (
+                patch(
+                    "aipet.platforms.macos.tts_bootstrap.certifi.where",
+                    return_value="/tmp/cacert.pem",
+                ),
+                patch(
+                    "aipet.platforms.macos.tts_bootstrap.ssl.create_default_context",
+                    return_value="trusted-context",
+                ),
+                patch(
+                    "aipet.platforms.macos.tts_bootstrap.urlopen",
+                    return_value=request,
+                ) as open_url,
+            ):
+                MacOSTTSBootstrap._download(
+                    "https://example.invalid/model.zip",
+                    Path(directory) / "model.zip",
+                )
+
+            self.assertEqual(
+                open_url.call_args.kwargs["context"],
+                "trusted-context",
+            )
+            self.assertEqual((Path(directory) / "model.zip").read_bytes(), b"data")
 
     def test_macos_tts_bootstrap_finds_packaged_uv(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
