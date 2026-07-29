@@ -12,6 +12,7 @@ from typing import Any, Sequence
 from aipet.platforms.contracts import (
     ManagedArchive,
     PlatformCapabilities,
+    PlatformNotImplementedError,
     PlatformRuntime,
 )
 from aipet.platforms.windows import credentials, windowing
@@ -76,6 +77,9 @@ class WindowsInputIntegration:
         from aipet.platforms.windows.voice_trigger import CapslockVoiceTrigger
 
         return CapslockVoiceTrigger(**kwargs)
+
+    def voice_trigger_shortcut(self) -> str:
+        return "Caps Lock"
 
 
 class WindowsCredentialStore:
@@ -195,6 +199,14 @@ class WindowsAudioPolicy:
         )
 
 
+class WindowsTTSBootstrap:
+    def install(self, engine_root: Path, progress) -> None:
+        del engine_root, progress
+        raise PlatformNotImplementedError(
+            "Windows uses managed GPT-SoVITS archives instead."
+        )
+
+
 def create_runtime() -> PlatformRuntime:
     return PlatformRuntime(
         platform_id="windows",
@@ -205,6 +217,7 @@ def create_runtime() -> PlatformRuntime:
             log_viewer=True,
             child_process_guard=True,
             managed_archives=True,
+            managed_tts_bootstrap=False,
         ),
         paths=WindowsPathPolicy(),
         windowing=WindowsWindowIntegration(),
@@ -213,4 +226,5 @@ def create_runtime() -> PlatformRuntime:
         processes=WindowsProcessPolicy(),
         archives=WindowsArchivePolicy(),
         audio=WindowsAudioPolicy(),
+        tts_bootstrap=WindowsTTSBootstrap(),
     )

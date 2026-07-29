@@ -8,8 +8,12 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 try:
+    from pynput import keyboard
+
+    from aipet.platforms.macos.voice_trigger import OptionVVoiceTrigger
     from aipet.platforms.windows.voice_trigger import CapslockVoiceTrigger
 except (ImportError, OSError):
+    OptionVVoiceTrigger = None
     CapslockVoiceTrigger = None
 
 
@@ -18,6 +22,33 @@ except (ImportError, OSError):
     "optional voice dependencies are unavailable",
 )
 class VoiceTriggerTests(unittest.TestCase):
+    def test_windows_caps_lock_controls_hold_session(self) -> None:
+        trigger = CapslockVoiceTrigger(on_text_ready=Mock())
+        trigger.press = Mock()
+        trigger.release = Mock()
+
+        trigger._on_press(keyboard.Key.caps_lock)
+        trigger.press.assert_called_once_with()
+        trigger._on_release(keyboard.Key.caps_lock)
+        trigger.release.assert_called_once_with()
+
+    def test_macos_option_v_controls_hold_session(self) -> None:
+        trigger = OptionVVoiceTrigger(on_text_ready=Mock())
+        trigger.press = Mock()
+        trigger.release = Mock()
+        option_v_down = Mock()
+        option_v_down.keyCode.return_value = 9
+        option_v_down.type.return_value = 10
+        option_v_down.modifierFlags.return_value = 524288
+        v_up = Mock()
+        v_up.keyCode.return_value = 9
+        v_up.type.return_value = 11
+
+        trigger._handle_event(option_v_down)
+        trigger.press.assert_called_once_with()
+        trigger._handle_event(v_up)
+        trigger.release.assert_called_once_with()
+
     def test_missing_audio_reports_error_and_clears_recognizing_state(
         self,
     ) -> None:
@@ -60,11 +91,11 @@ class VoiceTriggerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "aipet.platforms.windows.voice_trigger.get_cache_dir",
+                    "aipet.core.voice_input.get_cache_dir",
                     return_value=Path(directory),
                 ),
                 patch(
-                    "aipet.platforms.windows.voice_trigger.transcribe_full",
+                    "aipet.core.voice_input.transcribe_full",
                     return_value="",
                 ),
             ):

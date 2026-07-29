@@ -59,6 +59,12 @@ Videos and project updates are available on
 
 Windows 10 and Windows 11 are the primary supported systems.
 
+### macOS adapter
+
+Apple Silicon Mac users can follow the focused
+[macOS adapter guide](aipet/platforms/macos/README.md). The adapter is kept
+separate from Windows behavior and currently provides source and DMG builds.
+
 ### Run the Windows EXE
 
 Choose one executable from the
@@ -235,14 +241,15 @@ Main project areas:
 ```text
 aipet\core\       shared backends, configuration, storage, speech, and workers
 aipet\ui\         shared desktop pet and bilingual settings window
-aipet\platforms\  platform contracts, Windows implementation, and macOS stubs
+aipet\platforms\  platform contracts and platform implementations
 packaging\         reproducible PyInstaller build
 tests\             unit, platform-contract, and UI smoke tests
 ```
 
 ## Limitations
 
-- Desktop behavior is designed and tested primarily for Windows.
+- Windows remains the primary release platform; the macOS adapter targets
+  Apple Silicon Macs running macOS 13 or later.
 - Exclusive-fullscreen or anti-cheat-protected surfaces may cover the pet.
 - Local chat, vision, and TTS performance depends on the selected model and
   hardware.

@@ -35,8 +35,16 @@ TTS_REFERENCE_MODEL = "kuxiaowo/Murasame-tts-reference-voice"
 _PLATFORM_TTS_ARCHIVES = tuple(
     get_platform_runtime().archives.tts_engine_archives()
 )
-TTS_ENGINE_MODEL = _PLATFORM_TTS_ARCHIVES[0].repository
-TTS_ENGINE_ARCHIVE = _PLATFORM_TTS_ARCHIVES[0].filename
+TTS_ENGINE_MODEL = (
+    _PLATFORM_TTS_ARCHIVES[0].repository
+    if _PLATFORM_TTS_ARCHIVES
+    else ""
+)
+TTS_ENGINE_ARCHIVE = (
+    _PLATFORM_TTS_ARCHIVES[0].filename
+    if _PLATFORM_TTS_ARCHIVES
+    else ""
+)
 TTS_ENGINE_ARCHIVE_NVIDIA50 = next(
     (
         archive.filename
@@ -384,6 +392,14 @@ class DownloadManager(QObject):
         include_engine: bool = False,
         engine_destination: Path | None = None,
     ) -> str:
+        if (
+            include_engine
+            and not self.platform_runtime.capabilities.managed_archives
+        ):
+            raise RuntimeError(
+                "Managed GPT-SoVITS installation is unavailable "
+                "on this platform."
+            )
         if include_engine and engine_destination is None:
             raise ValueError(
                 "GPT-SoVITS download directory is required"

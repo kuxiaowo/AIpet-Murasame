@@ -13,6 +13,7 @@ from aipet.platforms.contracts import (
     PlatformNotImplementedError,
     PlatformRuntime,
     ProcessPolicy,
+    TTSBootstrapPolicy,
     WindowIntegration,
 )
 from aipet.platforms.registry import get_platform_runtime
@@ -30,6 +31,7 @@ __all__ = [
     "PlatformNotImplementedError",
     "PlatformRuntime",
     "ProcessPolicy",
+    "TTSBootstrapPolicy",
     "WindowIntegration",
     "get_platform_runtime",
 ]
