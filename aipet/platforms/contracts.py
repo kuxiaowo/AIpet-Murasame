@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 
 class PlatformNotImplementedError(RuntimeError):
@@ -43,6 +43,8 @@ class WindowIntegration(Protocol):
 
 class InputIntegration(Protocol):
     def idle_seconds(self) -> float: ...
+
+    def voice_trigger_shortcut(self) -> str: ...
 
     def create_voice_trigger(self, **kwargs: Any) -> Any: ...
 
@@ -88,6 +90,14 @@ class AudioPolicy(Protocol):
     def prepare_input_devices(self, devices: Sequence[Any]) -> list[Any]: ...
 
 
+class TTSBootstrapPolicy(Protocol):
+    def install(
+        self,
+        engine_root: Path,
+        progress: Callable[[str], None],
+    ) -> None: ...
+
+
 @dataclass(frozen=True)
 class PlatformCapabilities:
     window_topmost: bool
@@ -96,6 +106,7 @@ class PlatformCapabilities:
     log_viewer: bool
     child_process_guard: bool
     managed_archives: bool
+    managed_tts_bootstrap: bool
 
 
 @dataclass(frozen=True)
@@ -132,3 +143,4 @@ class PlatformRuntime:
     processes: ProcessPolicy
     archives: ArchivePolicy
     audio: AudioPolicy
+    tts_bootstrap: TTSBootstrapPolicy

@@ -512,7 +512,7 @@ def _locate_runtime_python(
     )
     for candidate in candidates:
         if candidate.is_file():
-            return candidate.resolve()
+            return candidate.absolute()
     raise TTSServiceError(
         "GPT-SoVITS does not contain a bundled Python runtime."
     )

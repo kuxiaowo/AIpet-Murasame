@@ -7,10 +7,11 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 from main import run_special_mode
 from aipet.core import runtime_logging
+from aipet.platforms.windows import log_viewer
 from aipet.platforms.windows.log_viewer import _print_appended, _print_recent
 from aipet.core.runtime_logging import (
     DailyFileHandler,
@@ -85,6 +86,54 @@ class RuntimeLoggingTests(unittest.TestCase):
             self.assertEqual(position, path.stat().st_size)
             self.assertIn("existing", output.getvalue())
             self.assertIn("live update", output.getvalue())
+
+    def test_viewer_allocates_console_before_opening_output(self) -> None:
+        kernel32 = MagicMock()
+        kernel32.GetConsoleWindow.return_value = 0
+        kernel32.AllocConsole.return_value = 1
+        stdout = MagicMock()
+        stderr = MagicMock()
+
+        with (
+            patch.object(log_viewer.os, "name", "nt"),
+            patch.object(
+                log_viewer.ctypes,
+                "WinDLL",
+                return_value=kernel32,
+            ) as win_dll,
+            patch.object(
+                log_viewer,
+                "open",
+                side_effect=[stdout, stderr],
+                create=True,
+            ) as open_console,
+            patch.object(log_viewer.sys, "stdout", None),
+            patch.object(log_viewer.sys, "stderr", None),
+        ):
+            log_viewer._configure_console()
+
+        win_dll.assert_called_once_with("kernel32", use_last_error=True)
+        kernel32.GetConsoleWindow.assert_called_once_with()
+        kernel32.AllocConsole.assert_called_once_with()
+        self.assertEqual(
+            open_console.call_args_list,
+            [
+                call(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    errors="replace",
+                    buffering=1,
+                ),
+                call(
+                    "CONOUT$",
+                    "w",
+                    encoding="utf-8",
+                    errors="replace",
+                    buffering=1,
+                ),
+            ],
+        )
 
     def test_json_log_keeps_payload_and_compacts_base64_images(self) -> None:
         image = "a" * 2_048

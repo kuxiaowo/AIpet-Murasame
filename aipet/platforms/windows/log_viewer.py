@@ -31,10 +31,20 @@ def _parent_is_running(process_id: int) -> bool:
 
 def _configure_console() -> None:
     if os.name == "nt":
-        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
-        ctypes.windll.kernel32.SetConsoleTitleW("AIpet 实时日志")
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetConsoleWindow.restype = ctypes.c_void_p
+        kernel32.AllocConsole.restype = ctypes.c_int
+
+        # CREATE_NEW_CONSOLE does not give a windowed PyInstaller executable
+        # a usable console. Allocate one explicitly before opening CONOUT$.
+        if not kernel32.GetConsoleWindow() and not kernel32.AllocConsole():
+            error_code = ctypes.get_last_error()
+            raise OSError(error_code, ctypes.FormatError(error_code))
+
+        kernel32.SetConsoleOutputCP(65001)
+        kernel32.SetConsoleTitleW("AIpet 实时日志")
         # A GUI parent (pythonw.exe) has no usable standard output handles.
-        # Bind directly to this process' newly-created console.
+        # Bind directly to this process' console.
         sys.stdout = open(
             "CONOUT$",
             "w",

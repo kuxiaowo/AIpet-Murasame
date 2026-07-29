@@ -3,8 +3,8 @@
   "mode": "ollama",
   "ollama": {
     "base_url": "http://127.0.0.1:11434",
-    "chat_model": "qwen3:14b",
-    "vision_model": "qwen2.5vl:7b",
+    "chat_model": "qwen3.5:9b",
+    "vision_model": "qwen3.5:9b",
     "context_window": 8192,
     "timeout_seconds": 180,
     "keep_alive": "10m"

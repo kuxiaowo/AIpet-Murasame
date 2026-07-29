@@ -169,6 +169,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_endpoint": "TTS endpoint",
         "tts_timeout": "TTS timeout",
         "tts_engine_root": "GPT-SoVITS download/install directory",
+        "tts_bootstrap": "Install macOS GPT-SoVITS base environment",
         "tts_model_dir": "Voice model download directory (includes references)",
         "tts_autodl_ssh_command": "AutoDL SSH login command",
         "tts_autodl_password": "AutoDL SSH password",
@@ -219,6 +220,23 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_engine_incomplete": (
             "The voice model is ready, but GPT-SoVITS base assets are incomplete."
         ),
+        "tts_bootstrap_consent_title": "Install macOS GPT-SoVITS",
+        "tts_bootstrap_consent_body": (
+            "Download the pinned GPT-SoVITS source, an isolated Python runtime, "
+            "Python dependencies, and required base assets for Apple Silicon? "
+            "The upstream base assets are about 5 GB. "
+            "Character voice weights and reference voices are not included and "
+            "remain separate on-demand downloads."
+        ),
+        "tts_bootstrap_installing": (
+            "Installing the macOS GPT-SoVITS base environment: {detail}"
+        ),
+        "tts_bootstrap_installed": (
+            "The macOS GPT-SoVITS base environment is ready: {path}"
+        ),
+        "tts_bootstrap_failed": (
+            "macOS GPT-SoVITS installation failed: {message}"
+        ),
         "tts_references_missing": "One or more reference voice files are missing.",
         "tts_external_online": "The external TTS endpoint is reachable.",
         "tts_external_offline": "The external TTS endpoint is not reachable.",
@@ -247,7 +265,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_download_failed": "Voice model download failed: {message}",
         "download_files": "files",
         "download_steps": "steps",
-        "stt_enabled": "Hold Caps Lock for speech input",
+        "stt_enabled": "Hold {shortcut} for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
         "stt_input_device": "Recording device",
@@ -471,6 +489,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_endpoint": "TTS 地址",
         "tts_timeout": "TTS 超时",
         "tts_engine_root": "GPT-SoVITS 下载及安装目录",
+        "tts_bootstrap": "一键安装 macOS GPT-SoVITS 基础环境",
         "tts_model_dir": "角色语音模型下载目录（含参考音频）",
         "tts_autodl_ssh_command": "AutoDL SSH 登录命令",
         "tts_autodl_password": "AutoDL SSH 密码",
@@ -511,6 +530,22 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_engine_incomplete": (
             "角色语音模型完整，但 GPT-SoVITS 基础资源不完整。"
         ),
+        "tts_bootstrap_consent_title": "安装 macOS GPT-SoVITS",
+        "tts_bootstrap_consent_body": (
+            "是否下载固定版本的 GPT-SoVITS 源码、隔离的 Python 运行环境、"
+            "Python 依赖和 Apple Silicon 所需的基础资源？上游基础资源约 5 GB。"
+            "角色语音权重和"
+            "参考音频不包含在此步骤中，仍按需单独下载。"
+        ),
+        "tts_bootstrap_installing": (
+            "正在安装 macOS GPT-SoVITS 基础环境：{detail}"
+        ),
+        "tts_bootstrap_installed": (
+            "macOS GPT-SoVITS 基础环境已就绪：{path}"
+        ),
+        "tts_bootstrap_failed": (
+            "macOS GPT-SoVITS 安装失败：{message}"
+        ),
         "tts_references_missing": "一项或多项参考语音文件缺失。",
         "tts_external_online": "外部 TTS 接口可以连接。",
         "tts_external_offline": "外部 TTS 接口当前无法连接。",
@@ -536,7 +571,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_download_failed": "角色语音模型下载失败：{message}",
         "download_files": "个文件",
         "download_steps": "个步骤",
-        "stt_enabled": "长按 Caps Lock 进行语音输入",
+        "stt_enabled": "长按 {shortcut} 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
         "stt_input_device": "录音设备",
@@ -780,6 +815,32 @@ class TTSServiceWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class TTSBootstrapWorker(QThread):
+    stage_changed = pyqtSignal(str)
+    succeeded = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(
+        self,
+        platform_runtime: PlatformRuntime,
+        engine_root: Path,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.platform_runtime = platform_runtime
+        self.engine_root = engine_root
+
+    def run(self) -> None:
+        try:
+            self.platform_runtime.tts_bootstrap.install(
+                self.engine_root,
+                self.stage_changed.emit,
+            )
+            self.succeeded.emit(str(self.engine_root))
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class SettingsDialog(QDialog):
     """Visual bilingual configuration and personality creation window."""
 
@@ -809,6 +870,8 @@ class SettingsDialog(QDialog):
         self._pending_whisper_model: tuple[str, str] | None = None
         self._tts_check_worker: TTSCheckWorker | None = None
         self._tts_service_worker: TTSServiceWorker | None = None
+        self._tts_bootstrap_worker: TTSBootstrapWorker | None = None
+        self._tts_bootstrap_error: str | None = None
         self._tts_service_error: str | None = None
         self._tts_service_button_mode = "start"
         self._pending_tts_check = False
@@ -1222,6 +1285,10 @@ class SettingsDialog(QDialog):
         self.tts_download_button.clicked.connect(
             self._request_tts_download
         )
+        self.tts_bootstrap_button = QPushButton()
+        self.tts_bootstrap_button.clicked.connect(
+            self._request_tts_bootstrap
+        )
         self.tts_service_button = QPushButton()
         self.tts_service_button.setEnabled(False)
         self.tts_service_button.clicked.connect(
@@ -1264,6 +1331,11 @@ class SettingsDialog(QDialog):
                 self.tts_engine_root,
                 self.tts_engine_browse,
             ),
+        )
+        self._add_row(
+            tts_form,
+            "tts_bootstrap",
+            self.tts_bootstrap_button,
         )
         self._add_row(
             tts_form,
@@ -1850,9 +1922,17 @@ class SettingsDialog(QDialog):
         )
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
+        self.tts_bootstrap_button.setText(self._text("tts_bootstrap"))
         self.tts_download_button.setText(self._text("tts_download"))
         self._render_tts_service_button()
-        self.stt_enabled.setText(self._text("stt_enabled"))
+        self.stt_enabled.setText(
+            self._text(
+                "stt_enabled",
+                shortcut=(
+                    self._platform_runtime.input.voice_trigger_shortcut()
+                ),
+            )
+        )
         self._retranslate_audio_input_devices()
         self._set_combo_item_text(
             self.stt_device,
@@ -2210,6 +2290,14 @@ class SettingsDialog(QDialog):
         self._set_form_rows_visible(local_keys, not autodl)
         self._set_form_rows_visible(autodl_keys, autodl)
         self.tts_download_button.setVisible(not autodl)
+        self.tts_bootstrap_button.setVisible(
+            not autodl
+            and self._platform_runtime.capabilities.managed_tts_bootstrap
+        )
+        self.tts_bootstrap_button.setEnabled(
+            local_enabled
+            and self._tts_bootstrap_worker is None
+        )
         if autodl:
             self.tts_progress.hide()
             self.tts_extract_progress.hide()
@@ -2220,6 +2308,10 @@ class SettingsDialog(QDialog):
         )
         self._set_form_labels_enabled(
             local_keys,
+            local_enabled,
+        )
+        self._set_form_labels_enabled(
+            ("tts_bootstrap",),
             local_enabled,
         )
         self._set_form_labels_enabled(
@@ -2241,7 +2333,13 @@ class SettingsDialog(QDialog):
             "installing",
             "cleaning",
         }
-        self._set_tts_path_controls(downloading=downloading)
+        bootstrapping = (
+            self._tts_bootstrap_worker is not None
+            and self._tts_bootstrap_worker.isRunning()
+        )
+        self._set_tts_path_controls(
+            downloading=downloading or bootstrapping,
+        )
         self.tts_download_button.setEnabled(False)
         self.tts_service_button.setVisible(True)
         self._set_tts_service_button("start", False)
@@ -2252,6 +2350,8 @@ class SettingsDialog(QDialog):
             return
         if downloading:
             self._render_tts_download(snapshot)
+            return
+        if bootstrapping:
             return
         self.tts_progress.hide()
         self.tts_extract_progress.hide()
@@ -2317,8 +2417,15 @@ class SettingsDialog(QDialog):
             self.tts_model_dir.setText(str(state.model_directory))
 
         self._tts_engine_download_needed = (
-            not reachable and not state.engine_ready
+            self._platform_runtime.capabilities.managed_archives
+            and not reachable
+            and not state.engine_ready
         )
+        if (
+            self._platform_runtime.capabilities.managed_tts_bootstrap
+            and not state.engine_ready
+        ):
+            self.tts_bootstrap_button.setEnabled(True)
         if reachable:
             if get_tts_service_manager().owns_running_process():
                 self._set_tts_service_button("stop", True)
@@ -2343,10 +2450,14 @@ class SettingsDialog(QDialog):
                 self.tts_download_button.setEnabled(False)
                 self._set_tts_status("tts_ready_online")
             elif state.engine_root is None:
-                self.tts_download_button.setEnabled(True)
+                self.tts_download_button.setEnabled(
+                    self._platform_runtime.capabilities.managed_archives
+                )
                 self._set_tts_status("tts_engine_missing")
             elif not state.engine_ready:
-                self.tts_download_button.setEnabled(True)
+                self.tts_download_button.setEnabled(
+                    self._platform_runtime.capabilities.managed_archives
+                )
                 self._set_tts_status("tts_engine_incomplete")
             else:
                 self.tts_download_button.setEnabled(False)
@@ -2509,6 +2620,71 @@ class SettingsDialog(QDialog):
         self._render_tts_download(
             self.download_manager.snapshot(TTS_JOB_ID)
         )
+
+    def _request_tts_bootstrap(self) -> None:
+        if (
+            not self.tts_enabled.isChecked()
+            or self.tts_backend.currentData() == "autodl"
+            or not self._platform_runtime.capabilities.managed_tts_bootstrap
+        ):
+            return
+        engine_root = self._require_download_directory(
+            self.tts_engine_root,
+            "tts_engine_path_required",
+        )
+        if engine_root is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self._text("tts_bootstrap_consent_title"),
+            self._text("tts_bootstrap_consent_body"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        worker = TTSBootstrapWorker(
+            self._platform_runtime,
+            engine_root,
+            self,
+        )
+        self._tts_bootstrap_error = None
+        self._tts_bootstrap_worker = worker
+        worker.stage_changed.connect(self._on_tts_bootstrap_stage)
+        worker.succeeded.connect(self._on_tts_bootstrap_succeeded)
+        worker.failed.connect(self._on_tts_bootstrap_failed)
+        worker.finished.connect(
+            lambda: self._finish_tts_bootstrap_worker(worker)
+        )
+        self._set_tts_path_controls(downloading=True)
+        self._set_tts_status(
+            "tts_bootstrap_installing",
+            detail=self._text("download_preparing"),
+        )
+        worker.start()
+
+    def _on_tts_bootstrap_stage(self, detail: str) -> None:
+        self._set_tts_status("tts_bootstrap_installing", detail=detail)
+
+    def _on_tts_bootstrap_succeeded(self, path: str) -> None:
+        self.tts_engine_root.setText(path)
+        self._set_tts_status("tts_bootstrap_installed", path=path)
+
+    def _on_tts_bootstrap_failed(self, message: str) -> None:
+        self._tts_bootstrap_error = message
+        self._set_tts_status("tts_bootstrap_failed", message=message)
+
+    def _finish_tts_bootstrap_worker(
+        self,
+        worker: TTSBootstrapWorker,
+    ) -> None:
+        if self._tts_bootstrap_worker is worker:
+            self._tts_bootstrap_worker = None
+        worker.deleteLater()
+        if not self._closing and self._tts_bootstrap_error is None:
+            self._update_tts_state()
+        else:
+            self._set_tts_path_controls(downloading=False)
 
     def _finish_tts_check(self, worker: TTSCheckWorker) -> None:
         if self._tts_check_worker is worker:
@@ -3154,6 +3330,9 @@ class SettingsDialog(QDialog):
         )
 
     def accept(self) -> None:
+        if self._tts_bootstrap_is_running():
+            self._show_running_message()
+            return
         prompt = self.personality_prompt.toPlainText().strip()
         if not prompt:
             QMessageBox.warning(
@@ -3265,6 +3444,13 @@ class SettingsDialog(QDialog):
                 self._tts_service_worker is not None
                 and self._tts_service_worker.isRunning()
             )
+            or self._tts_bootstrap_is_running()
+        )
+
+    def _tts_bootstrap_is_running(self) -> bool:
+        return bool(
+            self._tts_bootstrap_worker is not None
+            and self._tts_bootstrap_worker.isRunning()
         )
 
     def result_settings(self) -> AppSettings:
