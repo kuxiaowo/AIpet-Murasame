@@ -35,12 +35,19 @@ class CapslockVoiceTrigger(HoldToTalkSession):
             self._listener.stop()
             self._listener = None
 
+    @staticmethod
+    def _is_caps_lock(key) -> bool:
+        try:
+            return key == keyboard.Key.caps_lock
+        except Exception:
+            return False
+
     def _on_press(self, key) -> None:
-        if key == keyboard.Key.caps_lock:
+        if self._is_caps_lock(key):
             self.press()
 
     def _on_release(self, key) -> None:
-        if key == keyboard.Key.caps_lock:
+        if self._is_caps_lock(key):
             self.release()
 
 

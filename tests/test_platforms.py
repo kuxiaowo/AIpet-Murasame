@@ -12,6 +12,12 @@ from aipet.core.tts_service import _locate_runtime_python
 from aipet.platforms import CredentialError, get_platform_runtime
 from aipet.platforms.macos import create_runtime as create_macos_runtime
 from aipet.platforms.macos.credentials import KeychainStore
+from aipet.platforms.macos.runtime import (
+    MacOSArchivePolicy,
+    MacOSInputIntegration,
+    MacOSProcessPolicy,
+    MacOSWindowIntegration,
+)
 from aipet.platforms.macos.tts_bootstrap import MacOSTTSBootstrap
 from aipet.platforms.registry import reset_platform_runtime_for_tests
 from aipet.platforms.windows import create_runtime as create_windows_runtime
@@ -121,35 +127,51 @@ class PlatformArchitectureTests(unittest.TestCase):
         fake_trigger.assert_called_once()
 
     def test_macos_runtime_exposes_every_platform_policy(self) -> None:
-        runtime = create_macos_runtime()
+        with patch(
+            "aipet.platforms.macos.runtime.KeychainStore"
+        ) as keychain_store:
+            runtime = create_macos_runtime()
 
-        self.assertEqual(runtime.platform_id, "macos")
-        self.assertTrue(runtime.capabilities.window_topmost)
-        self.assertTrue(runtime.capabilities.secure_credentials)
-        self.assertTrue(runtime.capabilities.managed_tts_bootstrap)
-        self.assertTrue(callable(runtime.paths.user_data_dir))
-        self.assertTrue(callable(runtime.windowing.ensure_topmost))
-        self.assertTrue(callable(runtime.input.create_voice_trigger))
-        self.assertEqual(runtime.input.voice_trigger_shortcut(), "Option+V")
-        self.assertTrue(callable(runtime.credentials.protect))
-        self.assertTrue(callable(runtime.processes.hidden_subprocess_options))
-        self.assertTrue(callable(runtime.archives.seven_zip_candidates))
-        self.assertTrue(callable(runtime.audio.prepare_input_devices))
-        self.assertTrue(callable(runtime.tts_bootstrap.install))
+            self.assertEqual(runtime.platform_id, "macos")
+            self.assertTrue(runtime.capabilities.window_topmost)
+            self.assertTrue(runtime.capabilities.secure_credentials)
+            self.assertTrue(runtime.capabilities.managed_tts_bootstrap)
+            self.assertTrue(callable(runtime.paths.user_data_dir))
+            self.assertTrue(callable(runtime.windowing.ensure_topmost))
+            self.assertTrue(callable(runtime.input.create_voice_trigger))
+            self.assertEqual(
+                runtime.input.voice_trigger_shortcut(),
+                "Option+V",
+            )
+            self.assertTrue(callable(runtime.credentials.protect))
+            self.assertTrue(
+                callable(runtime.processes.hidden_subprocess_options)
+            )
+            self.assertTrue(
+                callable(runtime.archives.seven_zip_candidates)
+            )
+            self.assertTrue(callable(runtime.audio.prepare_input_devices))
+            self.assertTrue(callable(runtime.tts_bootstrap.install))
 
-        with patch.object(sys, "platform", "darwin"):
-            reset_platform_runtime_for_tests()
-            self.assertEqual(get_platform_runtime().platform_id, "macos")
+            with patch.object(sys, "platform", "darwin"):
+                reset_platform_runtime_for_tests()
+                selected = get_platform_runtime()
+
+            self.assertEqual(selected.platform_id, "macos")
+            self.assertIs(
+                selected.credentials,
+                keychain_store.return_value,
+            )
 
     def test_macos_idle_policy_parses_ioreg_output(self) -> None:
-        runtime = create_macos_runtime()
+        integration = MacOSInputIntegration()
         result = Mock(stdout='"HIDIdleTime" = 3000000000')
 
         with patch(
             "aipet.platforms.macos.runtime.subprocess.run",
             return_value=result,
         ):
-            self.assertEqual(runtime.input.idle_seconds(), 3.0)
+            self.assertEqual(integration.idle_seconds(), 3.0)
 
     @patch(
         "aipet.platforms.macos.windowing._ObjectiveCRuntime"
@@ -194,7 +216,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         other_window.setLevel_.assert_not_called()
 
     def test_macos_pauses_qt_watchdog_while_overlay_is_fullscreen(self) -> None:
-        integration = create_macos_runtime().windowing
+        integration = MacOSWindowIntegration()
         overlay = Mock(is_fullscreen=True)
         integration._fullscreen_overlay = overlay
 
@@ -207,7 +229,7 @@ class PlatformArchitectureTests(unittest.TestCase):
         configure_windows.assert_not_called()
 
     def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
-        integration = create_macos_runtime().windowing
+        integration = MacOSWindowIntegration()
         widget = Mock()
         widget.winId.return_value = 123
         from PyQt5.QtCore import Qt
@@ -248,32 +270,33 @@ class PlatformArchitectureTests(unittest.TestCase):
         self.assertEqual(token, "macos-keychain:autodl")
         store._security.SecKeychainAddGenericPassword.assert_called_once()
 
-    def test_macos_download_manager_imports_without_managed_archive(
-        self,
-    ) -> None:
-        from aipet.core import download_manager
-
-        self.assertEqual(download_manager.TTS_ENGINE_ARCHIVE, "")
+    def test_macos_archive_policy_has_no_managed_archive(self) -> None:
+        self.assertEqual(
+            tuple(MacOSArchivePolicy().tts_engine_archives()),
+            (),
+        )
 
     def test_macos_tts_runtime_accepts_sibling_virtualenv(self) -> None:
         root = Path("/tmp/models/tts/GPT-SoVITS")
-        candidates = (
-            create_macos_runtime()
-            .processes.runtime_python_candidates(root)
-        )
+        candidates = MacOSProcessPolicy().runtime_python_candidates(root)
         self.assertIn(
             root.parent / ".gpt-sovits-venv" / "bin" / "python",
             candidates,
         )
 
+    @unittest.skipIf(
+        sys.platform == "win32",
+        "requires POSIX virtualenv symlink semantics",
+    )
     def test_tts_runtime_keeps_virtualenv_python_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "GPT-SoVITS"
             python = root.parent / ".gpt-sovits-venv" / "bin" / "python"
             python.parent.mkdir(parents=True)
             python.symlink_to(Path(sys.executable))
+            runtime = Mock(processes=MacOSProcessPolicy())
 
-            selected = _locate_runtime_python(root, create_macos_runtime())
+            selected = _locate_runtime_python(root, runtime)
 
             self.assertEqual(selected, python.absolute())
 
