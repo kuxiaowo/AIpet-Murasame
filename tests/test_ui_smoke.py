@@ -66,6 +66,44 @@ class UISmokeTests(unittest.TestCase):
         finally:
             dialog.close()
 
+    def test_running_tts_bootstrap_blocks_settings_close(self) -> None:
+        dialog = SettingsDialog(AppSettings())
+        worker = MagicMock()
+        worker.isRunning.return_value = True
+        dialog._tts_bootstrap_worker = worker
+        close_event = MagicMock()
+        try:
+            with (
+                patch.object(dialog, "_show_running_message") as message,
+                patch("aipet.ui.settings_dialog.QDialog.reject") as reject,
+            ):
+                self.assertTrue(dialog._background_check_is_running())
+                dialog.reject()
+                dialog.closeEvent(close_event)
+
+            reject.assert_not_called()
+            close_event.ignore.assert_called_once_with()
+            message.assert_called()
+        finally:
+            dialog._tts_bootstrap_worker = None
+            dialog.close()
+
+    def test_running_tts_bootstrap_blocks_settings_save(self) -> None:
+        dialog = SettingsDialog(AppSettings())
+        worker = MagicMock()
+        worker.isRunning.return_value = True
+        dialog._tts_bootstrap_worker = worker
+        try:
+            with patch.object(dialog, "_show_running_message") as message:
+                dialog.accept()
+
+            self.assertFalse(dialog._closing)
+            self.assertNotEqual(dialog.result(), QDialog.Accepted)
+            message.assert_called_once_with()
+        finally:
+            dialog._tts_bootstrap_worker = None
+            dialog.close()
+
     def test_topmost_watchdog_tracks_window_visibility(self) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,

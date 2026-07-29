@@ -3330,6 +3330,9 @@ class SettingsDialog(QDialog):
         )
 
     def accept(self) -> None:
+        if self._tts_bootstrap_is_running():
+            self._show_running_message()
+            return
         prompt = self.personality_prompt.toPlainText().strip()
         if not prompt:
             QMessageBox.warning(
@@ -3441,6 +3444,13 @@ class SettingsDialog(QDialog):
                 self._tts_service_worker is not None
                 and self._tts_service_worker.isRunning()
             )
+            or self._tts_bootstrap_is_running()
+        )
+
+    def _tts_bootstrap_is_running(self) -> bool:
+        return bool(
+            self._tts_bootstrap_worker is not None
+            and self._tts_bootstrap_worker.isRunning()
         )
 
     def result_settings(self) -> AppSettings:
