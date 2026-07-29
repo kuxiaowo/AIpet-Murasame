@@ -63,6 +63,10 @@ class FullscreenOverlay:
 
     def sync(self) -> None:
         if self._process is None or self._process.poll() is not None:
+            if self._was_fullscreen and not self._widget.isVisible():
+                self._widget.show()
+            self._was_fullscreen = False
+            self._process = None
             return
         fullscreen = self._state.read_text(encoding="utf-8").strip() == "1"
         if fullscreen and not self._was_fullscreen:

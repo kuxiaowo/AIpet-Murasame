@@ -20,9 +20,6 @@ from urllib.request import Request, urlopen
 import certifi
 
 
-_REPOSITORY = "https://github.com/RVC-Boss/GPT-SoVITS.git"
-_TAG = "20250606v2pro"
-_COMMIT = "d7c2210da8c013e81a94bfc7b811a477c99fd506"
 _PYTHON_VERSION = "3.10.20"
 _MODEL_BASE = (
     "https://www.modelscope.cn/models/"
@@ -101,31 +98,59 @@ class MacOSTTSBootstrap:
             f".{engine_root.name}-install-{uuid.uuid4().hex}"
         )
         try:
-            progress("Downloading GPT-SoVITS source")
-            self._run(
-                [
-                    "git",
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--branch",
-                    _TAG,
-                    _REPOSITORY,
-                    str(staging),
-                ]
-            )
-            actual = self._output(["git", "-C", str(staging), "rev-parse", "HEAD"])
-            if actual != _COMMIT:
+            bundle, checksum = self._packaged_source()
+            if not bundle.is_file() or not checksum.is_file():
                 raise RuntimeError(
-                    "GPT-SoVITS source verification failed; the expected "
-                    "release commit was not received."
+                    "The packaged GPT-SoVITS source is missing. Reinstall "
+                    "AIpet-Murasame from the macOS DMG."
                 )
+            expected = checksum.read_text(encoding="utf-8").split()[0]
+            actual = self._sha256(bundle)
+            if actual != expected:
+                raise RuntimeError(
+                    "The packaged GPT-SoVITS source failed verification."
+                )
+            progress("Installing packaged GPT-SoVITS source")
+            self._extract_zip(bundle, staging)
+            roots = [
+                path
+                for path in staging.iterdir()
+                if path.is_dir() and (path / "api_v2.py").is_file()
+            ]
+            if len(roots) != 1:
+                raise RuntimeError("The packaged GPT-SoVITS source is invalid.")
             if engine_root.exists():
                 engine_root.rmdir()
-            os.replace(staging, engine_root)
+            os.replace(roots[0], engine_root)
         finally:
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
+
+    @staticmethod
+    def _packaged_source() -> tuple[Path, Path]:
+        bundle_root = Path(getattr(sys, "_MEIPASS", ""))
+        contents = Path(sys.executable).resolve().parents[1]
+        candidates = [
+            bundle_root / "tools",
+            contents / "Frameworks" / "tools",
+            contents / "Resources" / "tools",
+        ]
+        for directory in candidates:
+            bundle = directory / "gpt-sovits-source.zip"
+            checksum = directory / "gpt-sovits-source.sha256"
+            if bundle.is_file() and checksum.is_file():
+                return bundle, checksum
+        return Path(), Path()
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        import hashlib
+
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def _install_python(
         self,
@@ -415,14 +440,3 @@ class MacOSTTSBootstrap:
             raise RuntimeError(
                 f"GPT-SoVITS installation command failed ({result.returncode}): {detail}"
             )
-
-    @staticmethod
-    def _output(command: list[str]) -> str:
-        result = subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            errors="replace",
-        )
-        return result.stdout.strip()
