@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from pathlib import Path
 
@@ -10,8 +11,12 @@ import requests
 from aipet.core.backends import Emotion
 from aipet.core.config import AppSettings, get_cache_dir
 from aipet.core.network import is_loopback_url
+from aipet.core.runtime_logging import get_logger
 from aipet.core.tts_assets import configure_local_tts_weights, locate_tts_assets
 from aipet.core.tts_service import TTSServiceError, get_tts_service_manager
+
+
+logger = get_logger("tts")
 
 
 class TTSError(RuntimeError):
@@ -102,23 +107,95 @@ class TTSClient:
             "super_sampling": False,
         }
 
+        logger.info(
+            "TTS 合成请求发出 | POST %s | 文本字符=%s | 情绪=%s | "
+            "参考音频=%s",
+            config.base_url,
+            len(text),
+            emotion,
+            reference_audio_path,
+        )
+        started_at = time.monotonic()
         try:
             response = self.session.post(
                 config.base_url,
                 json=params,
                 timeout=(10, config.timeout_seconds),
             )
+        except requests.RequestException as exc:
+            elapsed_ms = (time.monotonic() - started_at) * 1_000
+            logger.warning(
+                "TTS 合成请求连接失败 | POST %s | %.0f ms | %s: %s",
+                config.base_url,
+                elapsed_ms,
+                type(exc).__name__,
+                exc,
+            )
+            raise TTSError(
+                f"TTS 请求失败: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        elapsed_ms = (time.monotonic() - started_at) * 1_000
+        try:
             response.raise_for_status()
         except requests.RequestException as exc:
-            raise TTSError(f"TTS 请求失败: {exc}") from exc
+            detail = _response_text_summary(response)
+            content_type = response.headers.get("Content-Type", "")
+            logger.warning(
+                "TTS 合成请求被拒绝 | POST %s | HTTP %s | %.0f ms | "
+                "Content-Type=%s | 响应=%s",
+                config.base_url,
+                response.status_code,
+                elapsed_ms,
+                content_type,
+                detail,
+            )
+            raise TTSError(
+                f"TTS 请求失败: HTTP {response.status_code}; "
+                f"服务端响应: {detail}"
+            ) from exc
 
         content_type = response.headers.get("Content-Type", "")
         if not content_type.lower().startswith("audio/"):
-            detail = response.text[:500]
+            detail = _response_text_summary(response)
+            logger.warning(
+                "TTS 合成响应格式异常 | POST %s | HTTP %s | %.0f ms | "
+                "Content-Type=%s | 响应=%s",
+                config.base_url,
+                response.status_code,
+                elapsed_ms,
+                content_type,
+                detail,
+            )
             raise TTSError(f"TTS 未返回音频: {detail}")
 
         output_dir = get_cache_dir() / "voices"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{uuid.uuid4().hex}.wav"
         output_path.write_bytes(response.content)
+        logger.info(
+            "TTS 合成完成 | POST %s | HTTP %s | %.0f ms | 音频=%s 字节",
+            config.base_url,
+            response.status_code,
+            elapsed_ms,
+            len(response.content),
+        )
         return output_path
+
+
+def _response_text_summary(
+    response: requests.Response,
+    limit: int = 2_000,
+) -> str:
+    content_type = response.headers.get("Content-Type", "")
+    if content_type.lower().startswith("audio/"):
+        return f"<音频响应已省略，{len(response.content)} 字节>"
+    try:
+        text = " ".join(response.text.split())
+    except Exception:
+        return "<响应正文无法解码>"
+    if not text:
+        return "<空响应>"
+    if len(text) > limit:
+        return text[:limit] + f"…<已截断 {len(text) - limit} 字符>"
+    return text

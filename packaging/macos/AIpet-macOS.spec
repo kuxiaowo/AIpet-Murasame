@@ -16,6 +16,7 @@ gpt_sovits_checksum = Path(os.environ["AIPET_MACOS_GPT_SOVITS_CHECKSUM"])
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
     (str(project_root / "prompt.txt"), "."),
+    (str(project_root / "prompt.en.txt"), "."),
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
     (str(uv_path), "tools"),

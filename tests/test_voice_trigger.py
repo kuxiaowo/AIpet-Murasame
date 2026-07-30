@@ -175,7 +175,10 @@ class WindowsVoiceTriggerTests(unittest.TestCase):
                 texts.append(text)
                 completed.set()
 
-            trigger = CapslockVoiceTrigger(on_text_ready=on_text_ready)
+            trigger = CapslockVoiceTrigger(
+                on_text_ready=on_text_ready,
+                language="en",
+            )
             trigger._recorder.stop_and_save = Mock(
                 return_value=str(audio_path)
             )
@@ -187,8 +190,8 @@ class WindowsVoiceTriggerTests(unittest.TestCase):
                 ),
                 patch(
                     "aipet.core.voice_input.transcribe_full",
-                    return_value="  测试语音  ",
-                ),
+                    return_value="  Hello, Master.  ",
+                ) as transcribe,
             ):
                 trigger._handle_record_done()
                 self.assertTrue(completed.wait(timeout=2))
@@ -196,7 +199,11 @@ class WindowsVoiceTriggerTests(unittest.TestCase):
             deadline = time.monotonic() + 2
             while audio_path.exists() and time.monotonic() < deadline:
                 time.sleep(0.01)
-            self.assertEqual(texts, ["测试语音"])
+            self.assertEqual(texts, ["Hello, Master."])
+            self.assertEqual(
+                transcribe.call_args.kwargs["language"],
+                "en",
+            )
             self.assertFalse(trigger._recognizing)
             self.assertFalse(audio_path.exists())
 

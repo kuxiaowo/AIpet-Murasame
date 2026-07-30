@@ -146,10 +146,6 @@ def move_pet_to_configured_screen(
         if display.window_x is not None and display.window_y is not None:
             x += display.window_x
             y += display.window_y
-            max_x = max(geometry.left(), geometry.right() - pet.width() + 1)
-            max_y = max(geometry.top(), geometry.bottom() - pet.height() + 1)
-            x = max(geometry.left(), min(x, max_x))
-            y = max(geometry.top(), min(y, max_y))
         pet.move(x, y)
         pet.remember_window_position()
 
@@ -207,6 +203,7 @@ def configure_voice_trigger(
             model_directory=settings.stt.model_dir,
             device=settings.stt.device,
             input_device=settings.stt.input_device,
+            language=settings.stt.resolved_language(settings.ui_language),
             on_error=bridge.error.emit,
         )
     except (ImportError, OSError) as exc:

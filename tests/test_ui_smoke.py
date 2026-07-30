@@ -41,7 +41,7 @@ class UISmokeTests(unittest.TestCase):
                 os.environ,
                 {"AIPET_DATA_DIR": directory},
             ):
-                settings = AppSettings()
+                settings = AppSettings(ui_language="zh-CN")
                 settings.character.user_name = "主人"
                 pet = Murasame(settings)
                 try:
@@ -56,6 +56,68 @@ class UISmokeTests(unittest.TestCase):
                     self.assertTrue(pet.display_text.startswith("【丛雨】\n"))
                 finally:
                     pet.shutdown()
+
+    def test_language_switch_swaps_and_saves_both_personality_prompts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            english_source = root / "source.en.txt"
+            chinese_source = root / "source.zh-CN.txt"
+            english_source.write_text("English persona", encoding="utf-8")
+            chinese_source.write_text("中文人格", encoding="utf-8")
+            settings = AppSettings(ui_language="en")
+            settings.character.personality_file_en = str(english_source)
+            settings.character.personality_file = str(chinese_source)
+
+            with patch.dict(
+                os.environ,
+                {"AIPET_DATA_DIR": str(root / "data")},
+            ):
+                dialog = SettingsDialog(settings)
+                try:
+                    self.assertEqual(
+                        dialog.personality_prompt.toPlainText(),
+                        "English persona",
+                    )
+                    dialog.personality_prompt.setPlainText(
+                        "Edited English persona"
+                    )
+                    dialog._set_combo_data(
+                        dialog.language_combo,
+                        "zh-CN",
+                    )
+                    self.assertEqual(dialog.user_name.text(), "主人")
+                    self.assertEqual(
+                        dialog.personality_prompt.toPlainText(),
+                        "中文人格",
+                    )
+                    dialog.personality_prompt.setPlainText("修改后的中文人格")
+                    dialog._set_combo_data(dialog.language_combo, "en")
+                    self.assertEqual(dialog.user_name.text(), "Master")
+                    self.assertEqual(
+                        dialog.personality_prompt.toPlainText(),
+                        "Edited English persona",
+                    )
+
+                    dialog.accept()
+
+                    self.assertEqual(dialog.result(), QDialog.Accepted)
+                    result = dialog.result_settings()
+                    self.assertEqual(
+                        result.personality_path("en").read_text(
+                            encoding="utf-8"
+                        ),
+                        "Edited English persona\n",
+                    )
+                    self.assertEqual(
+                        result.personality_path("zh-CN").read_text(
+                            encoding="utf-8"
+                        ),
+                        "修改后的中文人格\n",
+                    )
+                finally:
+                    dialog.close()
 
     def test_tts_bootstrap_failure_keeps_its_error_visible(self) -> None:
         dialog = SettingsDialog(AppSettings())
@@ -147,6 +209,7 @@ class UISmokeTests(unittest.TestCase):
             settings = AppSettings()
             settings.stt.input_device = selected.identifier
             settings.stt.device = "cuda"
+            settings.stt.language = "ja"
             settings.ui_language = "zh-CN"
             with (
                 patch.dict(
@@ -177,6 +240,14 @@ class UISmokeTests(unittest.TestCase):
                         dialog._form_settings().stt.device,
                         "cuda",
                     )
+                    self.assertEqual(
+                        dialog.stt_language.currentData(),
+                        "ja",
+                    )
+                    self.assertEqual(
+                        dialog._form_settings().stt.language,
+                        "ja",
+                    )
                     dialog._set_combo_data(dialog.language_combo, "en")
                     self.assertEqual(
                         dialog.stt_device.currentText(),
@@ -184,6 +255,15 @@ class UISmokeTests(unittest.TestCase):
                             "CUDA (requires the AIpet-with-cuda build; "
                             "unavailable otherwise)"
                         ),
+                    )
+                    self.assertEqual(
+                        dialog._form_settings().stt.language,
+                        "ja",
+                    )
+                    dialog.stt_language.setEditText("sv")
+                    self.assertEqual(
+                        dialog._form_settings().stt.language,
+                        "sv",
                     )
                     with (
                         patch(
@@ -399,6 +479,126 @@ class UISmokeTests(unittest.TestCase):
         finally:
             self.app.setFont(previous_font)
 
+    def test_portrait_updates_preserve_offscreen_position(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {"AIPET_DATA_DIR": directory},
+            ):
+                settings = AppSettings()
+                pet = Murasame(settings)
+                try:
+                    screen = self.app.primaryScreen()
+                    self.assertIsNotNone(screen)
+                    available = screen.availableGeometry()
+                    centered_x = (
+                        available.center().x() - pet.width() // 2
+                    )
+                    positions = (
+                        (
+                            available.left() - pet.width() // 2,
+                            available.top() + 20,
+                        ),
+                        (
+                            available.right() - pet.width() // 2 + 1,
+                            available.top() + 20,
+                        ),
+                        (
+                            centered_x,
+                            available.top() - pet.height() // 2,
+                        ),
+                        (
+                            centered_x,
+                            available.bottom() - pet.height() // 2 + 1,
+                        ),
+                    )
+
+                    for x, y in positions:
+                        with self.subTest(x=x, y=y):
+                            pet.move(x, y)
+                            previous_center_x = pet.geometry().center().x()
+                            previous_bottom = pet.geometry().bottom()
+
+                            pet.update_portrait(
+                                layers_for("b", "高兴", "kimono"),
+                                "b",
+                                "kimono",
+                            )
+
+                            self.assertLessEqual(
+                                abs(
+                                    pet.geometry().center().x()
+                                    - previous_center_x
+                                ),
+                                1,
+                            )
+                            self.assertEqual(
+                                pet.geometry().bottom(),
+                                previous_bottom,
+                            )
+
+                    pet.move(*positions[-1])
+                    previous_center_x = pet.geometry().center().x()
+                    previous_bottom = pet.geometry().bottom()
+                    pet._active_screen_key = ("force-rescale",)
+                    pet._adapt_to_current_screen()
+                    self.assertLessEqual(
+                        abs(
+                            pet.geometry().center().x()
+                            - previous_center_x
+                        ),
+                        1,
+                    )
+                    self.assertEqual(
+                        pet.geometry().bottom(),
+                        previous_bottom,
+                    )
+                finally:
+                    pet.shutdown()
+
+    def test_startup_restores_offscreen_offsets_without_clamping(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(
+                os.environ,
+                {"AIPET_DATA_DIR": directory},
+            ):
+                settings = AppSettings()
+                screen = self.app.primaryScreen()
+                self.assertIsNotNone(screen)
+                settings.display.screen_name = screen.name()
+                pet = Murasame(settings)
+                try:
+                    available = screen.availableGeometry()
+                    offsets = (
+                        (-pet.width() // 2, 20),
+                        (available.width() + pet.width() // 2, 20),
+                        (20, -pet.height() // 2),
+                        (20, available.height() + pet.height() // 2),
+                    )
+
+                    for offset_x, offset_y in offsets:
+                        with self.subTest(
+                            offset_x=offset_x,
+                            offset_y=offset_y,
+                        ):
+                            settings.display.window_x = offset_x
+                            settings.display.window_y = offset_y
+                            move_pet_to_configured_screen(
+                                self.app,
+                                pet,
+                                settings,
+                            )
+                            self.assertEqual(
+                                pet.x(),
+                                available.x() + offset_x,
+                            )
+                            self.assertEqual(
+                                pet.y(),
+                                available.y() + offset_y,
+                            )
+                finally:
+                    pet.shutdown()
+
     def test_settings_dialog_and_pet_construct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             previous = os.environ.get("AIPET_DATA_DIR")
@@ -476,20 +676,8 @@ class UISmokeTests(unittest.TestCase):
                 )
                 move_pet_to_configured_screen(self.app, pet, settings)
                 available = screen.availableGeometry()
-                expected_x = min(
-                    available.x() + 24,
-                    max(
-                        available.left(),
-                        available.right() - pet.width() + 1,
-                    ),
-                )
-                expected_y = min(
-                    available.y() + 36,
-                    max(
-                        available.top(),
-                        available.bottom() - pet.height() + 1,
-                    ),
-                )
+                expected_x = available.x() + 24
+                expected_y = available.y() + 36
                 self.assertEqual(pet.x(), expected_x)
                 self.assertEqual(pet.y(), expected_y)
                 pet.move(available.x() + 12, available.y() + 18)
@@ -566,7 +754,8 @@ class UISmokeTests(unittest.TestCase):
 
                 outfit_reply = parse_character_reply(
                     '{"outfit":"sleepwear","sentences":['
-                    '{"zh":"晚安。","ja":"お休みじゃ。",'
+                    '{"zh":"晚安。","en":"Good night.",'
+                    '"ja":"お休みじゃ。",'
                     '"emotion":"平静","portrait":"b"}]}'
                 )
                 with patch.object(pet, "_play_next_sentence") as play_next:
@@ -908,6 +1097,10 @@ class UISmokeTests(unittest.TestCase):
                     ):
                         pet.check_idle_state()
                     proactive_event.assert_called_once()
+                    self.assertIn(
+                        "has not provided input",
+                        proactive_event.call_args.args[0],
+                    )
 
                     proactive_event.reset_mock()
                     pet._reset_idle_state()
@@ -919,6 +1112,10 @@ class UISmokeTests(unittest.TestCase):
                     ):
                         pet.check_idle_state()
                     proactive_event.assert_called_once()
+                    self.assertIn(
+                        "has been away",
+                        proactive_event.call_args.args[0],
+                    )
 
                     proactive_event.reset_mock()
                     pet.idle_away_triggered = True
@@ -929,6 +1126,10 @@ class UISmokeTests(unittest.TestCase):
                     ):
                         pet.check_idle_state()
                     proactive_event.assert_called_once()
+                    self.assertIn(
+                        "has just returned",
+                        proactive_event.call_args.args[0],
+                    )
 
                 with patch.object(
                     dialog,

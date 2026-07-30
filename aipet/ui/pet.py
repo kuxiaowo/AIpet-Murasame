@@ -92,7 +92,9 @@ class Murasame(QLabel):
         super().__init__()
         self._platform_runtime = platform_runtime or get_platform_runtime()
         self.settings = settings.model_copy(deep=True)
-        self.pet_name = "丛雨"
+        self.pet_name = (
+            "Murasame" if self.settings.ui_language == "en" else "丛雨"
+        )
 
         self.full_text = ""
         self.display_text = ""
@@ -184,6 +186,25 @@ class Murasame(QLabel):
         families = QFontDatabase.applicationFontFamilies(font_id)
         return families[0] if families else QFont().family()
 
+    def _english_ui(self) -> bool:
+        return self.settings.ui_language == "en"
+
+    def _localized(self, english: str, chinese: str) -> str:
+        return english if self._english_ui() else chinese
+
+    def _wrap_dialogue(self, text: str) -> str:
+        return wrap_text(text, width=28 if self._english_ui() else 10)
+
+    def _speaker_prefix(self, speaker_name: str | None = None) -> str:
+        name = speaker_name or self.pet_name
+        return f"[{name}]\n" if self._english_ui() else f"【{name}】\n"
+
+    def _input_display(self, content: str) -> str:
+        prefix = self._speaker_prefix(self.settings.character.user_name)
+        if self._english_ui():
+            return f'{prefix}  "{content}"'
+        return f"{prefix}  「{content}」"
+
     def apply_settings(self, settings: AppSettings) -> None:
         old_portrait = self.settings.character.portrait
         old_outfit = self.settings.character.outfit
@@ -196,6 +217,9 @@ class Murasame(QLabel):
         current_portrait = getattr(self, "_current_portrait", old_portrait)
         current_outfit = getattr(self, "_current_outfit", old_outfit)
         self.settings = settings.model_copy(deep=True)
+        self.pet_name = (
+            "Murasame" if self.settings.ui_language == "en" else "丛雨"
+        )
         self._dnd_enabled = self.settings.idle.do_not_disturb
         if self._dnd_enabled:
             self._cancel_active_jobs()
@@ -350,7 +374,13 @@ class Murasame(QLabel):
         ):
             if time.time() - self.away_trigger_time >= 30:
                 self._try_start_proactive_event(
-                    "用户刚刚回到电脑前。简短欢迎主人回来，并自然地问是否要继续刚才的事情。",
+                    self._localized(
+                        "The user has just returned to the computer. Briefly "
+                        "welcome Master back and naturally ask whether they "
+                        "would like to continue what they were doing.",
+                        "用户刚刚回到电脑前。简短欢迎主人回来，"
+                        "并自然地问是否要继续刚才的事情。",
+                    ),
                 )
             self._reset_idle_state()
             return
@@ -364,15 +394,26 @@ class Murasame(QLabel):
             self.idle_away_triggered = True
             self.away_trigger_time = time.time()
             self._try_start_proactive_event(
-                "用户已经离开电脑一段时间。轻声问主人是否还在，并提醒适当休息。",
+                self._localized(
+                    "The user has been away from the computer for a while. "
+                    "Gently ask whether Master is still there and remind them "
+                    "to take an appropriate break.",
+                    "用户已经离开电脑一段时间。轻声问主人是否还在，"
+                    "并提醒适当休息。",
+                ),
             )
             return
 
         if not self.idle_thinking_triggered:
             self.idle_thinking_triggered = True
             self._try_start_proactive_event(
-                "用户一段时间没有输入，可能正在思考、发呆或休息。"
-                "温柔地关心一下，避免过分打扰。",
+                self._localized(
+                    "The user has not provided input for a while and may be "
+                    "thinking, daydreaming, or resting. Check in gently "
+                    "without being intrusive.",
+                    "用户一段时间没有输入，可能正在思考、发呆或休息。"
+                    "温柔地关心一下，避免过分打扰。",
+                ),
             )
 
     def _capture_screen(self) -> None:
@@ -497,16 +538,32 @@ class Murasame(QLabel):
         if event_key == self._last_spoken_screen_event:
             return
 
-        details = ["屏幕发生了明显变化。"]
-        if analysis.software:
-            details.append(f"软件：{analysis.software}")
-        if analysis.activity:
-            details.append(f"当前活动：{analysis.activity}")
-        if analysis.topic:
-            details.append(f"页面主题：{analysis.topic}")
-        if analysis.change_summary:
-            details.append(f"变化摘要：{analysis.change_summary}")
-        details.append(f"当前时间：{build_time_context()}")
+        if self._english_ui():
+            details = ["The screen has changed significantly."]
+            if analysis.software:
+                details.append(f"Application: {analysis.software}")
+            if analysis.activity:
+                details.append(f"Current activity: {analysis.activity}")
+            if analysis.topic:
+                details.append(f"Topic: {analysis.topic}")
+            if analysis.change_summary:
+                details.append(f"Change summary: {analysis.change_summary}")
+            details.append(
+                f"Current time: {build_time_context('en')}"
+            )
+        else:
+            details = ["屏幕发生了明显变化。"]
+            if analysis.software:
+                details.append(f"软件：{analysis.software}")
+            if analysis.activity:
+                details.append(f"当前活动：{analysis.activity}")
+            if analysis.topic:
+                details.append(f"页面主题：{analysis.topic}")
+            if analysis.change_summary:
+                details.append(f"变化摘要：{analysis.change_summary}")
+            details.append(
+                f"当前时间：{build_time_context('zh-CN')}"
+            )
         if self._try_start_proactive_event("\n".join(details)):
             self._last_spoken_screen_event = event_key
 
@@ -573,7 +630,13 @@ class Murasame(QLabel):
         if generation != self._generation:
             return
         self._stop_thinking_animation()
-        self.show_text("连接失败，请检查模型设置。", typing=False)
+        self.show_text(
+            self._localized(
+                "Connection failed. Please check the model settings.",
+                "连接失败，请检查模型设置。",
+            ),
+            typing=False,
+        )
         self.notification.emit("模型请求失败", message)
 
     def _on_reply(
@@ -628,14 +691,15 @@ class Murasame(QLabel):
             portrait,
             outfit,
         )
-        self.show_text(sentence.zh, typing=True)
+        visible_text = sentence.text(self.settings.ui_language)
+        self.show_text(visible_text, typing=True)
 
         audio_path = result.audio_paths[index]
         audio_duration = self._audio_duration_milliseconds(audio_path)
         if audio_path is not None and audio_path.exists() and audio_duration > 0:
             self._sound = QSound(str(audio_path), self)
             self._sound.play()
-        delay = max(40 * len(sentence.zh) + 800, audio_duration + 400)
+        delay = max(40 * len(visible_text) + 800, audio_duration + 400)
         self.playback_timer.start(int(delay))
 
     @staticmethod
@@ -716,22 +780,10 @@ class Murasame(QLabel):
         )
         self.setPixmap(pixmap)
         self.resize(pixmap.size())
-        if previous_geometry is not None and screen is not None:
-            available = screen.availableGeometry()
+        if previous_geometry is not None:
             x = previous_geometry.center().x() - pixmap.width() // 2
             y = previous_geometry.bottom() - pixmap.height() + 1
-            max_x = max(
-                available.left(),
-                available.right() - pixmap.width() + 1,
-            )
-            max_y = max(
-                available.top(),
-                available.bottom() - pixmap.height() + 1,
-            )
-            self.move(
-                max(available.left(), min(x, max_x)),
-                max(available.top(), min(y, max_y)),
-            )
+            self.move(x, y)
         self.update()
 
     def _configured_screen(self) -> QScreen | None:
@@ -827,17 +879,8 @@ class Murasame(QLabel):
         self.setPixmap(scaled)
         self.resize(scaled.size())
 
-        available = screen.availableGeometry()
         x = old_geometry.center().x() - scaled.width() // 2
         y = old_geometry.bottom() - scaled.height() + 1
-        x = max(
-            available.left(),
-            min(x, available.right() - scaled.width() + 1),
-        )
-        y = max(
-            available.top(),
-            min(y, available.bottom() - scaled.height() + 1),
-        )
         self.move(x, y)
 
         screens = QGuiApplication.screens()
@@ -869,8 +912,8 @@ class Murasame(QLabel):
         speaker_name: str | None = None,
     ) -> None:
         self._stop_thinking_animation()
-        self.full_text = wrap_text(text)
-        self.typing_prefix = f"【{speaker_name or self.pet_name}】\n"
+        self.full_text = self._wrap_dialogue(text)
+        self.typing_prefix = self._speaker_prefix(speaker_name)
         self.typing_index = 0
         self.typing_timer.stop()
         if typing:
@@ -892,7 +935,7 @@ class Murasame(QLabel):
     def _thinking_step(self) -> None:
         self._thinking_dot_count = self._thinking_dot_count % 6 + 1
         self.full_text = "." * self._thinking_dot_count
-        self.typing_prefix = f"【{self.pet_name}】\n"
+        self.typing_prefix = self._speaker_prefix()
         self.display_text = self.typing_prefix + self.full_text
         self.update()
 
@@ -958,9 +1001,7 @@ class Murasame(QLabel):
                 self.input_mode = True
                 self.input_buffer = ""
                 self.preedit_text = ""
-                self.display_text = (
-                    f"【{self.settings.character.user_name}】\n  「...」"
-                )
+                self.display_text = self._input_display("...")
                 self.setFocus()
                 self.update()
             else:
@@ -973,7 +1014,13 @@ class Murasame(QLabel):
     def mouseMoveEvent(self, event) -> None:
         if self.touch_head and self.head_press_x is not None:
             if abs(event.x() - self.head_press_x) > 50:
-                self.start_thread("主人摸了摸你的头。", role="system")
+                self.start_thread(
+                    self._localized(
+                        "Master gently patted your head.",
+                        "主人摸了摸你的头。",
+                    ),
+                    role="system",
+                )
                 self.touch_head = False
         if self.drag_offset is not None and event.buttons() & Qt.MiddleButton:
             self.move(self.pos() + event.pos() - self.drag_offset)
@@ -1040,7 +1087,12 @@ class Murasame(QLabel):
             if text:
                 self.start_thread(text, role="user")
             else:
-                self.show_text("主人，你说什么？")
+                self.show_text(
+                    self._localized(
+                        "What did you say, Master?",
+                        "主人，你说什么？",
+                    )
+                )
             return
         if event.key() == Qt.Key_Escape:
             self.input_mode = False
@@ -1056,10 +1108,11 @@ class Murasame(QLabel):
             self._show_input_buffer()
 
     def _show_input_buffer(self) -> None:
-        content = wrap_text(self.input_buffer + self.preedit_text) or "..."
-        self.display_text = (
-            f"【{self.settings.character.user_name}】\n  「{content}」"
+        content = (
+            self._wrap_dialogue(self.input_buffer + self.preedit_text)
+            or "..."
         )
+        self.display_text = self._input_display(content)
         self.update()
 
     def clear_history(self) -> None:
@@ -1074,7 +1127,13 @@ class Murasame(QLabel):
             portrait,
             outfit,
         )
-        self.show_text("已经忘掉之前的对话和屏幕事件了。", typing=False)
+        self.show_text(
+            self._localized(
+                "I've forgotten our previous conversation and screen events.",
+                "已经忘掉之前的对话和屏幕事件了。",
+            ),
+            typing=False,
+        )
 
     def shutdown(self) -> None:
         self._topmost_timer.stop()

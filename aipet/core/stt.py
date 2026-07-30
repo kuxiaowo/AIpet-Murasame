@@ -8,14 +8,27 @@ from dataclasses import dataclass
 from typing import Any
 
 from aipet.core.runtime_logging import get_logger
+from aipet.core.stt_languages import normalize_stt_language
 from aipet.core.whisper_models import find_local_model
 
 
 logger = get_logger("voice")
-WHISPER_INITIAL_PROMPT = (
-    "简体中文口语。常见专有名词：丛雨、AIpet、GPT-SoVITS、"
-    "Whisper、DeepSeek、AutoDL、CUDA、Python。"
-)
+WHISPER_INITIAL_PROMPTS = {
+    "zh": (
+        "简体中文口语。常见专有名词：丛雨、AIpet、GPT-SoVITS、"
+        "Whisper、DeepSeek、AutoDL、CUDA、Python。"
+    ),
+    "en": (
+        "Natural spoken English. Common proper nouns: Murasame, AIpet, "
+        "GPT-SoVITS, Whisper, DeepSeek, AutoDL, CUDA, Python, and Ollama."
+    ),
+    "ja": (
+        "自然な日本語の会話。固有名詞：ムラサメ、AIpet、GPT-SoVITS、"
+        "Whisper、DeepSeek、AutoDL、CUDA、Python、Ollama。"
+    ),
+}
+WHISPER_INITIAL_PROMPTS["zh-CN"] = WHISPER_INITIAL_PROMPTS["zh"]
+WHISPER_INITIAL_PROMPT = WHISPER_INITIAL_PROMPTS["zh"]
 
 
 @dataclass
@@ -79,10 +92,22 @@ def transcribe_full(
     model_size: str = "large-v3",
     model_directory: str = "",
     device: str = "auto",
+    language: str | None = "zh",
 ) -> str:
     """Transcribe a WAV file with the optional faster-whisper dependency."""
 
     from faster_whisper import WhisperModel
+
+    normalized_language = (
+        None if language is None else normalize_stt_language(language)
+    )
+    selected_language = (
+        None if normalized_language == "auto" else normalized_language
+    )
+    if selected_language == "ui":
+        raise ValueError(
+            "The 'ui' STT language must be resolved before transcription."
+        )
 
     selected_model = find_local_model(model_size, model_directory)
     if selected_model is None:
@@ -100,11 +125,17 @@ def transcribe_full(
             compute_type,
         )
         with cached.inference_lock:
+            transcription_options: dict[str, object] = {"beam_size": 5}
+            if selected_language is not None:
+                transcription_options["language"] = selected_language
+                initial_prompt = WHISPER_INITIAL_PROMPTS.get(
+                    selected_language
+                )
+                if initial_prompt:
+                    transcription_options["initial_prompt"] = initial_prompt
             segments, _ = cached.model.transcribe(
                 audio_path,
-                language="zh",
-                beam_size=5,
-                initial_prompt=WHISPER_INITIAL_PROMPT,
+                **transcription_options,
             )
             return "".join(segment.text for segment in segments).strip()
 
@@ -134,6 +165,7 @@ def transcribe_full(
 
 __all__ = [
     "WHISPER_INITIAL_PROMPT",
+    "WHISPER_INITIAL_PROMPTS",
     "clear_model_cache",
     "transcribe_full",
 ]

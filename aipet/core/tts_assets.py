@@ -10,12 +10,14 @@ import requests
 
 from aipet.core.config import get_model_dir
 from aipet.core.network import is_loopback_url
+from aipet.core.runtime_logging import get_logger
 
 
 GPT_WEIGHT_NAME = "murasame-gpt.ckpt"
 SOVITS_WEIGHT_NAME = "murasame-sovits.pth"
 MIN_GPT_WEIGHT_SIZE = 100_000_000
 MIN_SOVITS_WEIGHT_SIZE = 50_000_000
+logger = get_logger("tts-assets")
 
 
 def managed_tts_model_dir() -> Path:
@@ -106,6 +108,12 @@ def locate_murasame_weights(
 
 
 def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
+    """Return whether *base_url* exposes a verifiable POST /tts API.
+
+    A generic 4xx response only proves that a TCP/HTTP server owns the port.
+    It does not prove that the service is GPT-SoVITS-compatible or healthy.
+    """
+
     parsed = urlsplit(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return False
@@ -120,20 +128,39 @@ def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
             schema_url,
             timeout=(timeout, timeout),
         )
-        if response.status_code == 200:
-            paths = response.json().get("paths", {})
-            if isinstance(paths, dict) and "/tts" in paths:
-                return True
-    except (requests.RequestException, ValueError, AttributeError):
-        pass
-
-    try:
-        response = session.get(base_url, timeout=(timeout, timeout))
-        if response.status_code in {200, 400, 405, 422}:
-            return True
-    except requests.RequestException:
-        pass
-    return False
+        if response.status_code != 200:
+            logger.debug(
+                "TTS 健康检查失败 | GET %s | HTTP %s",
+                schema_url,
+                response.status_code,
+            )
+            return False
+        payload = response.json()
+        paths = payload.get("paths", {})
+        tts_path = paths.get("/tts") if isinstance(paths, dict) else None
+        reachable = isinstance(tts_path, dict) and "post" in tts_path
+        if not reachable:
+            logger.debug(
+                "TTS 健康检查失败 | GET %s | OpenAPI 未声明 POST /tts",
+                schema_url,
+            )
+        return reachable
+    except requests.RequestException as exc:
+        logger.debug(
+            "TTS 健康检查连接失败 | GET %s | %s: %s",
+            schema_url,
+            type(exc).__name__,
+            exc,
+        )
+        return False
+    except (ValueError, AttributeError) as exc:
+        logger.debug(
+            "TTS 健康检查响应无效 | GET %s | %s: %s",
+            schema_url,
+            type(exc).__name__,
+            exc,
+        )
+        return False
 
 
 def configure_local_tts_weights(
@@ -152,12 +179,57 @@ def configure_local_tts_weights(
         ("set_gpt_weights", state.gpt_weight),
         ("set_sovits_weights", state.sovits_weight),
     ):
-        response = session.get(
-            f"{root}/{endpoint}",
-            params={"weights_path": str(path.resolve())},
-            timeout=(5, timeout_seconds),
+        url = f"{root}/{endpoint}"
+        try:
+            response = session.get(
+                url,
+                params={"weights_path": str(path.resolve())},
+                timeout=(5, timeout_seconds),
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            response = getattr(exc, "response", None)
+            if response is None:
+                logger.warning(
+                    "TTS 权重加载连接失败 | GET %s | %s: %s",
+                    url,
+                    type(exc).__name__,
+                    exc,
+                )
+                raise
+            logger.warning(
+                "TTS 权重加载请求失败 | GET %s | HTTP %s | "
+                "Content-Type=%s | 响应=%s",
+                url,
+                response.status_code,
+                response.headers.get("Content-Type", ""),
+                _response_text_summary(response),
+            )
+            raise
+        logger.info(
+            "TTS 权重加载完成 | %s | HTTP %s | 权重=%s",
+            endpoint,
+            response.status_code,
+            path,
         )
-        response.raise_for_status()
+
+
+def _response_text_summary(
+    response: requests.Response,
+    limit: int = 2_000,
+) -> str:
+    content_type = response.headers.get("Content-Type", "")
+    if content_type.lower().startswith("audio/"):
+        return f"<音频响应已省略，{len(response.content)} 字节>"
+    try:
+        text = " ".join(response.text.split())
+    except Exception:
+        return "<响应正文无法解码>"
+    if not text:
+        return "<空响应>"
+    if len(text) > limit:
+        return text[:limit] + f"…<已截断 {len(text) - limit} 字符>"
+    return text
 
 
 def _valid_weight(path: Path, minimum_size: int) -> Path | None:
