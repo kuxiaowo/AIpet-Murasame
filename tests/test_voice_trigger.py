@@ -206,6 +206,19 @@ class WindowsVoiceTriggerTests(unittest.TestCase):
     "macOS voice dependencies are unavailable",
 )
 class MacOSVoiceTriggerTests(unittest.TestCase):
+    def test_macos_start_requests_accessibility_before_monitoring(self) -> None:
+        trigger = OptionVVoiceTrigger(on_text_ready=Mock())
+
+        with patch.object(
+            trigger,
+            "_has_accessibility_permission",
+            return_value=False,
+        ):
+            with self.assertRaises(PermissionError):
+                trigger.start()
+
+        self.assertEqual(trigger._monitors, [])
+
     def test_macos_option_v_controls_hold_session(self) -> None:
         trigger = OptionVVoiceTrigger(on_text_ready=Mock())
         trigger.press = Mock()
