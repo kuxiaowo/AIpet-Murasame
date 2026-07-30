@@ -19,6 +19,7 @@ from aipet.core.runtime_logging import get_logger
 from aipet.core.tts_assets import (
     TTSAssetState,
     locate_tts_assets,
+    probe_tts_service,
     tts_service_is_reachable,
 )
 from aipet.platforms import PlatformRuntime, get_platform_runtime
@@ -82,9 +83,19 @@ class LocalTTSServiceManager:
             )
 
         address = _local_server_address(settings.base_url)
-        if tts_service_is_reachable(settings.base_url):
-            logger.info("TTS 服务已在线 | %s", settings.base_url)
+        health = probe_tts_service(settings.base_url)
+        if health.reachable:
+            logger.info(
+                "TTS 服务已在线 | %s | 健康检查=%s",
+                settings.base_url,
+                health.detail,
+            )
             return False
+        logger.info(
+            "TTS 健康检查未通过，将尝试启动本地服务 | %s | 原因=%s",
+            settings.base_url,
+            health.detail,
+        )
 
         deadline = time.monotonic() + settings.timeout_seconds
         with self._condition:
@@ -227,12 +238,19 @@ class LocalTTSServiceManager:
         ):
             logger.info("AutoDL TTS 服务已在线 | %s", settings.base_url)
             return False
-        if tts_service_is_reachable(settings.base_url):
+        health = probe_tts_service(settings.base_url)
+        if health.reachable:
             raise TTSServiceError(
                 "The local TTS port is occupied by a service that was not "
                 "started through the current AutoDL SSH session. Stop that "
                 "service or use another local port."
             )
+        logger.info(
+            "AutoDL TTS 健康检查未通过，将尝试建立 SSH 会话 | %s | "
+            "原因=%s",
+            settings.base_url,
+            health.detail,
+        )
 
         address = _local_server_address(settings.base_url)
         deadline = time.monotonic() + settings.timeout_seconds

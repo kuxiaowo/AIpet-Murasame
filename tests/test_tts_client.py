@@ -64,9 +64,11 @@ class TTSClientDiagnosticsTests(unittest.TestCase):
 
         message = str(raised.exception)
         self.assertIn("HTTP 400", message)
+        self.assertRegex(message, r"\[ID=[0-9a-f]{8}\]")
         self.assertIn("reference audio was not found", message)
         joined_logs = "\n".join(captured.output)
         self.assertIn("TTS 合成请求被拒绝", joined_logs)
+        self.assertRegex(joined_logs, r"ID=[0-9a-f]{8}")
         self.assertIn("Content-Type=application/json", joined_logs)
         self.assertIn("reference audio was not found", joined_logs)
 

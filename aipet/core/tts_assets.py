@@ -54,6 +54,13 @@ class TTSAssetState:
         return None
 
 
+@dataclass(frozen=True)
+class TTSHealthCheck:
+    reachable: bool
+    detail: str
+    status_code: int | None = None
+
+
 def locate_tts_assets(
     *,
     configured_engine_root: str = "",
@@ -107,8 +114,11 @@ def locate_murasame_weights(
     )
 
 
-def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
-    """Return whether *base_url* exposes a verifiable POST /tts API.
+def probe_tts_service(
+    base_url: str,
+    timeout: float = 1.0,
+) -> TTSHealthCheck:
+    """Inspect whether *base_url* exposes a verifiable POST TTS API.
 
     A generic 4xx response only proves that a TCP/HTTP server owns the port.
     It does not prove that the service is GPT-SoVITS-compatible or healthy.
@@ -116,10 +126,11 @@ def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
 
     parsed = urlsplit(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
+        return TTSHealthCheck(False, "TTS 地址无效")
     session = requests.Session()
     if is_loopback_url(base_url):
         session.trust_env = False
+    endpoint_path = parsed.path.rstrip("/") or "/tts"
     schema_url = urlunsplit(
         (parsed.scheme, parsed.netloc, "/openapi.json", "", "")
     )
@@ -128,39 +139,54 @@ def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
             schema_url,
             timeout=(timeout, timeout),
         )
-        if response.status_code != 200:
-            logger.debug(
-                "TTS 健康检查失败 | GET %s | HTTP %s",
-                schema_url,
-                response.status_code,
-            )
-            return False
-        payload = response.json()
-        paths = payload.get("paths", {})
-        tts_path = paths.get("/tts") if isinstance(paths, dict) else None
-        reachable = isinstance(tts_path, dict) and "post" in tts_path
-        if not reachable:
-            logger.debug(
-                "TTS 健康检查失败 | GET %s | OpenAPI 未声明 POST /tts",
-                schema_url,
-            )
-        return reachable
     except requests.RequestException as exc:
-        logger.debug(
-            "TTS 健康检查连接失败 | GET %s | %s: %s",
-            schema_url,
-            type(exc).__name__,
-            exc,
+        return TTSHealthCheck(
+            False,
+            (
+                f"GET {schema_url} 连接失败："
+                f"{type(exc).__name__}: {exc}"
+            ),
         )
-        return False
+
+    if response.status_code != 200:
+        return TTSHealthCheck(
+            False,
+            f"GET {schema_url} 返回 HTTP {response.status_code}",
+            response.status_code,
+        )
+
+    try:
+        payload = response.json()
     except (ValueError, AttributeError) as exc:
-        logger.debug(
-            "TTS 健康检查响应无效 | GET %s | %s: %s",
-            schema_url,
-            type(exc).__name__,
-            exc,
+        return TTSHealthCheck(
+            False,
+            (
+                f"GET {schema_url} 未返回有效 OpenAPI JSON："
+                f"{type(exc).__name__}: {exc}"
+            ),
+            response.status_code,
         )
-        return False
+
+    paths = payload.get("paths", {}) if isinstance(payload, dict) else {}
+    tts_path = paths.get(endpoint_path) if isinstance(paths, dict) else None
+    if not isinstance(tts_path, dict) or "post" not in tts_path:
+        return TTSHealthCheck(
+            False,
+            (
+                f"GET {schema_url} 的 OpenAPI 未声明 "
+                f"POST {endpoint_path}"
+            ),
+            response.status_code,
+        )
+    return TTSHealthCheck(
+        True,
+        f"OpenAPI 已确认 POST {endpoint_path}",
+        response.status_code,
+    )
+
+
+def tts_service_is_reachable(base_url: str, timeout: float = 1.0) -> bool:
+    return probe_tts_service(base_url, timeout).reachable
 
 
 def configure_local_tts_weights(

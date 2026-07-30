@@ -32,7 +32,18 @@ class TTSClient:
         self._weights_configured = False
 
     def synthesize(self, text: str, emotion: Emotion) -> Path:
+        request_id = uuid.uuid4().hex[:8]
         config = self.settings.tts
+        logger.info(
+            "TTS 合成准备 | ID=%s | 后端=%s | 地址=%s | "
+            "文本字符=%s | 文本预览=%s | 情绪=%s",
+            request_id,
+            config.backend,
+            config.base_url,
+            len(text),
+            _text_preview(text),
+            emotion,
+        )
         if config.uses_autodl():
             manager = get_tts_service_manager()
             try:
@@ -41,21 +52,42 @@ class TTSClient:
                     manager.autodl_reference(config, emotion)
                 )
             except TTSServiceError as exc:
-                raise TTSError(f"AutoDL TTS 启动失败: {exc}") from exc
+                raise TTSError(
+                    f"AutoDL TTS 启动失败 [ID={request_id}]: {exc}"
+                ) from exc
         else:
             state = locate_tts_assets(
                 configured_engine_root=config.engine_root,
                 configured_model_dir=config.model_dir,
             )
+            logger.info(
+                "TTS 本地资源检查 | ID=%s | 配置引擎=%s | "
+                "定位引擎=%s | 引擎就绪=%s | 配置模型=%s | "
+                "GPT权重=%s | SoVITS权重=%s | 参考音频=%s | "
+                "参考音频就绪=%s",
+                request_id,
+                config.engine_root,
+                state.engine_root,
+                state.engine_ready,
+                config.model_dir,
+                state.gpt_weight,
+                state.sovits_weight,
+                state.reference_root,
+                state.reference_voices_ready,
+            )
             if not state.model_ready:
-                raise TTSError("丛雨 TTS 模型尚未下载完成")
+                raise TTSError(
+                    f"丛雨 TTS 模型尚未下载完成 [ID={request_id}]"
+                )
             try:
                 get_tts_service_manager().ensure_running(
                     config,
                     state=state,
                 )
             except TTSServiceError as exc:
-                raise TTSError(f"TTS 服务启动失败: {exc}") from exc
+                raise TTSError(
+                    f"TTS 服务启动失败 [ID={request_id}]: {exc}"
+                ) from exc
 
             try:
                 if not self._weights_configured:
@@ -66,10 +98,14 @@ class TTSClient:
                     )
                     self._weights_configured = True
             except requests.RequestException as exc:
-                raise TTSError(f"TTS 模型加载失败: {exc}") from exc
+                raise TTSError(
+                    f"TTS 模型加载失败 [ID={request_id}]: {exc}"
+                ) from exc
 
             if state.reference_root is None:
-                raise TTSError("丛雨 TTS 参考音频尚未下载完成")
+                raise TTSError(
+                    f"丛雨 TTS 参考音频尚未下载完成 [ID={request_id}]"
+                )
             reference_dir = state.reference_root / emotion
             transcript_path = reference_dir / "asr.txt"
             audio_files = sorted(
@@ -78,7 +114,9 @@ class TTSClient:
                 if path.suffix.lower() in {".wav", ".mp3", ".flac"}
             )
             if not transcript_path.exists() or not audio_files:
-                raise TTSError(f"缺少情绪参考语音: {emotion}")
+                raise TTSError(
+                    f"缺少情绪参考语音 [ID={request_id}]: {emotion}"
+                )
             reference_audio_path = str(audio_files[0].resolve())
             prompt_text = transcript_path.read_text(
                 encoding="utf-8"
@@ -108,10 +146,15 @@ class TTSClient:
         }
 
         logger.info(
-            "TTS 合成请求发出 | POST %s | 文本字符=%s | 情绪=%s | "
-            "参考音频=%s",
+            "TTS 合成请求发出 | ID=%s | POST %s | 后端=%s | "
+            "文本字符=%s | 文本预览=%s | 情绪=%s | 参考音频=%s | "
+            "text_lang=ja | prompt_lang=ja | split=cut1 | "
+            "sample_steps=32",
+            request_id,
             config.base_url,
+            config.backend,
             len(text),
+            _text_preview(text),
             emotion,
             reference_audio_path,
         )
@@ -125,14 +168,17 @@ class TTSClient:
         except requests.RequestException as exc:
             elapsed_ms = (time.monotonic() - started_at) * 1_000
             logger.warning(
-                "TTS 合成请求连接失败 | POST %s | %.0f ms | %s: %s",
+                "TTS 合成请求连接失败 | ID=%s | POST %s | %.0f ms | "
+                "%s: %s",
+                request_id,
                 config.base_url,
                 elapsed_ms,
                 type(exc).__name__,
                 exc,
             )
             raise TTSError(
-                f"TTS 请求失败: {type(exc).__name__}: {exc}"
+                f"TTS 请求失败 [ID={request_id}]: "
+                f"{type(exc).__name__}: {exc}"
             ) from exc
 
         elapsed_ms = (time.monotonic() - started_at) * 1_000
@@ -142,16 +188,19 @@ class TTSClient:
             detail = _response_text_summary(response)
             content_type = response.headers.get("Content-Type", "")
             logger.warning(
-                "TTS 合成请求被拒绝 | POST %s | HTTP %s | %.0f ms | "
-                "Content-Type=%s | 响应=%s",
+                "TTS 合成请求被拒绝 | ID=%s | POST %s | HTTP %s | "
+                "%.0f ms | Content-Type=%s | 响应=%s | 服务日志=%s",
+                request_id,
                 config.base_url,
                 response.status_code,
                 elapsed_ms,
                 content_type,
                 detail,
+                _service_log_hint(config.uses_autodl()),
             )
             raise TTSError(
-                f"TTS 请求失败: HTTP {response.status_code}; "
+                f"TTS 请求失败 [ID={request_id}]: "
+                f"HTTP {response.status_code}; "
                 f"服务端响应: {detail}"
             ) from exc
 
@@ -159,28 +208,47 @@ class TTSClient:
         if not content_type.lower().startswith("audio/"):
             detail = _response_text_summary(response)
             logger.warning(
-                "TTS 合成响应格式异常 | POST %s | HTTP %s | %.0f ms | "
-                "Content-Type=%s | 响应=%s",
+                "TTS 合成响应格式异常 | ID=%s | POST %s | HTTP %s | "
+                "%.0f ms | Content-Type=%s | 响应=%s",
+                request_id,
                 config.base_url,
                 response.status_code,
                 elapsed_ms,
                 content_type,
                 detail,
             )
-            raise TTSError(f"TTS 未返回音频: {detail}")
+            raise TTSError(
+                f"TTS 未返回音频 [ID={request_id}]: {detail}"
+            )
 
         output_dir = get_cache_dir() / "voices"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{uuid.uuid4().hex}.wav"
         output_path.write_bytes(response.content)
         logger.info(
-            "TTS 合成完成 | POST %s | HTTP %s | %.0f ms | 音频=%s 字节",
+            "TTS 合成完成 | ID=%s | POST %s | HTTP %s | %.0f ms | "
+            "音频=%s 字节 | 文件=%s",
+            request_id,
             config.base_url,
             response.status_code,
             elapsed_ms,
             len(response.content),
+            output_path,
         )
         return output_path
+
+
+def _text_preview(text: str, limit: int = 80) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) > limit:
+        normalized = normalized[:limit] + "…"
+    return repr(normalized)
+
+
+def _service_log_hint(uses_autodl: bool) -> str:
+    if uses_autodl:
+        return "<AutoDL 远端 GPT-SoVITS 日志>"
+    return str(get_cache_dir() / "logs" / "gpt-sovits-service.log")
 
 
 def _response_text_summary(

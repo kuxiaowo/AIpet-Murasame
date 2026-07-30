@@ -10,6 +10,7 @@ from aipet.core.tts_assets import (
     locate_gpt_sovits_root,
     locate_murasame_weights,
     locate_tts_assets,
+    probe_tts_service,
     tts_service_is_reachable,
 )
 
@@ -38,11 +39,12 @@ class TTSAssetTests(unittest.TestCase):
             "requests.Session.get",
             return_value=response,
         ) as get:
-            self.assertFalse(
-                tts_service_is_reachable(
-                    "http://127.0.0.1:9880/tts"
-                )
+            result = probe_tts_service(
+                "http://127.0.0.1:9880/tts"
             )
+        self.assertFalse(result.reachable)
+        self.assertEqual(result.status_code, 400)
+        self.assertIn("HTTP 400", result.detail)
         get.assert_called_once()
 
     def test_reachability_requires_post_tts_in_openapi(self) -> None:

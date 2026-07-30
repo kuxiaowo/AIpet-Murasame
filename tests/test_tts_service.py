@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from aipet.core.config import TTSSettings
-from aipet.core.tts_assets import TTSAssetState
+from aipet.core.tts_assets import TTSAssetState, TTSHealthCheck
 from aipet.core.tts_service import (
     LocalTTSServiceManager,
     TTSServiceError,
@@ -79,8 +79,19 @@ class TTSServiceTests(unittest.TestCase):
             try:
                 with (
                     patch(
+                        "aipet.core.tts_service.probe_tts_service",
+                        side_effect=[
+                            TTSHealthCheck(False, "connection refused"),
+                            TTSHealthCheck(
+                                True,
+                                "OpenAPI confirmed POST /tts",
+                                200,
+                            ),
+                        ],
+                    ),
+                    patch(
                         "aipet.core.tts_service.tts_service_is_reachable",
-                        side_effect=[False, False, True, True],
+                        side_effect=[False, True],
                     ),
                     patch.object(manager._process_job, "assign"),
                     patch(
@@ -114,6 +125,10 @@ class TTSServiceTests(unittest.TestCase):
         settings = TTSSettings(base_url="https://example.com/tts")
         with (
             patch(
+                "aipet.core.tts_service.probe_tts_service",
+                return_value=TTSHealthCheck(False, "connection refused"),
+            ),
+            patch(
                 "aipet.core.tts_service.tts_service_is_reachable",
                 return_value=False,
             ),
@@ -137,8 +152,12 @@ class TTSServiceTests(unittest.TestCase):
         connection.is_active.return_value = True
         with (
             patch(
+                "aipet.core.tts_service.probe_tts_service",
+                return_value=TTSHealthCheck(False, "connection refused"),
+            ),
+            patch(
                 "aipet.core.tts_service.tts_service_is_reachable",
-                side_effect=[False, False, True],
+                side_effect=[False, True],
             ),
             patch(
                 "aipet.core.tts_service.AutoDLTTSConnection",
@@ -170,8 +189,12 @@ class TTSServiceTests(unittest.TestCase):
         )
         with (
             patch(
-                "aipet.core.tts_service.tts_service_is_reachable",
-                return_value=True,
+                "aipet.core.tts_service.probe_tts_service",
+                return_value=TTSHealthCheck(
+                    True,
+                    "OpenAPI confirmed POST /tts",
+                    200,
+                ),
             ),
             self.assertRaisesRegex(
                 TTSServiceError,
