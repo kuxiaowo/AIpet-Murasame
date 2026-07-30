@@ -10,6 +10,8 @@ project_root = Path(SPECPATH).parents[1]
 icon_path = Path(os.environ["AIPET_MACOS_ICON"])
 uv_path = Path(os.environ["AIPET_MACOS_UV"])
 overlay_path = Path(os.environ["AIPET_MACOS_FULLSCREEN_OVERLAY"])
+gpt_sovits_source = Path(os.environ["AIPET_MACOS_GPT_SOVITS_SOURCE"])
+gpt_sovits_checksum = Path(os.environ["AIPET_MACOS_GPT_SOVITS_CHECKSUM"])
 
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
@@ -17,6 +19,8 @@ datas = [
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
     (str(uv_path), "tools"),
+    (str(gpt_sovits_source), "tools"),
+    (str(gpt_sovits_checksum), "tools"),
     (str(overlay_path), "aipet-fullscreen-overlay"),
 ]
 datas += collect_data_files("faster_whisper")

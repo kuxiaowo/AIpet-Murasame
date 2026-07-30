@@ -4,6 +4,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
@@ -228,6 +229,22 @@ class PlatformArchitectureTests(unittest.TestCase):
         overlay.sync.assert_called_once_with()
         configure_windows.assert_not_called()
 
+    def test_macos_overlay_restores_qt_window_after_process_exit(self) -> None:
+        from aipet.platforms.macos.fullscreen_overlay import FullscreenOverlay
+
+        widget = Mock()
+        widget.isVisible.return_value = False
+        overlay = FullscreenOverlay(widget)
+        overlay._process = Mock()
+        overlay._process.poll.return_value = 1
+        overlay._was_fullscreen = True
+
+        overlay.sync()
+
+        widget.show.assert_called_once_with()
+        self.assertFalse(overlay.is_fullscreen)
+        self.assertIsNone(overlay._process)
+
     def test_macos_tool_window_is_kept_visible_across_spaces(self) -> None:
         integration = MacOSWindowIntegration()
         widget = Mock()
@@ -436,22 +453,45 @@ class PlatformArchitectureTests(unittest.TestCase):
             ):
                 self.assertEqual(MacOSTTSBootstrap._uv(), uv.resolve())
 
+    def test_macos_tts_bootstrap_finds_packaged_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            contents = Path(directory) / "Contents"
+            executable = contents / "MacOS" / "AIpet-Murasame"
+            bundle = contents / "Frameworks" / "tools" / "gpt-sovits-source.zip"
+            checksum = bundle.with_suffix(".sha256")
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            bundle.parent.mkdir(parents=True)
+            bundle.touch()
+            checksum.write_text("digest", encoding="utf-8")
+
+            with (
+                patch.object(sys, "frozen", True, create=True),
+                patch.object(sys, "executable", str(executable)),
+            ):
+                self.assertEqual(
+                    MacOSTTSBootstrap._packaged_source(),
+                    (bundle.resolve(), checksum.resolve()),
+                )
+
     def test_macos_tts_bootstrap_replaces_empty_engine_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "GPT-SoVITS"
             root.mkdir()
+            bundle = Path(directory) / "gpt-sovits-source.zip"
+            checksum = Path(directory) / "gpt-sovits-source.sha256"
+            with zipfile.ZipFile(bundle, "w") as contents:
+                contents.writestr("GPT-SoVITS-test/api_v2.py", "")
+            checksum.write_text(
+                MacOSTTSBootstrap._sha256(bundle),
+                encoding="utf-8",
+            )
             bootstrap = MacOSTTSBootstrap()
 
-            def clone(command, **_kwargs) -> None:
-                staging = Path(command[-1])
-                staging.mkdir()
-                (staging / "api_v2.py").touch()
-
-            with (
-                patch.object(bootstrap, "_run", side_effect=clone),
-                patch.object(bootstrap, "_output", return_value=(
-                    "d7c2210da8c013e81a94bfc7b811a477c99fd506"
-                )),
+            with patch.object(
+                bootstrap,
+                "_packaged_source",
+                return_value=(bundle, checksum),
             ):
                 bootstrap._install_source(root, lambda _stage: None)
 

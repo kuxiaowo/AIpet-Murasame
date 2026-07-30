@@ -10,6 +10,10 @@ from AppKit import (
     NSEventTypeKeyDown,
     NSEventTypeKeyUp,
 )
+from ApplicationServices import (
+    AXIsProcessTrustedWithOptions,
+    kAXTrustedCheckOptionPrompt,
+)
 
 from aipet.core.runtime_logging import get_logger
 from aipet.core.voice_input import HoldToTalkSession
@@ -27,6 +31,12 @@ class OptionVVoiceTrigger(HoldToTalkSession):
     def start(self) -> None:
         if self._monitors:
             return
+        if not self._has_accessibility_permission():
+            raise PermissionError(
+                "Option+V requires Accessibility permission. "
+                "Allow AIpet-Murasame in System Settings > Privacy & Security "
+                "> Accessibility, then try again."
+            )
         mask = NSEventMaskKeyDown | NSEventMaskKeyUp
         global_monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
             mask,
@@ -38,6 +48,14 @@ class OptionVVoiceTrigger(HoldToTalkSession):
         )
         self._monitors = [global_monitor, local_monitor]
         logger.info("Option+V 语音触发已启动")
+
+    @staticmethod
+    def _has_accessibility_permission() -> bool:
+        return bool(
+            AXIsProcessTrustedWithOptions(
+                {kAXTrustedCheckOptionPrompt: True}
+            )
+        )
 
     def stop(self) -> None:
         self.stop_session()
