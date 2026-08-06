@@ -18,6 +18,7 @@ from typing import Callable
 from urllib.parse import quote
 
 import requests
+from modelscope_hub import HubApi
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 from aipet.core.config import PROJECT_ROOT
@@ -31,7 +32,10 @@ logger = get_logger("download")
 
 TTS_JOB_ID = "tts:murasame"
 TTS_MODEL_NAME = "Murasame_SoVITS"
+TTS_WEIGHTS_MODEL = "LemonQu/Murasame_SoVITS"
 TTS_REFERENCE_MODEL = "kuxiaowo/Murasame-tts-reference-voice"
+HUGGING_FACE_ENDPOINT = "https://huggingface.co"
+HUGGING_FACE_MIRROR_ENDPOINT = "https://hf-mirror.com"
 _PLATFORM_TTS_ARCHIVES = tuple(
     get_platform_runtime().archives.tts_engine_archives()
 )
@@ -67,11 +71,21 @@ BUNDLED_7ZIP = (
 
 
 @dataclass(frozen=True)
+class ModelScopeSource:
+    repository: str
+    file_path: str
+    local_subdirectory: str = ""
+    revision: str = "master"
+
+
+@dataclass(frozen=True)
 class RemoteFile:
     url: str
     relative_path: str
     size: int
     sha256: str = ""
+    fallback_urls: tuple[str, ...] = ()
+    modelscope: ModelScopeSource | None = None
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,7 @@ class AssetDownloadWorker(QThread):
         self.include_tts_engine = include_tts_engine
         self.tts_engine_destination = tts_engine_destination
         self._cancelled = threading.Event()
+        self._modelscope_api: HubApi | None = None
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -235,6 +250,42 @@ class AssetDownloadWorker(QThread):
         completed_before: int,
         total: int,
     ) -> int:
+        if item.modelscope is not None:
+            return self._download_modelscope_file(
+                item,
+                completed_before,
+                total,
+            )
+
+        errors: list[Exception] = []
+        urls = (item.url, *item.fallback_urls)
+        for index, url in enumerate(urls):
+            try:
+                return self._download_http_file(
+                    item,
+                    url,
+                    completed_before,
+                    total,
+                )
+            except (requests.RequestException, RuntimeError) as exc:
+                errors.append(exc)
+                if self._cancelled.is_set() or index == len(urls) - 1:
+                    raise
+                logger.warning(
+                    "下载源失败，切换备用源 | %s | %s | %s",
+                    item.relative_path,
+                    url,
+                    exc,
+                )
+        raise errors[-1]
+
+    def _download_http_file(
+        self,
+        item: RemoteFile,
+        url: str,
+        completed_before: int,
+        total: int,
+    ) -> int:
         target = self.destination / item.relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(target.name + ".part")
@@ -257,7 +308,7 @@ class AssetDownloadWorker(QThread):
         if partial_size:
             headers["Range"] = f"bytes={partial_size}-"
         with requests.get(
-            item.url,
+            url,
             headers=headers,
             stream=True,
             timeout=(15, 60 if item.size > 1_000_000_000 else 15),
@@ -296,6 +347,105 @@ class AssetDownloadWorker(QThread):
                 f"{item.relative_path}: SHA-256 verification failed"
             )
         os.replace(partial, target)
+        return completed_before + item.size
+
+    def _download_modelscope_file(
+        self,
+        item: RemoteFile,
+        completed_before: int,
+        total: int,
+    ) -> int:
+        source = item.modelscope
+        if source is None:
+            raise RuntimeError("ModelScope download source was not provided")
+
+        target = self.destination / item.relative_path
+        local_dir = self.destination / source.local_subdirectory
+        sdk_target = local_dir / Path(source.file_path)
+        if sdk_target.resolve() != target.resolve():
+            raise RuntimeError(
+                f"ModelScope target mismatch for {item.relative_path}"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        partial = target.with_name(target.name + ".part")
+        sdk_partial = target.with_suffix(target.suffix + ".incomplete")
+        if sdk_partial.exists() and sdk_partial.stat().st_size > item.size:
+            sdk_partial.unlink()
+        if partial.exists():
+            if partial.stat().st_size > item.size:
+                partial.unlink()
+            elif sdk_partial.exists():
+                if partial.stat().st_size > sdk_partial.stat().st_size:
+                    sdk_partial.unlink()
+                    os.replace(partial, sdk_partial)
+                else:
+                    partial.unlink()
+            else:
+                os.replace(partial, sdk_partial)
+
+        if self._modelscope_api is None:
+            self._modelscope_api = HubApi()
+        monitor_finished = threading.Event()
+
+        def monitor_progress() -> None:
+            while not monitor_finished.wait(0.1):
+                try:
+                    downloaded = sdk_partial.stat().st_size
+                except OSError:
+                    continue
+                self.progress.emit(
+                    self.job_id,
+                    completed_before + min(downloaded, item.size),
+                    total,
+                    item.relative_path,
+                )
+
+        monitor = threading.Thread(
+            target=monitor_progress,
+            name="modelscope-download-progress",
+            daemon=True,
+        )
+        monitor.start()
+        try:
+            self._modelscope_api.download_file(
+                repo_id=source.repository,
+                repo_type="model",
+                file_path=source.file_path,
+                revision=source.revision,
+                local_dir=local_dir,
+                expected_sha256=item.sha256 or None,
+            )
+        except Exception:
+            if sdk_partial.exists():
+                os.replace(sdk_partial, partial)
+            raise
+        finally:
+            monitor_finished.set()
+            monitor.join(timeout=1)
+
+        if not target.is_file() or target.stat().st_size != item.size:
+            if target.exists():
+                os.replace(target, partial)
+            received = partial.stat().st_size if partial.exists() else 0
+            raise RuntimeError(
+                f"{item.relative_path}: expected {item.size} bytes, "
+                f"received {received}"
+            )
+        if item.sha256 and self._verified_sha256(
+            target,
+            item,
+        ) != item.sha256.lower():
+            target.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"{item.relative_path}: SHA-256 verification failed"
+            )
+        self.progress.emit(
+            self.job_id,
+            completed_before + item.size,
+            total,
+            item.relative_path,
+        )
         return completed_before + item.size
 
     def _verified_sha256(
@@ -612,34 +762,34 @@ def whisper_job_id(repository: str) -> str:
 
 
 def _tts_files(*, include_engine: bool = False) -> list[RemoteFile]:
-    weights_base = (
-        "https://www.modelscope.cn/models/"
-        "LemonQu/Murasame_SoVITS/resolve/master"
-    )
     files = [
         RemoteFile(
-            url=f"{weights_base}/murasame-gpt.ckpt",
+            url="",
             relative_path="murasame-gpt.ckpt",
             size=155_312_594,
             sha256=(
                 "a0d6df8a0acda9efddbe0ce47e4317f2"
                 "991cc9a46233cb8ab8d86744c568e85d"
             ),
+            modelscope=ModelScopeSource(
+                TTS_WEIGHTS_MODEL,
+                "murasame-gpt.ckpt",
+            ),
         ),
         RemoteFile(
-            url=f"{weights_base}/murasame-sovits.pth",
+            url="",
             relative_path="murasame-sovits.pth",
             size=75_550_062,
             sha256=(
                 "2518d5ddb54ada45dad70a3ed3c27c70"
                 "d2f9655e1d0dad5c8e81af2d7f3972c6"
             ),
+            modelscope=ModelScopeSource(
+                TTS_WEIGHTS_MODEL,
+                "murasame-sovits.pth",
+            ),
         ),
     ]
-    references_base = (
-        "https://www.modelscope.cn/models/"
-        f"{TTS_REFERENCE_MODEL}/resolve/master/reference_voices"
-    )
     reference_files = (
         (
             "害羞/asr.txt",
@@ -704,10 +854,14 @@ def _tts_files(*, include_engine: bool = False) -> list[RemoteFile]:
     )
     files.extend(
         RemoteFile(
-            url=f"{references_base}/{quote(relative_path, safe='/')}",
+            url="",
             relative_path=f"reference_voices/{relative_path}",
             size=size,
             sha256=sha256,
+            modelscope=ModelScopeSource(
+                TTS_REFERENCE_MODEL,
+                f"reference_voices/{relative_path}",
+            ),
         )
         for relative_path, size, sha256 in reference_files
     )
@@ -715,16 +869,17 @@ def _tts_files(*, include_engine: bool = False) -> list[RemoteFile]:
         archive = get_platform_runtime().archives.select_tts_engine_archive(
             detect_nvidia_gpu_names()
         )
-        engine_base = (
-            "https://www.modelscope.cn/models/"
-            f"{archive.repository}/resolve/master"
-        )
         files.append(
             RemoteFile(
-                url=f"{engine_base}/{archive.filename}",
+                url="",
                 relative_path=f".downloads/{archive.filename}",
                 size=archive.size,
                 sha256=archive.sha256,
+                modelscope=ModelScopeSource(
+                    archive.repository,
+                    archive.filename,
+                    local_subdirectory=".downloads",
+                ),
             )
         )
     return files
@@ -1087,13 +1242,33 @@ def _hidden_process_options() -> tuple[object | None, int]:
 
 
 def _whisper_files(repository: str) -> list[RemoteFile]:
-    response = requests.get(
-        f"https://huggingface.co/api/models/{repository}",
-        params={"blobs": "true"},
-        timeout=(15, 45),
-    )
-    response.raise_for_status()
-    payload = response.json()
+    payload = None
+    errors: list[str] = []
+    for endpoint in (
+        HUGGING_FACE_ENDPOINT,
+        HUGGING_FACE_MIRROR_ENDPOINT,
+    ):
+        try:
+            response = requests.get(
+                f"{endpoint}/api/models/{repository}",
+                params={"blobs": "true"},
+                timeout=(15, 45),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            break
+        except (requests.RequestException, ValueError) as exc:
+            errors.append(f"{endpoint}: {exc}")
+            logger.warning(
+                "Whisper 模型元数据请求失败 | %s | %s",
+                endpoint,
+                exc,
+            )
+    if payload is None:
+        raise RuntimeError(
+            "Unable to load faster-whisper model metadata: "
+            + "; ".join(errors)
+        )
     patterns = (
         "config.json",
         "preprocessor_config.json",
@@ -1113,12 +1288,16 @@ def _whisper_files(repository: str) -> list[RemoteFile]:
         files.append(
             RemoteFile(
                 url=(
-                    f"https://huggingface.co/{repository}/resolve/main/"
+                    f"{HUGGING_FACE_ENDPOINT}/{repository}/resolve/main/"
                     f"{quote(name)}"
                 ),
                 relative_path=name,
                 size=size,
                 sha256=sha256,
+                fallback_urls=(
+                    f"{HUGGING_FACE_MIRROR_ENDPOINT}/{repository}"
+                    f"/resolve/main/{quote(name)}",
+                ),
             )
         )
     if not files or not any(item.relative_path == "model.bin" for item in files):

@@ -7,21 +7,28 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import requests
 
 from aipet.core.download_manager import (
     BUNDLED_7ZIP,
+    HUGGING_FACE_ENDPOINT,
+    HUGGING_FACE_MIRROR_ENDPOINT,
     TTS_ENGINE_ARCHIVE,
     TTS_ENGINE_ARCHIVE_NVIDIA50,
     TTS_REFERENCE_MODEL,
+    TTS_WEIGHTS_MODEL,
     AssetDownloadWorker,
     DownloadManager,
+    ModelScopeSource,
     RemoteFile,
     _activate_extracted_engine,
     _extract_gpt_sovits_archive,
     _find_7zip,
     _sha256,
     _tts_files,
+    _whisper_files,
     select_tts_engine_archive,
 )
 
@@ -218,15 +225,32 @@ class DownloadWorkerTests(unittest.TestCase):
 
     def test_tts_download_uses_dedicated_reference_repository(self) -> None:
         files = _tts_files()
+        weights = [
+            item
+            for item in files
+            if not item.relative_path.startswith("reference_voices/")
+        ]
         references = [
             item
             for item in files
             if item.relative_path.startswith("reference_voices/")
         ]
 
+        self.assertEqual(len(weights), 2)
+        self.assertTrue(
+            all(
+                item.modelscope is not None
+                and item.modelscope.repository == TTS_WEIGHTS_MODEL
+                for item in weights
+            )
+        )
         self.assertEqual(len(references), 12)
         self.assertTrue(
-            all(TTS_REFERENCE_MODEL in item.url for item in references)
+            all(
+                item.modelscope is not None
+                and item.modelscope.repository == TTS_REFERENCE_MODEL
+                for item in references
+            )
         )
         happy = next(
             item
@@ -259,6 +283,164 @@ class DownloadWorkerTests(unittest.TestCase):
             )
 
             self.assertFalse(worker._target_is_complete(item))
+
+    def test_modelscope_downloads_one_file_and_resumes_legacy_part(self) -> None:
+        payload = b"modelscope-hub single file"
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            partial = destination / "nested" / "model.bin.part"
+            partial.parent.mkdir(parents=True)
+            partial.write_bytes(payload[:7])
+            item = RemoteFile(
+                url="",
+                relative_path="nested/model.bin",
+                size=len(payload),
+                sha256=hashlib.sha256(payload).hexdigest(),
+                modelscope=ModelScopeSource(
+                    "owner/repository",
+                    "nested/model.bin",
+                ),
+            )
+            worker = AssetDownloadWorker(
+                "test",
+                "tts",
+                "test/model",
+                destination,
+            )
+            api = Mock()
+
+            def download_file(**kwargs) -> None:
+                target = Path(kwargs["local_dir"]) / kwargs["file_path"]
+                incomplete = target.with_suffix(
+                    target.suffix + ".incomplete"
+                )
+                self.assertEqual(incomplete.read_bytes(), payload[:7])
+                with incomplete.open("ab") as output:
+                    output.write(payload[7:])
+                incomplete.replace(target)
+
+            api.download_file.side_effect = download_file
+            worker._modelscope_api = api
+
+            received = worker._download_file(item, 0, len(payload))
+
+            self.assertEqual(received, len(payload))
+            self.assertEqual(
+                (destination / "nested" / "model.bin").read_bytes(),
+                payload,
+            )
+            self.assertFalse(partial.exists())
+            api.download_file.assert_called_once()
+            call = api.download_file.call_args.kwargs
+            self.assertEqual(call["repo_id"], "owner/repository")
+            self.assertEqual(call["file_path"], "nested/model.bin")
+            self.assertEqual(call["revision"], "master")
+            self.assertEqual(call["expected_sha256"], item.sha256)
+
+    def test_whisper_metadata_and_files_fall_back_to_hf_mirror(self) -> None:
+        metadata = Mock()
+        metadata.raise_for_status.return_value = None
+        metadata.json.return_value = {
+            "siblings": [
+                {
+                    "rfilename": "model.bin",
+                    "size": 5,
+                    "lfs": {"sha256": hashlib.sha256(b"model").hexdigest()},
+                },
+                {"rfilename": "config.json", "size": 2},
+                {"rfilename": "unneeded.txt", "size": 99},
+            ]
+        }
+        repository = "custom-owner/custom-whisper"
+        with patch(
+            "aipet.core.download_manager.requests.get",
+            side_effect=[requests.Timeout("primary timeout"), metadata],
+        ) as get:
+            files = _whisper_files(repository)
+
+        self.assertEqual(
+            [call.args[0] for call in get.call_args_list],
+            [
+                f"{HUGGING_FACE_ENDPOINT}/api/models/{repository}",
+                f"{HUGGING_FACE_MIRROR_ENDPOINT}/api/models/{repository}",
+            ],
+        )
+        self.assertEqual(
+            {item.relative_path for item in files},
+            {"model.bin", "config.json"},
+        )
+        model = next(item for item in files if item.relative_path == "model.bin")
+        self.assertEqual(
+            model.url,
+            f"{HUGGING_FACE_ENDPOINT}/{repository}/resolve/main/model.bin",
+        )
+        self.assertEqual(
+            model.fallback_urls,
+            (
+                f"{HUGGING_FACE_MIRROR_ENDPOINT}/{repository}"
+                "/resolve/main/model.bin",
+            ),
+        )
+
+    def test_whisper_file_falls_back_and_resumes_on_mirror(self) -> None:
+        payload = b"whisper mirror fallback"
+
+        class Response:
+            def __init__(self, status_code: int, body: bytes):
+                self.status_code = status_code
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise requests.HTTPError(str(self.status_code))
+
+            def iter_content(self, chunk_size: int):
+                del chunk_size
+                yield self.body
+
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            (destination / "model.bin.part").write_bytes(payload[:8])
+            item = RemoteFile(
+                url="https://huggingface.co/test/model/resolve/main/model.bin",
+                fallback_urls=(
+                    "https://hf-mirror.com/test/model/resolve/main/model.bin",
+                ),
+                relative_path="model.bin",
+                size=len(payload),
+                sha256=hashlib.sha256(payload).hexdigest(),
+            )
+            calls: list[tuple[str, dict[str, str]]] = []
+
+            def get(url: str, **kwargs):
+                calls.append((url, kwargs["headers"]))
+                if "huggingface.co" in url:
+                    return Response(503, b"")
+                return Response(206, payload[8:])
+
+            worker = AssetDownloadWorker(
+                "test",
+                "whisper",
+                "test/model",
+                destination,
+            )
+            with patch(
+                "aipet.core.download_manager.requests.get",
+                side_effect=get,
+            ):
+                received = worker._download_file(item, 0, len(payload))
+
+            self.assertEqual(received, len(payload))
+            self.assertEqual((destination / "model.bin").read_bytes(), payload)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][1]["Range"], "bytes=8-")
+            self.assertEqual(calls[1][1]["Range"], "bytes=8-")
 
     def test_streams_verifies_and_marks_download(self) -> None:
         payload = b"AIpet download progress" * 4_096
