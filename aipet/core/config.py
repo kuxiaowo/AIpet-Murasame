@@ -7,8 +7,12 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from aipet.core.stt_languages import (
+    normalize_stt_language,
+    resolve_stt_language,
+)
 from aipet.platforms import get_platform_runtime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -235,6 +239,12 @@ class STTSettings(BaseModel):
     model_dir: str = Field(default_factory=default_whisper_model_dir)
     device: Literal["auto", "cuda", "cpu"] = "auto"
     input_device: str = ""
+    language: str = "ui"
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def normalize_language(cls, value: object) -> str:
+        return normalize_stt_language(value)
 
     @model_validator(mode="after")
     def fill_default_path(self) -> "STTSettings":
@@ -242,12 +252,19 @@ class STTSettings(BaseModel):
             self.model_dir = default_whisper_model_dir(self.model)
         return self
 
+    def resolved_language(self, ui_language: str) -> str | None:
+        return resolve_stt_language(self.language, ui_language)
+
 
 class CharacterSettings(BaseModel):
-    user_name: str = Field(default="主人", min_length=1, max_length=30)
+    user_name: str = Field(default="Master", min_length=1, max_length=30)
     portrait: Literal["a", "b"] = "b"
     outfit: Literal["sleepwear", "casual", "uniform", "kimono"] = "kimono"
     personality_file: str = Field(default="prompt.txt", min_length=1)
+    personality_file_en: str = Field(
+        default="prompt.en.txt",
+        min_length=1,
+    )
 
 
 class DisplaySettings(BaseModel):
@@ -355,8 +372,25 @@ class AppSettings(BaseModel):
                 setattr(self.tts, field_name, str(current_path))
         return self
 
-    def personality_path(self) -> Path:
-        path = Path(self.character.personality_file)
+    @model_validator(mode="after")
+    def localize_default_user_name(self) -> "AppSettings":
+        if self.ui_language == "en" and self.character.user_name == "主人":
+            self.character.user_name = "Master"
+        elif (
+            self.ui_language == "zh-CN"
+            and self.character.user_name == "Master"
+        ):
+            self.character.user_name = "主人"
+        return self
+
+    def personality_path(self, language: str | None = None) -> Path:
+        selected_language = language or self.ui_language
+        configured = (
+            self.character.personality_file_en
+            if selected_language == "en"
+            else self.character.personality_file
+        )
+        path = Path(configured)
         if not path.is_absolute():
             path = PROJECT_ROOT / path
         return path
@@ -414,8 +448,11 @@ def settings_file_exists(path: Path | None = None) -> bool:
     return (path or get_config_path()).exists()
 
 
-def load_personality(settings: AppSettings) -> str:
-    path = settings.personality_path()
+def load_personality(
+    settings: AppSettings,
+    language: str | None = None,
+) -> str:
+    path = settings.personality_path(language)
     if not path.exists():
         raise FileNotFoundError(f"Personality prompt not found: {path}")
     return path.read_text(encoding="utf-8").strip()

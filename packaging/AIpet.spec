@@ -59,6 +59,7 @@ if build_variant == "with-cuda":
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
     (str(project_root / "prompt.txt"), "."),
+    (str(project_root / "prompt.en.txt"), "."),
     (str(project_root / "icon.png"), "."),
     (str(project_root / "思源黑体Bold.otf"), "."),
     (

@@ -20,6 +20,7 @@ from aipet.core.audio_devices import (
 )
 from aipet.core.backends import (
     APIBackend,
+    BackendError,
     OllamaBackend,
     ScreenAnalysis,
     build_screen_analysis_prompt,
@@ -247,6 +248,9 @@ class CoreTests(unittest.TestCase):
                     stt.model_dir,
                     default_whisper_model_dir("large-v3"),
                 )
+                self.assertEqual(stt.language, "ui")
+                self.assertEqual(stt.resolved_language("en"), "en")
+                self.assertEqual(stt.resolved_language("zh-CN"), "zh")
 
         custom = TTSSettings(
             engine_root="D:/custom/GPT-SoVITS",
@@ -255,12 +259,25 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(custom.engine_root, "D:/custom/GPT-SoVITS")
         self.assertEqual(custom.model_dir, "D:/custom/Murasame")
 
+    def test_stt_language_supports_detection_and_whisper_codes(self) -> None:
+        self.assertIsNone(
+            STTSettings(language="auto").resolved_language("en")
+        )
+        self.assertEqual(STTSettings(language="zh-CN").language, "zh")
+        self.assertEqual(
+            STTSettings(language="sv").resolved_language("zh-CN"),
+            "sv",
+        )
+        with self.assertRaises(ValidationError):
+            STTSettings(language="not-a-language-code")
+
     def test_character_reply_accepts_fenced_json(self) -> None:
         payload = {
             "outfit": "uniform",
             "sentences": [
                 {
                     "zh": "你好。",
+                    "en": "Hello.",
                     "ja": "こんにちは。",
                     "emotion": "高兴",
                     "portrait": "a",
@@ -276,13 +293,21 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(reply.sentences[0].portrait, "a")
 
         legacy = parse_character_reply(
-            '{"sentences":[{"zh":"好。","ja":"よい。","emotion":"平静"}]}'
+            '{"sentences":[{"zh":"好。","en":"Good.","ja":"よい。",'
+            '"emotion":"平静"}]}'
         )
         self.assertIsNone(legacy.outfit)
         self.assertIsNone(legacy.sentences[0].portrait)
 
+        with self.assertRaises(BackendError):
+            parse_character_reply(
+                '{"sentences":[{"zh":"好。","ja":"よい。",'
+                '"emotion":"平静"}]}'
+            )
+
     def test_character_prompt_explains_portrait_switching(self) -> None:
         settings = AppSettings(
+            ui_language="zh-CN",
             character=CharacterSettings(
                 portrait="a",
                 outfit="uniform",
@@ -300,6 +325,17 @@ class CoreTests(unittest.TestCase):
         self.assertIn("温柔、安慰、认真、日常、中性统一选择“平静”", prompt)
         self.assertIn("禁止创造或返回其他情绪词", prompt)
 
+    def test_english_character_prompt_uses_official_localization_style(
+        self,
+    ) -> None:
+        settings = AppSettings(ui_language="en")
+        prompt = build_system_prompt(settings)
+        self.assertIn("ordinary English pronouns", prompt)
+        self.assertIn("Never translate 本座 as", prompt)
+        self.assertIn("But of course", prompt)
+        self.assertIn("en is the primary user-facing line", prompt)
+        self.assertIn("Every sentence must contain all five fields", prompt)
+
     def test_screen_analysis_accepts_fenced_json_and_uses_previous_scene(
         self,
     ) -> None:
@@ -313,6 +349,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("首次建立基线", prompt)
         self.assertIn("自己在屏幕上的形象", prompt)
         self.assertIn("不要猜测画面中人物的姓名", prompt)
+
         self.assertIn("游戏中切换地点", prompt)
         self.assertIn("人物动作", prompt)
         self.assertIn("不能仅因软件名称、地点或总体模式未改变而忽略", prompt)
@@ -354,6 +391,16 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(unchanged.change_summary, "")
 
+    def test_screen_analysis_prompt_switches_to_english(self) -> None:
+        prompt = build_screen_analysis_prompt(None, "en")
+        self.assertIn("screen-change detector", prompt)
+        self.assertIn("initial baseline", prompt)
+        self.assertIn(
+            "Write all descriptive JSON values in natural English",
+            prompt,
+        )
+        self.assertNotIn("首次建立基线", prompt)
+
     def test_settings_round_trip_and_idle_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"
@@ -381,6 +428,7 @@ class CoreTests(unittest.TestCase):
                 load_settings(path).character.outfit,
                 "uniform",
             )
+
             self.assertTrue(
                 load_settings(path).idle.do_not_disturb
             )
@@ -401,6 +449,23 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(openai.selected_api_key(), "openai-key")
         self.assertEqual(openai.selected_chat_model(), "gpt-5.6-luna")
+
+    def test_builtin_user_name_follows_ui_language(self) -> None:
+        self.assertEqual(
+            AppSettings(ui_language="en").character.user_name,
+            "Master",
+        )
+        self.assertEqual(
+            AppSettings(ui_language="zh-CN").character.user_name,
+            "主人",
+        )
+        self.assertEqual(
+            AppSettings(
+                ui_language="zh-CN",
+                character=CharacterSettings(user_name="Alice"),
+            ).character.user_name,
+            "Alice",
+        )
 
     def test_legacy_vision_configuration_is_migrated(self) -> None:
         migrated = AppSettings.model_validate(
@@ -506,6 +571,7 @@ class CoreTests(unittest.TestCase):
             prompt_path = Path(directory) / "prompt.txt"
             prompt_path.write_text("人格提示", encoding="utf-8")
             settings = AppSettings(
+                ui_language="zh-CN",
                 character=CharacterSettings(
                     personality_file=str(prompt_path)
                 )
@@ -665,6 +731,7 @@ class CoreTests(unittest.TestCase):
             prompt_path = Path(directory) / "prompt.txt"
             prompt_path.write_text("人格提示", encoding="utf-8")
             settings = AppSettings(
+                ui_language="zh-CN",
                 character=CharacterSettings(
                     personality_file=str(prompt_path)
                 )
@@ -687,6 +754,28 @@ class CoreTests(unittest.TestCase):
             messages[0]["content"],
         )
 
+    def test_tool_context_prompts_switch_to_english(self) -> None:
+        messages = build_messages(
+            AppSettings(ui_language="en"),
+            [],
+            "",
+            "Master returned.",
+            '[{"change_summary":"Editor opened"}]',
+        )
+        self.assertIn(
+            "untrusted environmental memory",
+            messages[0]["content"],
+        )
+        self.assertIn(
+            "current-event information",
+            messages[-1]["content"],
+        )
+        self.assertIn(
+            "Respond proactively",
+            messages[-1]["content"],
+        )
+        self.assertNotIn("请根据这个事件", messages[-1]["content"])
+
     @patch("requests.Session.request")
     def test_ollama_chat_uses_schema(self, request: Mock) -> None:
         response = Mock()
@@ -698,6 +787,7 @@ class CoreTests(unittest.TestCase):
                         "sentences": [
                             {
                                 "zh": "好。",
+                                "en": "Good.",
                                 "ja": "よい。",
                                 "emotion": "平静",
                             }
@@ -765,7 +855,8 @@ class CoreTests(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            '{"sentences":[{"zh":"好。","ja":"よい。",'
+                            '{"sentences":[{"zh":"好。","en":"Good.",'
+                            '"ja":"よい。",'
                             '"emotion":"平静"}]}'
                         )
                     }
@@ -814,7 +905,8 @@ class CoreTests(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            '{"sentences":[{"zh":"好。","ja":"よい。",'
+                            '{"sentences":[{"zh":"好。","en":"Good.",'
+                            '"ja":"よい。",'
                             '"emotion":"平静","portrait":"b"}]}'
                         )
                     }
@@ -836,7 +928,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(request.call_count, 2)
         retry_payload = request.call_args_list[1].kwargs["json"]
         self.assertIn(
-            "上一次输出为空或不符合格式",
+            "The previous output was empty or invalid",
             retry_payload["messages"][-1]["content"],
         )
 
@@ -852,7 +944,8 @@ class CoreTests(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            '{"sentences":[{"zh":"好。","ja":"よい。",'
+                            '{"sentences":[{"zh":"好。","en":"Good.",'
+                            '"ja":"よい。",'
                             '"emotion":"温柔","portrait":"b"}]}'
                         )
                     }
@@ -866,7 +959,8 @@ class CoreTests(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            '{"sentences":[{"zh":"好。","ja":"よい。",'
+                            '{"sentences":[{"zh":"好。","en":"Good.",'
+                            '"ja":"よい。",'
                             '"emotion":"平静","portrait":"b"}]}'
                         )
                     }
@@ -899,7 +993,8 @@ class CoreTests(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            '{"sentences":[{"zh":"好。","ja":"よい。",'
+                            '{"sentences":[{"zh":"好。","en":"Good.",'
+                            '"ja":"よい。",'
                             '"emotion":"平静"}]}'
                         )
                     }

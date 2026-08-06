@@ -119,6 +119,7 @@ class HoldToTalkSession:
         model_directory: str = "",
         device: str = "auto",
         input_device: str = "",
+        language: str | None = "zh",
         on_error: Optional[Callable[[str], None]] = None,
     ):
         self.on_text_ready = on_text_ready
@@ -129,6 +130,7 @@ class HoldToTalkSession:
         self.model_directory = model_directory
         self.device = device
         self.input_device = input_device
+        self.language = language
         self.on_error = on_error
         self._pressed = False
         self._recording = False
@@ -207,6 +209,7 @@ class HoldToTalkSession:
                         model_size=self.model_name,
                         model_directory=self.model_directory,
                         device=self.device,
+                        language=self.language,
                     )
                     or ""
                 ).strip()

@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from aipet.core.stt import (
     WHISPER_INITIAL_PROMPT,
+    WHISPER_INITIAL_PROMPTS,
     clear_model_cache,
     transcribe_full,
 )
@@ -181,6 +182,94 @@ class WhisperModelTests(unittest.TestCase):
             model.transcribe.call_args.kwargs["initial_prompt"],
             WHISPER_INITIAL_PROMPT,
         )
+
+    def test_english_transcription_uses_english_language_and_prompt(
+        self,
+    ) -> None:
+        model = Mock()
+        model.transcribe.return_value = (
+            iter([SimpleNamespace(text="Hello, Master.")]),
+            None,
+        )
+        whisper_model = Mock(return_value=model)
+        module = SimpleNamespace(WhisperModel=whisper_model)
+
+        with (
+            patch.dict(sys.modules, {"faster_whisper": module}),
+            patch(
+                "aipet.core.stt.find_local_model",
+                return_value="C:/models/whisper",
+            ),
+        ):
+            result = transcribe_full(
+                "english.wav",
+                device="cpu",
+                language="en",
+            )
+
+        self.assertEqual(result, "Hello, Master.")
+        self.assertEqual(model.transcribe.call_args.kwargs["language"], "en")
+        self.assertEqual(
+            model.transcribe.call_args.kwargs["initial_prompt"],
+            WHISPER_INITIAL_PROMPTS["en"],
+        )
+
+    def test_automatic_language_detection_does_not_force_language(
+        self,
+    ) -> None:
+        model = Mock()
+        model.transcribe.return_value = (
+            iter([SimpleNamespace(text="Detected speech")]),
+            None,
+        )
+        whisper_model = Mock(return_value=model)
+        module = SimpleNamespace(WhisperModel=whisper_model)
+
+        with (
+            patch.dict(sys.modules, {"faster_whisper": module}),
+            patch(
+                "aipet.core.stt.find_local_model",
+                return_value="C:/models/whisper",
+            ),
+        ):
+            result = transcribe_full(
+                "automatic.wav",
+                device="cpu",
+                language=None,
+            )
+
+        self.assertEqual(result, "Detected speech")
+        self.assertNotIn("language", model.transcribe.call_args.kwargs)
+        self.assertNotIn("initial_prompt", model.transcribe.call_args.kwargs)
+
+    def test_other_whisper_language_code_is_forwarded(self) -> None:
+        model = Mock()
+        model.transcribe.return_value = (
+            iter([SimpleNamespace(text="Hej")]),
+            None,
+        )
+        whisper_model = Mock(return_value=model)
+        module = SimpleNamespace(WhisperModel=whisper_model)
+
+        with (
+            patch.dict(sys.modules, {"faster_whisper": module}),
+            patch(
+                "aipet.core.stt.find_local_model",
+                return_value="C:/models/whisper",
+            ),
+        ):
+            result = transcribe_full(
+                "swedish.wav",
+                device="cpu",
+                language="sv",
+            )
+
+        self.assertEqual(result, "Hej")
+        self.assertEqual(
+            model.transcribe.call_args.kwargs["language"],
+            "sv",
+        )
+        self.assertNotIn("initial_prompt", model.transcribe.call_args.kwargs)
 
 
 if __name__ == "__main__":

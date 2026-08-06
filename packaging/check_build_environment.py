@@ -11,6 +11,7 @@ REQUIRED_MODULES = (
     "ctranslate2",
     "cv2",
     "faster_whisper",
+    "modelscope_hub",
     "numpy",
     "onnxruntime",
     "paramiko",

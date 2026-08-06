@@ -132,9 +132,13 @@ $env:DASHSCOPE_API_KEY = "your-key"
 $env:OPENAI_API_KEY = "your-key"
 ```
 
-On first launch, select the backend and model, set the user name, review the
-personality prompt, and save. Keep vision, TTS, and speech input disabled until
-their dependencies are ready.
+On first launch, select the backend and model, set the user name, review both
+language-specific personality prompts by switching the interface language, and
+save. The matching personality, model instructions, screen-analysis prompt,
+and display language are selected automatically at runtime. Speech recognition
+has its own language selector with interface-language, automatic-detection,
+common-language, and custom Whisper-code options. Keep vision, TTS, and speech
+input disabled until their dependencies are ready.
 
 ## Optional capabilities
 
@@ -143,7 +147,7 @@ their dependencies are ready.
 | Screen awareness | Enable **Screen Vision** and choose an Ollama, Alibaba Cloud, or OpenAI-compatible vision model. Screenshots are temporary and are not added to conversation history. |
 | Local TTS | Enable **TTS → Local computer** and select the GPT-SoVITS engine and Murasame voice-model directories. Missing managed assets can be downloaded after confirmation; AIpet includes the required 7z extractor. |
 | AutoDL TTS | Enable **TTS → AutoDL cloud**, provide the SSH login, password, remote command, and reference-voice directory. The remote instance must already expose GPT-SoVITS on port `9880`. |
-| Speech input | Enable speech input, choose a microphone, device, and faster-whisper model. Hold Caps Lock for two seconds to record; release it to transcribe and send. |
+| Speech input | Enable speech input, choose a microphone, device, faster-whisper model, and recognition language. The language may follow the interface, be detected automatically, use a common preset, or use a custom Whisper language code. Hold Caps Lock for two seconds to record; release it to transcribe and send. |
 
 TTS errors do not discard text replies. Temporary screenshots, recordings, and
 generated speech are cleaned automatically and can also be cleared from
@@ -171,7 +175,8 @@ On Windows, settings and persistent state are stored under:
 ├── config.json
 ├── history.json
 ├── screen_memory.json
-├── personality.txt
+├── personality.en.txt
+├── personality.zh-CN.txt
 └── logs\
 ```
 

@@ -46,6 +46,26 @@ def get_time_segment_cn(dt: datetime | None = None) -> str:
     return "深夜"
 
 
+def get_time_segment_en(dt: datetime | None = None) -> str:
+    """Return a coarse English time-of-day segment."""
+
+    dt = dt or datetime.now()
+    hour = dt.hour
+    if 5 <= hour <= 7:
+        return "early morning"
+    if 8 <= hour <= 11:
+        return "morning"
+    if hour == 12:
+        return "noon"
+    if 13 <= hour <= 16:
+        return "afternoon"
+    if 17 <= hour <= 18:
+        return "early evening"
+    if 19 <= hour <= 22:
+        return "evening"
+    return "late night"
+
+
 def get_weekday_cn(dt: datetime | None = None) -> str:
     dt = dt or datetime.now()
     # Python weekday(): Monday=0, Sunday=6; map to CN list above
@@ -59,7 +79,18 @@ def get_date_with_weekday_cn(dt: datetime | None = None) -> str:
     return f"{dt.year}年{dt.month:02d}月{dt.day:02d}日（{get_weekday_cn(dt)}）"
 
 
-def build_time_context() -> str:
+def get_date_with_weekday_en(dt: datetime | None = None) -> str:
+    dt = dt or datetime.now()
+    return f"{dt.strftime('%A, %B')} {dt.day}, {dt.year}"
+
+
+def build_time_context(language: str = "zh-CN") -> str:
     """Build a short context string about current date and time segment."""
+
+    if language == "en":
+        return (
+            f"{get_date_with_weekday_en()}; "
+            f"{get_time_segment_en()}."
+        )
     return f"{get_date_with_weekday_cn()}；{get_time_segment_cn()}。"
 

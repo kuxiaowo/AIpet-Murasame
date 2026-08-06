@@ -42,13 +42,15 @@
     "model": "large-v3",
     "model_dir": "C:/AIpet/models/whisper/large-v3",
     "device": "auto",
-    "input_device": ""
+    "input_device": "",
+    "language": "ui"
   },
   "character": {
-    "user_name": "主人",
+    "user_name": "Master",
     "portrait": "b",
     "outfit": "kimono",
-    "personality_file": "prompt.txt"
+    "personality_file": "prompt.txt",
+    "personality_file_en": "prompt.en.txt"
   },
   "display": {
     "screen_index": 0,

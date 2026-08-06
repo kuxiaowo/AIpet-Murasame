@@ -59,6 +59,7 @@ from aipet.core.config import (
     load_personality,
 )
 from aipet.core.runtime_logging import get_logger
+from aipet.core.stt_languages import COMMON_WHISPER_LANGUAGES
 from aipet.core.tts_assets import (
     TTSAssetState,
     configure_local_tts_weights,
@@ -268,6 +269,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_enabled": "Hold {shortcut} for speech input",
         "whisper_model": "Whisper model or repository ID",
         "whisper_model_dir": "Whisper model download directory",
+        "stt_language": "Recognition language",
+        "stt_language_ui": "Follow interface language",
+        "stt_language_auto": "Detect automatically",
+        "stt_language_help": (
+            "Choose a common language or enter a two- or three-letter Whisper "
+            "language code, such as sv for Swedish. English-only models whose "
+            "names end in .en cannot recognize other languages."
+        ),
         "stt_input_device": "Recording device",
         "stt_input_default": "System default ({device})",
         "stt_input_default_unknown": "System default input",
@@ -574,6 +583,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "stt_enabled": "长按 {shortcut} 进行语音输入",
         "whisper_model": "Whisper 模型或仓库 ID",
         "whisper_model_dir": "Whisper 模型下载目录",
+        "stt_language": "识别语言",
+        "stt_language_ui": "跟随界面语言",
+        "stt_language_auto": "自动检测",
+        "stt_language_help": (
+            "可选择常用语言，也可输入两到三位 Whisper 语言代码，"
+            "例如瑞典语 sv。名称以 .en 结尾的纯英文模型无法识别其他语言。"
+        ),
         "stt_input_device": "录音设备",
         "stt_input_default": "系统默认（{device}）",
         "stt_input_default_unknown": "系统默认输入设备",
@@ -879,6 +895,8 @@ class SettingsDialog(QDialog):
         self._tts_engine_download_needed = False
         self._closing = False
         self._result: AppSettings | None = None
+        self._personality_prompts: dict[str, str] = {}
+        self._editing_language = settings.ui_language
         self.download_manager = download_manager or DownloadManager(
             QApplication.instance(),
             platform_runtime=self._platform_runtime,
@@ -1306,6 +1324,13 @@ class SettingsDialog(QDialog):
         self.stt_device.addItem("", "auto")
         self.stt_device.addItem("", "cuda")
         self.stt_device.addItem("", "cpu")
+        self.stt_language = self._editable_combo()
+        self.stt_language.addItem("", "ui")
+        self.stt_language.addItem("", "auto")
+        for code, _english_name, _chinese_name in COMMON_WHISPER_LANGUAGES:
+            self.stt_language.addItem("", code)
+        self.stt_language_help = QLabel()
+        self.stt_language_help.setWordWrap(True)
         self.stt_input_device = QComboBox()
         self._default_audio_input = None
         self._missing_audio_input_identifier = ""
@@ -1387,6 +1412,12 @@ class SettingsDialog(QDialog):
         whisper_form.addRow(self.whisper_status)
         whisper_form.addRow(self.whisper_progress)
         whisper_form.addRow(self.whisper_download_button)
+        self._add_row(
+            whisper_form,
+            "stt_language",
+            self.stt_language,
+        )
+        whisper_form.addRow(self.stt_language_help)
         self._add_row(
             whisper_form,
             "stt_input_device",
@@ -1596,6 +1627,47 @@ class SettingsDialog(QDialog):
             combo.addItem(value)
         combo.setCurrentText(value)
 
+    def _stt_language_value(self) -> str:
+        text = self.stt_language.currentText().strip()
+        index = self.stt_language.currentIndex()
+        if index >= 0 and text == self.stt_language.itemText(index):
+            data = self.stt_language.itemData(index)
+            if isinstance(data, str) and data:
+                return data
+        return text.lower()
+
+    def _set_stt_language(self, value: str) -> None:
+        index = self.stt_language.findData(value)
+        if index < 0:
+            self.stt_language.addItem(value, value)
+            index = self.stt_language.count() - 1
+        self.stt_language.setCurrentIndex(index)
+
+    def _retranslate_stt_languages(self) -> None:
+        current = self._stt_language_value()
+        self._set_combo_item_text(
+            self.stt_language,
+            "ui",
+            self._text("stt_language_ui"),
+        )
+        self._set_combo_item_text(
+            self.stt_language,
+            "auto",
+            self._text("stt_language_auto"),
+        )
+        english_ui = self._language() == "en"
+        for code, english_name, chinese_name in COMMON_WHISPER_LANGUAGES:
+            name = english_name if english_ui else chinese_name
+            self._set_combo_item_text(
+                self.stt_language,
+                code,
+                f"{name} ({code})",
+            )
+        self._set_stt_language(current)
+        help_text = self._text("stt_language_help")
+        self.stt_language.setToolTip(help_text)
+        self.stt_language_help.setText(help_text)
+
     def _load_values(self, settings: AppSettings) -> None:
         self._set_combo_data(self.language_combo, settings.ui_language)
         self._set_combo_data(self.mode_combo, settings.mode)
@@ -1633,10 +1705,18 @@ class SettingsDialog(QDialog):
         self.user_name.setText(settings.character.user_name)
         self._set_combo_data(self.portrait, settings.character.portrait)
         self._set_combo_data(self.outfit, settings.character.outfit)
-        try:
-            self.personality_prompt.setPlainText(load_personality(settings))
-        except OSError:
-            self.personality_prompt.clear()
+        for language in ("en", "zh-CN"):
+            try:
+                self._personality_prompts[language] = load_personality(
+                    settings,
+                    language,
+                )
+            except OSError:
+                self._personality_prompts[language] = ""
+        self._editing_language = settings.ui_language
+        self.personality_prompt.setPlainText(
+            self._personality_prompts.get(self._editing_language, "")
+        )
 
         self.vision_enabled.setChecked(settings.vision.enabled)
         self.vision_interval.setValue(settings.vision.interval_seconds)
@@ -1690,6 +1770,7 @@ class SettingsDialog(QDialog):
         self.whisper_model_dir.setText(settings.stt.model_dir)
         self._set_audio_input_device(settings.stt.input_device)
         self._set_combo_data(self.stt_device, settings.stt.device)
+        self._set_stt_language(settings.stt.language)
         self.screen_index.setValue(settings.display.screen_index)
         self.portrait_ratio.setValue(
             settings.display.portrait_screen_ratio
@@ -1705,6 +1786,11 @@ class SettingsDialog(QDialog):
     def _language(self) -> str:
         language = self.language_combo.currentData()
         return language if language in TRANSLATIONS else "en"
+
+    def _stash_current_personality(self) -> None:
+        self._personality_prompts[self._editing_language] = (
+            self.personality_prompt.toPlainText()
+        )
 
     def _text(self, key: str, **values: object) -> str:
         text = TRANSLATIONS[self._language()][key]
@@ -1788,6 +1874,19 @@ class SettingsDialog(QDialog):
             )
 
     def _on_language_changed(self) -> None:
+        previous_language = self._editing_language
+        self._stash_current_personality()
+        selected_language = self._language()
+        if previous_language != selected_language:
+            current_name = self.user_name.text().strip()
+            if previous_language == "zh-CN" and current_name == "主人":
+                self.user_name.setText("Master")
+            elif previous_language == "en" and current_name == "Master":
+                self.user_name.setText("主人")
+        self._editing_language = selected_language
+        self.personality_prompt.setPlainText(
+            self._personality_prompts.get(selected_language, "")
+        )
         self._retranslate_ui()
 
     def _retranslate_ui(self) -> None:
@@ -1934,6 +2033,7 @@ class SettingsDialog(QDialog):
             )
         )
         self._retranslate_audio_input_devices()
+        self._retranslate_stt_languages()
         self._set_combo_item_text(
             self.stt_device,
             "auto",
@@ -2058,6 +2158,7 @@ class SettingsDialog(QDialog):
         self.whisper_model_dir.setEnabled(enabled and not downloading)
         self.whisper_model_browse.setEnabled(enabled and not downloading)
         self.stt_device.setEnabled(enabled)
+        self.stt_language.setEnabled(enabled)
         self.stt_input_device.setEnabled(enabled)
         self.whisper_download_button.setEnabled(False)
         self._render_progress(self.whisper_progress, snapshot)
@@ -3087,7 +3188,10 @@ class SettingsDialog(QDialog):
         return f"{size:.1f} GiB"
 
     def _form_settings(self) -> AppSettings:
-        personality_path = get_user_data_dir() / "personality.txt"
+        personality_path = (
+            get_user_data_dir() / "personality.zh-CN.txt"
+        )
+        personality_path_en = get_user_data_dir() / "personality.en.txt"
         screen_index = self.screen_index.value()
         original_display = self._original.display
         return AppSettings(
@@ -3153,12 +3257,14 @@ class SettingsDialog(QDialog):
                 model_dir=self.whisper_model_dir.text().strip(),
                 device=self.stt_device.currentData(),
                 input_device=self.stt_input_device.currentData() or "",
+                language=self._stt_language_value(),
             ),
             character=CharacterSettings(
                 user_name=self.user_name.text().strip(),
                 portrait=self.portrait.currentData(),
                 outfit=self.outfit.currentData(),
                 personality_file=str(personality_path),
+                personality_file_en=str(personality_path_en),
             ),
             display=DisplaySettings(
                 screen_index=screen_index,
@@ -3333,8 +3439,17 @@ class SettingsDialog(QDialog):
         if self._tts_bootstrap_is_running():
             self._show_running_message()
             return
-        prompt = self.personality_prompt.toPlainText().strip()
-        if not prompt:
+        self._stash_current_personality()
+        missing_language = next(
+            (
+                language
+                for language in ("en", "zh-CN")
+                if not self._personality_prompts.get(language, "").strip()
+            ),
+            None,
+        )
+        if missing_language is not None:
+            self._set_combo_data(self.language_combo, missing_language)
             QMessageBox.warning(
                 self,
                 self._text("missing_personality"),
@@ -3397,10 +3512,14 @@ class SettingsDialog(QDialog):
                     )
                     return
 
-        personality_path = settings.personality_path()
         try:
-            personality_path.parent.mkdir(parents=True, exist_ok=True)
-            personality_path.write_text(prompt + "\n", encoding="utf-8")
+            for language in ("en", "zh-CN"):
+                personality_path = settings.personality_path(language)
+                personality_path.parent.mkdir(parents=True, exist_ok=True)
+                personality_path.write_text(
+                    self._personality_prompts[language].strip() + "\n",
+                    encoding="utf-8",
+                )
         except OSError as exc:
             QMessageBox.warning(
                 self,
