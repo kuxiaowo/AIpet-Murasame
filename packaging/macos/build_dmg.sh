@@ -57,7 +57,10 @@ clang -framework Cocoa -framework CoreGraphics \
   "$project_root/aipet/platforms/macos/fullscreen_overlay.m" \
   -o "$overlay_binary"
 export AIPET_MACOS_FULLSCREEN_OVERLAY="$overlay_binary"
-export AIPET_MACOS_VERSION=${AIPET_MACOS_VERSION:-"2.0.4-macos.1"}
+# Release builds should pass AIPET_MACOS_VERSION explicitly. Keep local
+# development builds clearly distinguishable instead of silently reusing a
+# stale release version.
+export AIPET_MACOS_VERSION=${AIPET_MACOS_VERSION:-"0.0.0"}
 "$venv_root/bin/python" -m PyInstaller \
   --noconfirm \
   --clean \

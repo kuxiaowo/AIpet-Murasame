@@ -12,7 +12,7 @@ uv_path = Path(os.environ["AIPET_MACOS_UV"])
 overlay_path = Path(os.environ["AIPET_MACOS_FULLSCREEN_OVERLAY"])
 gpt_sovits_source = Path(os.environ["AIPET_MACOS_GPT_SOVITS_SOURCE"])
 gpt_sovits_checksum = Path(os.environ["AIPET_MACOS_GPT_SOVITS_CHECKSUM"])
-app_version = os.environ.get("AIPET_MACOS_VERSION", "2.0.4-macos.1")
+app_version = os.environ["AIPET_MACOS_VERSION"]
 short_version = app_version.split("-", 1)[0]
 
 datas = [
