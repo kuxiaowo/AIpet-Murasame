@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -135,6 +136,11 @@ class CoreTests(unittest.TestCase):
                     )
                 )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "The preferred-endpoint filter is exercised with Windows host-API "
+        "names (MME/WASAPI/DirectSound)",
+    )
     def test_audio_input_devices_prefer_supported_user_endpoints(self) -> None:
         devices = [
             AudioInputDevice(
@@ -489,6 +495,11 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(migrated.vision.aliyun_model, "legacy-vl")
         self.assertEqual(migrated.vision.timeout_seconds, 90)
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Legacy managed-TTS paths are a Windows LOCALAPPDATA concept; the "
+        "macOS runtime has no legacy managed TTS root",
+    )
     def test_legacy_managed_tts_paths_move_to_project_models(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
