@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -87,6 +88,10 @@ class RuntimeLoggingTests(unittest.TestCase):
             self.assertIn("existing", output.getvalue())
             self.assertIn("live update", output.getvalue())
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Windows console allocation is not part of the macOS adapter",
+    )
     def test_viewer_allocates_console_before_opening_output(self) -> None:
         kernel32 = MagicMock()
         kernel32.GetConsoleWindow.return_value = 0
@@ -153,6 +158,10 @@ class RuntimeLoggingTests(unittest.TestCase):
         self.assertNotIn("do-not-log-this", output)
         self.assertNotIn("encrypted-password-token", output)
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "pythonw.exe resolution is a Windows-only log-viewer concern",
+    )
     def test_console_viewer_uses_python_instead_of_pythonw(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -170,6 +179,10 @@ class RuntimeLoggingTests(unittest.TestCase):
                 str(python),
             )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "The console log viewer is a Windows-only feature",
+    )
     def test_source_viewer_command_runs_log_viewer_script(self) -> None:
         with (
             patch.object(runtime_logging.sys, "executable", "python.exe"),
@@ -192,6 +205,10 @@ class RuntimeLoggingTests(unittest.TestCase):
             ],
         )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "The console log viewer is a Windows-only feature",
+    )
     def test_frozen_viewer_command_reuses_exe_special_mode(self) -> None:
         with (
             patch.object(runtime_logging.sys, "executable", "AIpet.exe"),
@@ -209,6 +226,10 @@ class RuntimeLoggingTests(unittest.TestCase):
             ["AIpet.exe", "--log-viewer", "C:\\logs", "123"],
         )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "The console log viewer is a Windows-only feature",
+    )
     def test_main_dispatches_log_viewer_special_mode(self) -> None:
         with patch("aipet.platforms.windows.log_viewer.follow") as follow:
             result = run_special_mode(

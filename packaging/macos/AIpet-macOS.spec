@@ -12,6 +12,8 @@ uv_path = Path(os.environ["AIPET_MACOS_UV"])
 overlay_path = Path(os.environ["AIPET_MACOS_FULLSCREEN_OVERLAY"])
 gpt_sovits_source = Path(os.environ["AIPET_MACOS_GPT_SOVITS_SOURCE"])
 gpt_sovits_checksum = Path(os.environ["AIPET_MACOS_GPT_SOVITS_CHECKSUM"])
+app_version = os.environ["AIPET_MACOS_VERSION"]
+short_version = app_version.split("-", 1)[0]
 
 datas = [
     (str(project_root / "fgimages"), "fgimages"),
@@ -93,6 +95,8 @@ app = BUNDLE(
     bundle_identifier="com.aipet.murasame",
     info_plist={
         "CFBundleDisplayName": "AIpet-Murasame",
+        "CFBundleShortVersionString": short_version,
+        "CFBundleVersion": app_version,
         "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription": (
