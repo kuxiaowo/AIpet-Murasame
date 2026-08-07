@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import http.server
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -39,6 +40,10 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class DownloadWorkerTests(unittest.TestCase):
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Managed GPT-SoVITS engine downloads are a Windows-EXE capability",
+    )
     def test_manager_uses_explicit_download_destinations(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -86,6 +91,10 @@ class DownloadWorkerTests(unittest.TestCase):
             ):
                 self.assertEqual(_find_7zip(), executable.resolve())
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "A bundled 7-Zip is only shipped inside the Windows build",
+    )
     def test_prefers_bundled_7zip(self) -> None:
         self.assertTrue(BUNDLED_7ZIP.is_file())
         with patch(
@@ -138,6 +147,10 @@ class DownloadWorkerTests(unittest.TestCase):
                 any(root.glob(".GPT-SoVITS-backup-*"))
             )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Managed GPT-SoVITS engine archives are a Windows-EXE capability",
+    )
     def test_selects_engine_archive_for_gpu_generation(self) -> None:
         self.assertEqual(
             select_tts_engine_archive(["NVIDIA GeForce RTX 5070 Ti"]),
@@ -158,6 +171,10 @@ class DownloadWorkerTests(unittest.TestCase):
             TTS_ENGINE_ARCHIVE,
         )
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Managed GPT-SoVITS engine archives are a Windows-EXE capability",
+    )
     def test_tts_download_includes_selected_engine_archive(self) -> None:
         with patch(
             "aipet.core.download_manager.detect_nvidia_gpu_names",
@@ -175,6 +192,10 @@ class DownloadWorkerTests(unittest.TestCase):
         )
         self.assertGreater(archives[0].size, 8_000_000_000)
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Managed GPT-SoVITS engine archives are a Windows-EXE capability",
+    )
     def test_extracts_nested_gpt_sovits_engine(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
