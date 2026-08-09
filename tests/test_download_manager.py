@@ -16,17 +16,19 @@ from aipet.core.download_manager import (
     BUNDLED_7ZIP,
     HUGGING_FACE_ENDPOINT,
     HUGGING_FACE_MIRROR_ENDPOINT,
+    MODELSCOPE_ENDPOINT,
     TTS_ENGINE_ARCHIVE,
     TTS_ENGINE_ARCHIVE_NVIDIA50,
     TTS_REFERENCE_MODEL,
     TTS_WEIGHTS_MODEL,
     AssetDownloadWorker,
     DownloadManager,
-    ModelScopeSource,
+    DownloadSnapshot,
     RemoteFile,
     _activate_extracted_engine,
     _extract_gpt_sovits_archive,
     _find_7zip,
+    _modelscope_url,
     _sha256,
     _tts_files,
     _whisper_files,
@@ -113,6 +115,27 @@ class DownloadWorkerTests(unittest.TestCase):
 
             self.assertTrue(progress)
             self.assertEqual(progress[-1], path.stat().st_size)
+
+    def test_manager_calculates_download_speed_from_recent_progress(
+        self,
+    ) -> None:
+        manager = DownloadManager()
+        manager._snapshots["test"] = DownloadSnapshot(
+            status="checking",
+            received=100,
+            total=10_000,
+        )
+        with patch(
+            "aipet.core.download_manager.time.monotonic",
+            side_effect=[10.0, 11.0, 12.0],
+        ):
+            manager._on_progress("test", 100, 10_000, "model.bin")
+            manager._on_progress("test", 1_124, 10_000, "model.bin")
+            manager._on_progress("test", 3_172, 10_000, "model.bin")
+
+        snapshot = manager.snapshot("test")
+        self.assertEqual(snapshot.status, "downloading")
+        self.assertEqual(snapshot.speed_bps, 1_536.0)
 
     def test_atomically_replaces_managed_engine(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -260,16 +283,18 @@ class DownloadWorkerTests(unittest.TestCase):
         self.assertEqual(len(weights), 2)
         self.assertTrue(
             all(
-                item.modelscope is not None
-                and item.modelscope.repository == TTS_WEIGHTS_MODEL
+                item.url.startswith(
+                    f"{MODELSCOPE_ENDPOINT}/{TTS_WEIGHTS_MODEL}/"
+                )
                 for item in weights
             )
         )
         self.assertEqual(len(references), 12)
         self.assertTrue(
             all(
-                item.modelscope is not None
-                and item.modelscope.repository == TTS_REFERENCE_MODEL
+                item.url.startswith(
+                    f"{MODELSCOPE_ENDPOINT}/{TTS_REFERENCE_MODEL}/"
+                )
                 for item in references
             )
         )
@@ -282,6 +307,12 @@ class DownloadWorkerTests(unittest.TestCase):
         self.assertEqual(
             happy.sha256,
             "aed4a6391ee7241a70556559588beb2b03171ab9dc1afca317d04dc5f98be83c",
+        )
+        self.assertEqual(
+            happy.url,
+            f"{MODELSCOPE_ENDPOINT}/{TTS_REFERENCE_MODEL}"
+            "/resolve/master/reference_voices/"
+            "%E9%AB%98%E5%85%B4/ref.mp3",
         )
 
     def test_same_size_file_with_wrong_hash_is_not_complete(self) -> None:
@@ -305,58 +336,15 @@ class DownloadWorkerTests(unittest.TestCase):
 
             self.assertFalse(worker._target_is_complete(item))
 
-    def test_modelscope_downloads_one_file_and_resumes_legacy_part(self) -> None:
-        payload = b"modelscope-hub single file"
-        with tempfile.TemporaryDirectory() as directory:
-            destination = Path(directory)
-            partial = destination / "nested" / "model.bin.part"
-            partial.parent.mkdir(parents=True)
-            partial.write_bytes(payload[:7])
-            item = RemoteFile(
-                url="",
-                relative_path="nested/model.bin",
-                size=len(payload),
-                sha256=hashlib.sha256(payload).hexdigest(),
-                modelscope=ModelScopeSource(
-                    "owner/repository",
-                    "nested/model.bin",
-                ),
-            )
-            worker = AssetDownloadWorker(
-                "test",
-                "tts",
-                "test/model",
-                destination,
-            )
-            api = Mock()
-
-            def download_file(**kwargs) -> None:
-                target = Path(kwargs["local_dir"]) / kwargs["file_path"]
-                incomplete = target.with_suffix(
-                    target.suffix + ".incomplete"
-                )
-                self.assertEqual(incomplete.read_bytes(), payload[:7])
-                with incomplete.open("ab") as output:
-                    output.write(payload[7:])
-                incomplete.replace(target)
-
-            api.download_file.side_effect = download_file
-            worker._modelscope_api = api
-
-            received = worker._download_file(item, 0, len(payload))
-
-            self.assertEqual(received, len(payload))
-            self.assertEqual(
-                (destination / "nested" / "model.bin").read_bytes(),
-                payload,
-            )
-            self.assertFalse(partial.exists())
-            api.download_file.assert_called_once()
-            call = api.download_file.call_args.kwargs
-            self.assertEqual(call["repo_id"], "owner/repository")
-            self.assertEqual(call["file_path"], "nested/model.bin")
-            self.assertEqual(call["revision"], "master")
-            self.assertEqual(call["expected_sha256"], item.sha256)
+    def test_modelscope_url_quotes_unicode_file_paths(self) -> None:
+        self.assertEqual(
+            _modelscope_url(
+                "owner/repository",
+                "reference_voices/平静/ref.wav",
+            ),
+            f"{MODELSCOPE_ENDPOINT}/owner/repository/resolve/master/"
+            "reference_voices/%E5%B9%B3%E9%9D%99/ref.wav",
+        )
 
     def test_whisper_metadata_and_files_fall_back_to_hf_mirror(self) -> None:
         metadata = Mock()
