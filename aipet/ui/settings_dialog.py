@@ -2958,6 +2958,8 @@ class SettingsDialog(QDialog):
             f"{percent:.1f}% · {self._format_bytes(snapshot.received)} / "
             f"{self._format_bytes(snapshot.total)}"
         )
+        if snapshot.status == "downloading":
+            detail += f" · {self._format_bytes(snapshot.speed_bps)}/s"
         if snapshot.current_file:
             detail += f" · {Path(snapshot.current_file).name}"
         return detail
@@ -2991,7 +2993,7 @@ class SettingsDialog(QDialog):
         return detail
 
     @staticmethod
-    def _format_bytes(value: int) -> str:
+    def _format_bytes(value: int | float) -> str:
         size = float(value)
         for unit in ("B", "KB", "MB", "GB", "TB"):
             if size < 1024 or unit == "TB":
