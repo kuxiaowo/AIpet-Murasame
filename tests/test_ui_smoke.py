@@ -851,6 +851,7 @@ class UISmokeTests(unittest.TestCase):
                     received=50,
                     total=100,
                     current_file="model.bin",
+                    speed_bps=1024 * 1024,
                 )
                 dialog._on_download_changed(
                     whisper_job_id(model_repository("large-v3")),
@@ -858,6 +859,7 @@ class UISmokeTests(unittest.TestCase):
                 )
                 self.assertFalse(dialog.whisper_progress.isHidden())
                 self.assertEqual(dialog.whisper_progress.value(), 500)
+                self.assertIn("1.0 MB/s", dialog.whisper_status.text())
                 (Path(directory) / "model.bin").write_bytes(b"model")
                 (Path(directory) / "config.json").write_text(
                     "{}",
