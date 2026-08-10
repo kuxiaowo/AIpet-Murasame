@@ -31,11 +31,25 @@ export AIPET_MACOS_ICON="$icon_file"
 export AIPET_MACOS_UV="$venv_root/bin/uv"
 gpt_sovits_source="$build_root/gpt-sovits-source.zip"
 gpt_sovits_checksum="$build_root/gpt-sovits-source.sha256"
-curl --fail --location --retry 3 \
-  --output "$gpt_sovits_source.partial" \
-  "https://github.com/RVC-Boss/GPT-SoVITS/archive/d7c2210da8c013e81a94bfc7b811a477c99fd506.zip"
-mv "$gpt_sovits_source.partial" "$gpt_sovits_source"
-shasum -a 256 "$gpt_sovits_source" > "$gpt_sovits_checksum"
+gpt_sovits_commit="d7c2210da8c013e81a94bfc7b811a477c99fd506"
+
+# Reuse a previously verified download when the cached archive still matches
+# its recorded checksum; otherwise fetch the pinned source. The codeload
+# endpoint is tried first because the github.com archive redirect is blocked
+# on some networks, with the standard archive URL kept as a fallback.
+if [[ -f "$gpt_sovits_source" && -f "$gpt_sovits_checksum" ]] \
+  && [[ "$(cat "$gpt_sovits_checksum")" == "$(shasum -a 256 "$gpt_sovits_source")" ]]; then
+  echo "Reusing verified cached GPT-SoVITS source: $gpt_sovits_source"
+else
+  curl --fail --location --retry 3 --connect-timeout 15 --max-time 900 \
+    --output "$gpt_sovits_source.partial" \
+    "https://codeload.github.com/RVC-Boss/GPT-SoVITS/zip/$gpt_sovits_commit" \
+    || curl --fail --location --retry 3 --connect-timeout 15 --max-time 900 \
+      --output "$gpt_sovits_source.partial" \
+      "https://github.com/RVC-Boss/GPT-SoVITS/archive/$gpt_sovits_commit.zip"
+  mv "$gpt_sovits_source.partial" "$gpt_sovits_source"
+  shasum -a 256 "$gpt_sovits_source" > "$gpt_sovits_checksum"
+fi
 export AIPET_MACOS_GPT_SOVITS_SOURCE="$gpt_sovits_source"
 export AIPET_MACOS_GPT_SOVITS_CHECKSUM="$gpt_sovits_checksum"
 overlay_binary="$build_root/aipet-fullscreen-overlay"
@@ -43,6 +57,10 @@ clang -framework Cocoa -framework CoreGraphics \
   "$project_root/aipet/platforms/macos/fullscreen_overlay.m" \
   -o "$overlay_binary"
 export AIPET_MACOS_FULLSCREEN_OVERLAY="$overlay_binary"
+# Release builds should pass AIPET_MACOS_VERSION explicitly. Keep local
+# development builds clearly distinguishable instead of silently reusing a
+# stale release version.
+export AIPET_MACOS_VERSION=${AIPET_MACOS_VERSION:-"0.0.0"}
 "$venv_root/bin/python" -m PyInstaller \
   --noconfirm \
   --clean \
