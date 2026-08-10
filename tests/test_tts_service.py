@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,11 @@ from aipet.core.tts_service import (
 
 
 class TTSServiceTests(unittest.TestCase):
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "A bundled runtime/python.exe layout only exists in the Windows "
+        "build; the macOS adapter installs an isolated .venv instead",
+    )
     def test_build_command_prefers_bundled_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             engine = self._create_engine(Path(directory))
@@ -50,6 +56,11 @@ class TTSServiceTests(unittest.TestCase):
             ):
                 _build_start_command(engine, ("127.0.0.1", 9880))
 
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "A bundled runtime/python.exe layout only exists in the Windows "
+        "build; the macOS adapter installs an isolated .venv instead",
+    )
     def test_ensure_running_launches_once_and_stop_only_owned_process(
         self,
     ) -> None:
