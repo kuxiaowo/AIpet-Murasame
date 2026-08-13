@@ -29,6 +29,8 @@
     "enabled": false,
     "backend": "local",
     "base_url": "http://127.0.0.1:9880/tts",
+    "storage_root": "C:/AIpet/models/tts",
+    "advanced_paths": false,
     "engine_root": "C:/AIpet/models/tts/GPT-SoVITS",
     "model_dir": "C:/AIpet/models/tts/Murasame_SoVITS",
     "autodl_ssh_command": "",

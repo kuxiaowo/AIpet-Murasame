@@ -14,6 +14,7 @@ import requests
 
 from aipet.core.download_manager import (
     BUNDLED_7ZIP,
+    GPT_SOVITS_MANAGED_MARKER,
     HUGGING_FACE_ENDPOINT,
     HUGGING_FACE_MIRROR_ENDPOINT,
     MODELSCOPE_ENDPOINT,
@@ -31,6 +32,8 @@ from aipet.core.download_manager import (
     _modelscope_url,
     _sha256,
     _tts_files,
+    _validate_engine_install_destination,
+    _validate_tts_destinations,
     _whisper_files,
     select_tts_engine_archive,
 )
@@ -145,6 +148,10 @@ class DownloadWorkerTests(unittest.TestCase):
             (source / "api_v2.py").write_text("new", encoding="utf-8")
             destination = root / "GPT-SoVITS"
             destination.mkdir()
+            (destination / GPT_SOVITS_MANAGED_MARKER).write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
             (destination / "api_v2.py").write_text(
                 "old",
                 encoding="utf-8",
@@ -169,6 +176,39 @@ class DownloadWorkerTests(unittest.TestCase):
             self.assertFalse(
                 any(root.glob(".GPT-SoVITS-backup-*"))
             )
+            self.assertTrue(
+                (destination / GPT_SOVITS_MANAGED_MARKER).is_file()
+            )
+
+    def test_engine_install_rejects_filesystem_root(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "filesystem root"):
+            _validate_engine_install_destination(Path(Path.cwd().anchor))
+
+    def test_engine_install_refuses_unmanaged_nonempty_directory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "documents"
+            destination.mkdir()
+            important = destination / "important.txt"
+            important.write_text("keep me", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "not marked"):
+                _validate_engine_install_destination(destination)
+
+            self.assertEqual(
+                important.read_text(encoding="utf-8"),
+                "keep me",
+            )
+
+    def test_tts_directories_must_be_disjoint(self) -> None:
+        root = Path("/tmp/aipet-path-test")
+        with self.assertRaisesRegex(RuntimeError, "cannot contain"):
+            _validate_tts_destinations(root, root)
+        with self.assertRaisesRegex(RuntimeError, "cannot contain"):
+            _validate_tts_destinations(root / "voice", root)
+        with self.assertRaisesRegex(RuntimeError, "cannot contain"):
+            _validate_tts_destinations(root, root / "engine")
 
     @unittest.skipUnless(
         sys.platform == "win32",

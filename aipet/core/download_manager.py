@@ -38,6 +38,7 @@ MODELSCOPE_ENDPOINT = "https://www.modelscope.cn/models"
 HUGGING_FACE_ENDPOINT = "https://huggingface.co"
 HUGGING_FACE_MIRROR_ENDPOINT = "https://hf-mirror.com"
 DOWNLOAD_SPEED_WINDOW_SECONDS = 3.0
+GPT_SOVITS_MANAGED_MARKER = ".aipet-managed-gpt-sovits.json"
 _PLATFORM_TTS_ARCHIVES = tuple(
     get_platform_runtime().archives.tts_engine_archives()
 )
@@ -444,6 +445,18 @@ class DownloadManager(QObject):
         if include_engine and engine_destination is None:
             raise ValueError(
                 "GPT-SoVITS download directory is required"
+            )
+        model_destination = _validate_download_destination(
+            model_destination,
+            "voice model",
+        )
+        if engine_destination is not None:
+            engine_destination = _validate_engine_install_destination(
+                engine_destination
+            )
+            _validate_tts_destinations(
+                model_destination,
+                engine_destination,
             )
         self._start(
             TTS_JOB_ID,
@@ -1004,6 +1017,7 @@ def _activate_extracted_engine(
         Callable[[str, int, int, str], None] | None
     ),
 ) -> None:
+    destination = _validate_engine_install_destination(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     backup: Path | None = None
     if destination.exists():
@@ -1029,6 +1043,18 @@ def _activate_extracted_engine(
         os.replace(source, destination)
         if not (destination / "api_v2.py").is_file():
             raise RuntimeError("GPT-SoVITS engine installation failed")
+        (destination / GPT_SOVITS_MANAGED_MARKER).write_text(
+            json.dumps(
+                {
+                    "kind": "gpt-sovits-engine",
+                    "managed_by": "AIpet-Murasame",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         if install_callback is not None:
             install_callback(
                 "installing",
@@ -1055,6 +1081,49 @@ def _activate_extracted_engine(
                 "previous installation",
             )
         shutil.rmtree(backup, ignore_errors=True)
+
+
+def _validate_download_destination(path: Path, label: str) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise RuntimeError(f"The {label} directory cannot be a symlink.")
+    resolved = candidate.resolve()
+    if resolved.parent == resolved or not resolved.name:
+        raise RuntimeError(
+            f"The {label} directory cannot be a filesystem root."
+        )
+    if resolved.exists() and not resolved.is_dir():
+        raise RuntimeError(f"The {label} destination is not a directory.")
+    return resolved
+
+
+def _validate_engine_install_destination(path: Path) -> Path:
+    destination = _validate_download_destination(path, "GPT-SoVITS engine")
+    if not destination.exists():
+        return destination
+    contents = tuple(destination.iterdir())
+    if not contents:
+        return destination
+    marker = destination / GPT_SOVITS_MANAGED_MARKER
+    if not marker.is_file():
+        raise RuntimeError(
+            "The GPT-SoVITS destination is not empty and is not marked as "
+            "managed by AIpet. Choose a new empty directory or the existing "
+            "AIpet-managed engine directory."
+        )
+    return destination
+
+
+def _validate_tts_destinations(model: Path, engine: Path) -> None:
+    if (
+        model == engine
+        or model in engine.parents
+        or engine in model.parents
+    ):
+        raise RuntimeError(
+            "The GPT-SoVITS engine and voice model directories must be "
+            "separate and cannot contain each other."
+        )
 
 
 def _extract_with_bsdtar(
