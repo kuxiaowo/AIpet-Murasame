@@ -276,6 +276,11 @@ tests\             unit, platform-contract, and UI smoke tests
 Source code is distributed under the
 [GNU Affero General Public License v3.0](LICENSE).
 
+Project contributions are copyrighted by kuxiaowo (2025–2026), fsh114514
+(2026), and other contributors. See
+[Copyright and downstream attribution](COPYRIGHT.md) for the scope of this
+notice and a ready-to-use attribution example for modified versions.
+
 This is an unofficial fan project for study and technical exchange. Murasame
 and the included third-party artwork, voice data, and related assets belong to
 their respective rights holders, including YUZUSOFT, and are not relicensed by
