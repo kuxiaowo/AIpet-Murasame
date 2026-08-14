@@ -332,6 +332,9 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_backend,
                 dialog.tts_url,
                 dialog.tts_timeout,
+                dialog.tts_storage_root,
+                dialog.tts_storage_browse,
+                dialog.tts_advanced_paths,
                 dialog.tts_engine_root,
                 dialog.tts_engine_browse,
                 dialog.tts_model_dir,
@@ -349,6 +352,7 @@ class UISmokeTests(unittest.TestCase):
                 "tts_backend",
                 "tts_endpoint",
                 "tts_timeout",
+                "tts_storage_root",
                 "tts_engine_root",
                 "tts_model_dir",
                 "tts_autodl_ssh_command",
@@ -368,23 +372,30 @@ class UISmokeTests(unittest.TestCase):
         settings.tts.backend = "local"
         dialog = SettingsDialog(settings)
         try:
-            local_keys = (
-                "tts_endpoint",
-                "tts_engine_root",
-                "tts_model_dir",
-            )
+            normal_local_keys = ("tts_endpoint", "tts_storage_root")
+            advanced_local_keys = ("tts_engine_root", "tts_model_dir")
+            all_local_keys = normal_local_keys + advanced_local_keys
             autodl_keys = (
                 "tts_autodl_ssh_command",
                 "tts_autodl_password",
                 "tts_autodl_remote_command",
                 "tts_autodl_reference_root",
             )
-            for key in local_keys:
+            for key in normal_local_keys:
                 self.assertFalse(
                     dialog._form_fields[key][0].isHidden(),
                     key,
                 )
                 self.assertFalse(
+                    dialog._form_labels[key][0].isHidden(),
+                    key,
+                )
+            for key in advanced_local_keys:
+                self.assertTrue(
+                    dialog._form_fields[key][0].isHidden(),
+                    key,
+                )
+                self.assertTrue(
                     dialog._form_labels[key][0].isHidden(),
                     key,
                 )
@@ -400,7 +411,7 @@ class UISmokeTests(unittest.TestCase):
             self.assertFalse(dialog.tts_download_button.isHidden())
 
             dialog._set_combo_data(dialog.tts_backend, "autodl")
-            for key in local_keys:
+            for key in all_local_keys:
                 self.assertTrue(
                     dialog._form_fields[key][0].isHidden(),
                     key,
@@ -421,6 +432,78 @@ class UISmokeTests(unittest.TestCase):
             self.assertTrue(dialog.tts_download_button.isHidden())
         finally:
             dialog.close()
+
+    def test_tts_advanced_paths_switches_exact_directory_rows(self) -> None:
+        settings = AppSettings(ui_language="zh-CN")
+        dialog = SettingsDialog(settings)
+        try:
+            dialog.tts_enabled.blockSignals(True)
+            dialog.tts_enabled.setChecked(True)
+            dialog.tts_enabled.blockSignals(False)
+            dialog.tts_storage_root.setText("D:/AIpet/models/tts")
+            dialog._set_tts_path_controls(downloading=False)
+
+            engine, model = dialog._effective_tts_path_strings()
+            self.assertEqual(engine, "D:/AIpet/models/tts/GPT-SoVITS")
+            self.assertEqual(
+                model,
+                "D:/AIpet/models/tts/Murasame_SoVITS",
+            )
+            self.assertFalse(
+                dialog._form_fields["tts_storage_root"][0].isHidden()
+            )
+            self.assertTrue(
+                dialog._form_fields["tts_engine_root"][0].isHidden()
+            )
+
+            dialog.tts_advanced_paths.blockSignals(True)
+            dialog.tts_advanced_paths.setChecked(True)
+            dialog.tts_advanced_paths.blockSignals(False)
+            dialog._set_tts_path_controls(downloading=False)
+
+            self.assertTrue(
+                dialog._form_fields["tts_storage_root"][0].isHidden()
+            )
+            self.assertFalse(
+                dialog._form_fields["tts_engine_root"][0].isHidden()
+            )
+            self.assertFalse(
+                dialog._form_fields["tts_model_dir"][0].isHidden()
+            )
+        finally:
+            dialog.close()
+
+    def test_tts_download_derives_managed_subdirectories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = AppSettings(ui_language="zh-CN")
+            dialog = SettingsDialog(settings)
+            try:
+                root = Path(directory).resolve()
+                dialog.tts_enabled.blockSignals(True)
+                dialog.tts_enabled.setChecked(True)
+                dialog.tts_enabled.blockSignals(False)
+                dialog.tts_storage_root.setText(str(root))
+                dialog.tts_advanced_paths.setChecked(False)
+                dialog._tts_engine_download_needed = False
+                with (
+                    patch(
+                        "aipet.ui.settings_dialog.QMessageBox.question",
+                        return_value=QMessageBox.Yes,
+                    ),
+                    patch.object(
+                        dialog.download_manager,
+                        "start_tts",
+                    ) as start_tts,
+                ):
+                    dialog._request_tts_download()
+
+                start_tts.assert_called_once_with(
+                    root / "Murasame_SoVITS",
+                    include_engine=False,
+                    engine_destination=None,
+                )
+            finally:
+                dialog.close()
 
     def test_settings_help_buttons_replace_empty_title_bar_help(
         self,
@@ -651,6 +734,10 @@ class UISmokeTests(unittest.TestCase):
                     os.environ["AIPET_MODEL_DIR"]
                 ).resolve()
                 self.assertEqual(
+                    Path(dialog.tts_storage_root.text()),
+                    default_model_root / "tts",
+                )
+                self.assertEqual(
                     Path(dialog.tts_engine_root.text()),
                     default_model_root / "tts" / "GPT-SoVITS",
                 )
@@ -702,7 +789,7 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_enabled.blockSignals(True)
                 dialog.tts_enabled.setChecked(True)
                 dialog.tts_enabled.blockSignals(False)
-                dialog.tts_model_dir.clear()
+                dialog.tts_storage_root.clear()
                 with (
                     patch(
                         "aipet.ui.settings_dialog.QMessageBox.warning"
@@ -908,6 +995,9 @@ class UISmokeTests(unittest.TestCase):
                 dialog.tts_enabled.blockSignals(True)
                 dialog.tts_enabled.setChecked(True)
                 dialog.tts_enabled.blockSignals(False)
+                dialog.tts_advanced_paths.blockSignals(True)
+                dialog.tts_advanced_paths.setChecked(True)
+                dialog.tts_advanced_paths.blockSignals(False)
                 dialog.tts_engine_root.setText(
                     str(Path(directory) / "tts-engine-download")
                 )

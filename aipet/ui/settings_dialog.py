@@ -57,6 +57,7 @@ from aipet.core.config import (
     VisionSettings,
     get_user_data_dir,
     load_personality,
+    tts_paths_for_storage_root,
 )
 from aipet.core.runtime_logging import get_logger
 from aipet.core.stt_languages import COMMON_WHISPER_LANGUAGES
@@ -169,9 +170,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_backend_autodl": "AutoDL cloud",
         "tts_endpoint": "TTS endpoint",
         "tts_timeout": "TTS timeout",
-        "tts_engine_root": "GPT-SoVITS download/install directory",
+        "tts_storage_root": "TTS resource storage location",
+        "tts_storage_preview": (
+            "Automatic directories:\n"
+            "Engine: {engine}\n"
+            "Voice model: {model}"
+        ),
+        "tts_advanced_paths": "Advanced",
+        "tts_engine_root": "Exact GPT-SoVITS installation directory",
         "tts_bootstrap": "Install macOS GPT-SoVITS base environment",
-        "tts_model_dir": "Voice model download directory (includes references)",
+        "tts_model_dir": "Exact voice model directory (includes references)",
         "tts_autodl_ssh_command": "AutoDL SSH login command",
         "tts_autodl_password": "AutoDL SSH password",
         "tts_autodl_remote_command": "Remote TTS start command",
@@ -308,6 +316,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_downloaded": "Download complete. Available locally: {path}",
         "whisper_download_failed": "Download failed: {message}",
         "download_path_required_title": "Download directory required",
+        "tts_storage_path_required": (
+            "Select the TTS resource storage location before downloading."
+        ),
         "tts_model_path_required": (
             "Select the voice model download directory before downloading."
         ),
@@ -319,6 +330,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Select the Whisper model download directory before downloading."
         ),
         "download_path_invalid": "The selected directory cannot be used: {message}",
+        "tts_download_path_unsafe": (
+            "The selected TTS directories are unsafe: {message}"
+        ),
         "automation_group": "Idle behavior and memory",
         "settings_help": "Explain these settings",
         "automation_help_title": "Idle behavior and memory",
@@ -497,9 +511,16 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tts_backend_autodl": "AutoDL 云端",
         "tts_endpoint": "TTS 地址",
         "tts_timeout": "TTS 超时",
-        "tts_engine_root": "GPT-SoVITS 下载及安装目录",
+        "tts_storage_root": "TTS 资源存储位置",
+        "tts_storage_preview": (
+            "自动目录：\n"
+            "引擎：{engine}\n"
+            "语音模型：{model}"
+        ),
+        "tts_advanced_paths": "高级设置",
+        "tts_engine_root": "GPT-SoVITS 精确安装目录",
         "tts_bootstrap": "一键安装 macOS GPT-SoVITS 基础环境",
-        "tts_model_dir": "角色语音模型下载目录（含参考音频）",
+        "tts_model_dir": "角色语音模型精确目录（含参考音频）",
         "tts_autodl_ssh_command": "AutoDL SSH 登录命令",
         "tts_autodl_password": "AutoDL SSH 密码",
         "tts_autodl_remote_command": "远程 TTS 启动命令",
@@ -615,10 +636,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "whisper_downloaded": "下载完成，本地路径：{path}",
         "whisper_download_failed": "下载失败：{message}",
         "download_path_required_title": "需要填写下载目录",
+        "tts_storage_path_required": "请先选择 TTS 资源存储位置。",
         "tts_model_path_required": "请先选择角色语音模型下载目录。",
         "tts_engine_path_required": "请先选择 GPT-SoVITS 下载及安装目录。",
         "whisper_path_required": "请先选择 Whisper 模型下载目录。",
         "download_path_invalid": "无法使用所选目录：{message}",
+        "tts_download_path_unsafe": "所选 TTS 目录不安全：{message}",
         "automation_group": "空闲行为与记忆",
         "settings_help": "解释这些设置",
         "automation_help_title": "空闲行为与记忆说明",
@@ -963,6 +986,12 @@ class SettingsDialog(QDialog):
             self._on_tts_backend_changed
         )
         self.tts_url.editingFinished.connect(self._update_tts_state)
+        self.tts_storage_root.editingFinished.connect(
+            self._on_tts_storage_root_changed
+        )
+        self.tts_advanced_paths.toggled.connect(
+            self._on_tts_advanced_paths_changed
+        )
         self.tts_engine_root.editingFinished.connect(self._update_tts_state)
         self.tts_model_dir.editingFinished.connect(self._update_tts_state)
         self.tts_autodl_ssh_command.editingFinished.connect(
@@ -1280,6 +1309,13 @@ class SettingsDialog(QDialog):
         self.tts_backend.addItem("", "autodl")
         self.tts_url = QLineEdit()
         self.tts_timeout = self._spinbox(10, 900)
+        self.tts_storage_root = QLineEdit()
+        self.tts_storage_browse = QPushButton()
+        self.tts_storage_browse.clicked.connect(self._browse_tts_storage)
+        self.tts_path_preview = QLabel()
+        self.tts_path_preview.setWordWrap(True)
+        self.tts_path_preview.setMinimumHeight(72)
+        self.tts_advanced_paths = QCheckBox()
         self.tts_engine_root = QLineEdit()
         self.tts_engine_browse = QPushButton()
         self.tts_engine_browse.clicked.connect(self._browse_tts_engine)
@@ -1349,6 +1385,16 @@ class SettingsDialog(QDialog):
         self._add_row(tts_form, "tts_backend", self.tts_backend)
         self._add_row(tts_form, "tts_endpoint", self.tts_url)
         self._add_row(tts_form, "tts_timeout", self.tts_timeout)
+        self._add_row(
+            tts_form,
+            "tts_storage_root",
+            self._path_picker(
+                self.tts_storage_root,
+                self.tts_storage_browse,
+            ),
+        )
+        tts_form.addRow(self.tts_path_preview)
+        tts_form.addRow(self.tts_advanced_paths)
         self._add_row(
             tts_form,
             "tts_engine_root",
@@ -1754,6 +1800,8 @@ class SettingsDialog(QDialog):
         self._set_combo_data(self.tts_backend, settings.tts.backend)
         self.tts_url.setText(settings.tts.base_url)
         self.tts_timeout.setValue(settings.tts.timeout_seconds)
+        self.tts_storage_root.setText(settings.tts.storage_root)
+        self.tts_advanced_paths.setChecked(settings.tts.advanced_paths)
         self.tts_engine_root.setText(settings.tts.engine_root)
         self.tts_model_dir.setText(settings.tts.model_dir)
         self.tts_autodl_ssh_command.setText(
@@ -2019,10 +2067,15 @@ class SettingsDialog(QDialog):
         self.tts_autodl_password.setPlaceholderText(
             self._text("tts_autodl_password_placeholder")
         )
+        self.tts_storage_browse.setText(self._text("browse"))
+        self.tts_advanced_paths.setText(
+            self._text("tts_advanced_paths")
+        )
         self.tts_engine_browse.setText(self._text("browse"))
         self.tts_model_browse.setText(self._text("browse"))
         self.tts_bootstrap_button.setText(self._text("tts_bootstrap"))
         self.tts_download_button.setText(self._text("tts_download"))
+        self._update_tts_path_preview()
         self._render_tts_service_button()
         self.stt_enabled.setText(
             self._text(
@@ -2330,6 +2383,7 @@ class SettingsDialog(QDialog):
         *,
         enabled: bool | None = None,
     ) -> TTSSettings:
+        engine_root, model_dir = self._effective_tts_path_strings()
         return TTSSettings(
             enabled=(
                 self.tts_enabled.isChecked()
@@ -2338,8 +2392,10 @@ class SettingsDialog(QDialog):
             ),
             backend=self.tts_backend.currentData() or "local",
             base_url=self.tts_url.text().strip(),
-            engine_root=self.tts_engine_root.text().strip(),
-            model_dir=self.tts_model_dir.text().strip(),
+            storage_root=self.tts_storage_root.text().strip(),
+            advanced_paths=self.tts_advanced_paths.isChecked(),
+            engine_root=engine_root,
+            model_dir=model_dir,
             autodl_ssh_command=(
                 self.tts_autodl_ssh_command.text().strip()
             ),
@@ -2355,17 +2411,61 @@ class SettingsDialog(QDialog):
             timeout_seconds=self.tts_timeout.value(),
         )
 
+    def _effective_tts_path_strings(self) -> tuple[str, str]:
+        if self.tts_advanced_paths.isChecked():
+            return (
+                self.tts_engine_root.text().strip(),
+                self.tts_model_dir.text().strip(),
+            )
+        storage_root = self.tts_storage_root.text().strip()
+        if not storage_root:
+            return "", ""
+        engine, model = tts_paths_for_storage_root(storage_root)
+        return str(engine), str(model)
+
+    def _update_tts_path_preview(self) -> None:
+        if not hasattr(self, "tts_path_preview"):
+            return
+        engine, model = self._effective_tts_path_strings()
+        self.tts_path_preview.setText(
+            self._text(
+                "tts_storage_preview",
+                engine=engine or "—",
+                model=model or "—",
+            )
+        )
+
+    def _on_tts_storage_root_changed(self) -> None:
+        storage_root = self.tts_storage_root.text().strip()
+        if storage_root and not self.tts_advanced_paths.isChecked():
+            engine, model = tts_paths_for_storage_root(storage_root)
+            self.tts_engine_root.setText(str(engine))
+            self.tts_model_dir.setText(str(model))
+        self._update_tts_path_preview()
+        self._update_tts_state()
+
+    def _on_tts_advanced_paths_changed(self, checked: bool) -> None:
+        if checked:
+            engine, model = tts_paths_for_storage_root(
+                self.tts_storage_root.text().strip() or Path.home()
+            )
+            if not self.tts_engine_root.text().strip():
+                self.tts_engine_root.setText(str(engine))
+            if not self.tts_model_dir.text().strip():
+                self.tts_model_dir.setText(str(model))
+        self._update_tts_path_preview()
+        self._update_tts_state()
+
     def _set_tts_path_controls(self, *, downloading: bool) -> None:
         enabled = self.tts_enabled.isChecked()
         autodl = self.tts_backend.currentData() == "autodl"
         controls_enabled = enabled and not downloading
         local_enabled = controls_enabled and not autodl
         autodl_enabled = controls_enabled and autodl
-        local_keys = (
-            "tts_endpoint",
-            "tts_engine_root",
-            "tts_model_dir",
-        )
+        normal_paths = not self.tts_advanced_paths.isChecked()
+        local_keys = ("tts_endpoint",)
+        normal_path_keys = ("tts_storage_root",)
+        advanced_path_keys = ("tts_engine_root", "tts_model_dir")
         autodl_keys = (
             "tts_autodl_ssh_command",
             "tts_autodl_password",
@@ -2376,10 +2476,13 @@ class SettingsDialog(QDialog):
         self.tts_backend.setEnabled(controls_enabled)
         self.tts_timeout.setEnabled(controls_enabled)
         self.tts_url.setEnabled(local_enabled)
-        self.tts_engine_root.setEnabled(local_enabled)
-        self.tts_engine_browse.setEnabled(local_enabled)
-        self.tts_model_dir.setEnabled(local_enabled)
-        self.tts_model_browse.setEnabled(local_enabled)
+        self.tts_storage_root.setEnabled(local_enabled and normal_paths)
+        self.tts_storage_browse.setEnabled(local_enabled and normal_paths)
+        self.tts_advanced_paths.setEnabled(local_enabled)
+        self.tts_engine_root.setEnabled(local_enabled and not normal_paths)
+        self.tts_engine_browse.setEnabled(local_enabled and not normal_paths)
+        self.tts_model_dir.setEnabled(local_enabled and not normal_paths)
+        self.tts_model_browse.setEnabled(local_enabled and not normal_paths)
         for field in (
             self.tts_autodl_ssh_command,
             self.tts_autodl_password,
@@ -2389,12 +2492,23 @@ class SettingsDialog(QDialog):
             field.setEnabled(autodl_enabled)
 
         self._set_form_rows_visible(local_keys, not autodl)
+        self._set_form_rows_visible(
+            normal_path_keys,
+            not autodl and normal_paths,
+        )
+        self._set_form_rows_visible(
+            advanced_path_keys,
+            not autodl and not normal_paths,
+        )
         self._set_form_rows_visible(autodl_keys, autodl)
+        self.tts_path_preview.setVisible(not autodl and normal_paths)
+        self.tts_advanced_paths.setVisible(not autodl)
         self.tts_download_button.setVisible(not autodl)
-        self.tts_bootstrap_button.setVisible(
+        bootstrap_visible = (
             not autodl
             and self._platform_runtime.capabilities.managed_tts_bootstrap
         )
+        self._set_form_rows_visible(("tts_bootstrap",), bootstrap_visible)
         self.tts_bootstrap_button.setEnabled(
             local_enabled
             and self._tts_bootstrap_worker is None
@@ -2410,6 +2524,14 @@ class SettingsDialog(QDialog):
         self._set_form_labels_enabled(
             local_keys,
             local_enabled,
+        )
+        self._set_form_labels_enabled(
+            normal_path_keys,
+            local_enabled and normal_paths,
+        )
+        self._set_form_labels_enabled(
+            advanced_path_keys,
+            local_enabled and not normal_paths,
         )
         self._set_form_labels_enabled(
             ("tts_bootstrap",),
@@ -2508,14 +2630,15 @@ class SettingsDialog(QDialog):
                 self._set_tts_status("tts_external_offline")
             return
 
-        configured_engine = self.tts_engine_root.text().strip()
-        if state.engine_root is not None and not configured_engine:
-            self.tts_engine_root.setText(str(state.engine_root))
-        if (
-            state.model_directory is not None
-            and not self.tts_model_dir.text().strip()
-        ):
-            self.tts_model_dir.setText(str(state.model_directory))
+        if self.tts_advanced_paths.isChecked():
+            configured_engine = self.tts_engine_root.text().strip()
+            if state.engine_root is not None and not configured_engine:
+                self.tts_engine_root.setText(str(state.engine_root))
+            if (
+                state.model_directory is not None
+                and not self.tts_model_dir.text().strip()
+            ):
+                self.tts_model_dir.setText(str(state.model_directory))
 
         self._tts_engine_download_needed = (
             self._platform_runtime.capabilities.managed_archives
@@ -2684,14 +2807,37 @@ class SettingsDialog(QDialog):
             return
         if self.tts_backend.currentData() == "autodl":
             return
-        model_destination = self._require_download_directory(
-            self.tts_model_dir,
-            "tts_model_path_required",
-        )
-        if model_destination is None:
-            return
-        engine_destination = None
-        if self._tts_engine_download_needed:
+        if self.tts_advanced_paths.isChecked():
+            model_destination = self._require_download_directory(
+                self.tts_model_dir,
+                "tts_model_path_required",
+            )
+            if model_destination is None:
+                return
+            engine_destination = None
+            if self._tts_engine_download_needed:
+                engine_destination = self._require_download_directory(
+                    self.tts_engine_root,
+                    "tts_engine_path_required",
+                )
+                if engine_destination is None:
+                    return
+        else:
+            storage_root = self._require_download_directory(
+                self.tts_storage_root,
+                "tts_storage_path_required",
+            )
+            if storage_root is None:
+                return
+            derived_engine, model_destination = tts_paths_for_storage_root(
+                storage_root
+            )
+            engine_destination = (
+                derived_engine if self._tts_engine_download_needed else None
+            )
+            self._update_tts_path_preview()
+
+        if self._tts_engine_download_needed and engine_destination is None:
             engine_destination = self._require_download_directory(
                 self.tts_engine_root,
                 "tts_engine_path_required",
@@ -2711,11 +2857,19 @@ class SettingsDialog(QDialog):
         )
         if answer != QMessageBox.Yes:
             return
-        self.download_manager.start_tts(
-            model_destination,
-            include_engine=self._tts_engine_download_needed,
-            engine_destination=engine_destination,
-        )
+        try:
+            self.download_manager.start_tts(
+                model_destination,
+                include_engine=self._tts_engine_download_needed,
+                engine_destination=engine_destination,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            QMessageBox.warning(
+                self,
+                self._text("download_path_required_title"),
+                self._text("tts_download_path_unsafe", message=exc),
+            )
+            return
         self._set_tts_path_controls(downloading=True)
         self.tts_download_button.setEnabled(False)
         self._render_tts_download(
@@ -2729,10 +2883,21 @@ class SettingsDialog(QDialog):
             or not self._platform_runtime.capabilities.managed_tts_bootstrap
         ):
             return
-        engine_root = self._require_download_directory(
-            self.tts_engine_root,
-            "tts_engine_path_required",
-        )
+        if self.tts_advanced_paths.isChecked():
+            engine_root = self._require_download_directory(
+                self.tts_engine_root,
+                "tts_engine_path_required",
+            )
+        else:
+            storage_root = self._require_download_directory(
+                self.tts_storage_root,
+                "tts_storage_path_required",
+            )
+            engine_root = (
+                tts_paths_for_storage_root(storage_root)[0]
+                if storage_root is not None
+                else None
+            )
         if engine_root is None:
             return
         answer = QMessageBox.question(
@@ -2768,7 +2933,11 @@ class SettingsDialog(QDialog):
         self._set_tts_status("tts_bootstrap_installing", detail=detail)
 
     def _on_tts_bootstrap_succeeded(self, path: str) -> None:
-        self.tts_engine_root.setText(path)
+        if self.tts_advanced_paths.isChecked():
+            self.tts_engine_root.setText(path)
+        else:
+            self.tts_storage_root.setText(str(Path(path).parent))
+            self._update_tts_path_preview()
         self._set_tts_status("tts_bootstrap_installed", path=path)
 
     def _on_tts_bootstrap_failed(self, message: str) -> None:
@@ -2863,7 +3032,8 @@ class SettingsDialog(QDialog):
                 self._render_tts_download(snapshot)
             elif snapshot.status == "completed":
                 self.tts_download_button.setEnabled(False)
-                self.tts_model_dir.setText(snapshot.destination)
+                if self.tts_advanced_paths.isChecked():
+                    self.tts_model_dir.setText(snapshot.destination)
                 self._render_progress(self.tts_progress, snapshot)
                 self.tts_extract_progress.hide()
                 self._set_tts_status(
@@ -3000,6 +3170,16 @@ class SettingsDialog(QDialog):
                 return f"{size:.1f} {unit}"
             size /= 1024
         return f"{size:.1f} TB"
+
+    def _browse_tts_storage(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            self._text("tts_storage_root"),
+            self.tts_storage_root.text().strip() or str(Path.home()),
+        )
+        if selected:
+            self.tts_storage_root.setText(selected)
+            self._on_tts_storage_root_changed()
 
     def _browse_tts_engine(self) -> None:
         selected = QFileDialog.getExistingDirectory(

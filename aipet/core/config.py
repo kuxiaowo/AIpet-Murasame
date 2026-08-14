@@ -17,6 +17,8 @@ from aipet.platforms import get_platform_runtime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_DIRECTORY_NAME = "AIpet-Murasame"
+TTS_ENGINE_DIRECTORY_NAME = "GPT-SoVITS"
+TTS_MODEL_DIRECTORY_NAME = "Murasame_SoVITS"
 
 
 def get_user_data_dir() -> Path:
@@ -55,12 +57,24 @@ def get_default_download_root() -> Path:
     )
 
 
+def default_tts_storage_root() -> str:
+    return str(get_default_download_root() / "tts")
+
+
+def tts_paths_for_storage_root(root: str | Path) -> tuple[Path, Path]:
+    storage_root = Path(root).expanduser()
+    return (
+        storage_root / TTS_ENGINE_DIRECTORY_NAME,
+        storage_root / TTS_MODEL_DIRECTORY_NAME,
+    )
+
+
 def default_tts_engine_root() -> str:
-    return str(get_default_download_root() / "tts" / "GPT-SoVITS")
+    return str(tts_paths_for_storage_root(default_tts_storage_root())[0])
 
 
 def default_tts_model_dir() -> str:
-    return str(get_default_download_root() / "tts" / "Murasame_SoVITS")
+    return str(tts_paths_for_storage_root(default_tts_storage_root())[1])
 
 
 def default_whisper_model_dir(model_name: str = "large-v3") -> str:
@@ -213,6 +227,8 @@ class TTSSettings(BaseModel):
         default="http://127.0.0.1:9880/tts",
         min_length=1,
     )
+    storage_root: str = Field(default_factory=default_tts_storage_root)
+    advanced_paths: bool = False
     engine_root: str = Field(default_factory=default_tts_engine_root)
     model_dir: str = Field(default_factory=default_tts_model_dir)
     autodl_ssh_command: str = ""
@@ -221,12 +237,48 @@ class TTSSettings(BaseModel):
     autodl_password_encrypted: str = ""
     timeout_seconds: int = Field(default=300, ge=10, le=900)
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_exact_paths_to_storage_root(cls, value):
+        if not isinstance(value, dict):
+            return value
+        payload = dict(value)
+        if "storage_root" in payload or "advanced_paths" in payload:
+            return payload
+
+        configured_engine = str(payload.get("engine_root") or "").strip()
+        configured_model = str(payload.get("model_dir") or "").strip()
+        if not configured_engine and not configured_model:
+            return payload
+
+        engine = Path(configured_engine).expanduser()
+        model = Path(configured_model).expanduser()
+        standard_siblings = (
+            engine.name.casefold() == TTS_ENGINE_DIRECTORY_NAME.casefold()
+            and model.name.casefold() == TTS_MODEL_DIRECTORY_NAME.casefold()
+            and _paths_equal(engine.parent, model.parent)
+        )
+        if standard_siblings:
+            payload["storage_root"] = str(engine.parent)
+            payload["advanced_paths"] = False
+        else:
+            payload["storage_root"] = default_tts_storage_root()
+            payload["advanced_paths"] = True
+        return payload
+
     @model_validator(mode="after")
     def fill_default_paths(self) -> "TTSSettings":
-        if not self.engine_root.strip():
-            self.engine_root = default_tts_engine_root()
-        if not self.model_dir.strip():
-            self.model_dir = default_tts_model_dir()
+        if not self.storage_root.strip():
+            self.storage_root = default_tts_storage_root()
+        if not self.advanced_paths:
+            engine, model = tts_paths_for_storage_root(self.storage_root)
+            self.engine_root = str(engine)
+            self.model_dir = str(model)
+        else:
+            if not self.engine_root.strip():
+                self.engine_root = default_tts_engine_root()
+            if not self.model_dir.strip():
+                self.model_dir = default_tts_model_dir()
         return self
 
     def uses_autodl(self) -> bool:
@@ -354,6 +406,16 @@ class AppSettings(BaseModel):
             return self
 
         current_root = get_model_dir() / "tts"
+        if (
+            not self.tts.advanced_paths
+            and _paths_equal(self.tts.storage_root, legacy_root)
+        ):
+            self.tts.storage_root = str(current_root)
+            engine, model = tts_paths_for_storage_root(current_root)
+            self.tts.engine_root = str(engine)
+            self.tts.model_dir = str(model)
+            return self
+
         migrations = (
             (
                 "engine_root",

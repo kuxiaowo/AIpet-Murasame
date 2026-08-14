@@ -43,6 +43,7 @@ from aipet.core.config import (
     VisionSettings,
     default_tts_engine_root,
     default_tts_model_dir,
+    default_tts_storage_root,
     default_whisper_model_dir,
     get_model_dir,
     load_settings,
@@ -251,6 +252,11 @@ class CoreTests(unittest.TestCase):
                 )
                 self.assertEqual(tts.model_dir, default_tts_model_dir())
                 self.assertEqual(
+                    tts.storage_root,
+                    default_tts_storage_root(),
+                )
+                self.assertFalse(tts.advanced_paths)
+                self.assertEqual(
                     stt.model_dir,
                     default_whisper_model_dir("large-v3"),
                 )
@@ -264,6 +270,34 @@ class CoreTests(unittest.TestCase):
         )
         self.assertEqual(custom.engine_root, "D:/custom/GPT-SoVITS")
         self.assertEqual(custom.model_dir, "D:/custom/Murasame")
+        self.assertTrue(custom.advanced_paths)
+
+    def test_legacy_standard_tts_paths_use_storage_root_mode(self) -> None:
+        settings = TTSSettings.model_validate(
+            {
+                "engine_root": "/models/tts/GPT-SoVITS",
+                "model_dir": "/models/tts/Murasame_SoVITS",
+            }
+        )
+
+        self.assertFalse(settings.advanced_paths)
+        self.assertEqual(settings.storage_root, "/models/tts")
+        self.assertEqual(
+            settings.engine_root,
+            "/models/tts/GPT-SoVITS",
+        )
+
+    def test_legacy_custom_tts_paths_preserve_advanced_mode(self) -> None:
+        settings = TTSSettings.model_validate(
+            {
+                "engine_root": "/engine/custom-name",
+                "model_dir": "/voice/custom-name",
+            }
+        )
+
+        self.assertTrue(settings.advanced_paths)
+        self.assertEqual(settings.engine_root, "/engine/custom-name")
+        self.assertEqual(settings.model_dir, "/voice/custom-name")
 
     def test_stt_language_supports_detection_and_whisper_codes(self) -> None:
         self.assertIsNone(
